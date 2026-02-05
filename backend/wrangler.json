@@ -1,0 +1,5 @@
+{
+    "name": "erp-backend",
+    "main": "src/index.ts",
+    "compatibility_date": "2024-02-08"
+}

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: 'Segoe UI', sans-serif; background-color: #f4f4f9; padding: 0; margin: 0; overflow: hidden; }
+      .header-bar { background: #2c3e50; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
+      .tabs { display: flex; background: #34495e; padding: 5px 15px 0 15px; }
+      .tab { padding: 10px 20px; cursor: pointer; color: #bdc3c7; border-radius: 5px 5px 0 0; font-weight: bold; }
+      .tab.active { background: #f4f4f9; color: #2c3e50; }
+      .container { height: 600px; overflow-y: auto; padding: 20px; background: #f4f4f9; }
+      .content { display: none; }
+      .content.active { display: block; }
+      
+      table { width: 100%; border-collapse: collapse; font-size: 11px; background: white; table-layout: fixed; }
+      
+      /* Estilos para encabezados complejos */
+      th { border: 1px solid #bdc3c7; padding: 4px; text-align: center; color: white; position: sticky; top: 0; z-index: 10; }
+      .th-main { background: #2c3e50; }
+      .th-presupuesto { background-color: #f39c12; }
+      .th-real { background-color: #3498db; }
+      
+      td { border: 1px solid #ecf0f1; padding: 3px; text-align: center; }
+      input, select { width: 95%; padding: 4px; border: 1px solid #ddd; font-size: 11px; text-align: center; }
+      
+      /* Estilo para campos inválidos */
+      .invalid-field { border: 2px solid #e74c3c !important; background-color: #fadbd8 !important; }
+
+      .btn-add { background: #27ae60; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-bottom: 10px; }
+      .btn-save-local { background: #2980b9; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-bottom: 10px; float: right; }
+      .btn-save-all { background: #e67e22; color: white; border: none; padding: 8px 25px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+      .btn-del { background: #e74c3c; color: white; border: none; width: 100%; cursor: pointer; height: 22px; font-size: 12px; }
+      #global-status { margin-right: 20px; font-weight: bold; color: #f1c40f; }
+    </style>
+  </head>
+  <body>
+
+    <div class="header-bar">
+      <span>GESTIÓN INTEGRAL DE ADICIONALES</span>
+      <div>
+        <span id="global-status"></span>
+        <button class="btn-save-all" onclick="saveAll()">💾 GUARDAR TODOS</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" id="btn-mat" onclick="switchTab('sec-mat', 'btn-mat')">📦 MATERIALES</div>
+      <div class="tab" id="btn-mo" onclick="switchTab('sec-mo', 'btn-mo')">👷 MANO DE OBRA</div>
+      <div class="tab" id="btn-mov" onclick="switchTab('sec-mov', 'btn-mov')">🚗 MOVILIDAD</div>
+    </div>
+
+    <div class="container">
+      <!-- MATERIALES -->
+      <div id="sec-mat" class="content active">
+        <button class="btn-add" onclick="addRowMat()">+ Fila Material</button>
+        <button class="btn-save-local" onclick="saveLocal('MATERIALES')">💾 Guardar Materiales</button>
+        <table id="tblMat">
+          <thead>
+            <tr>
+              <th rowspan="2" class="th-main" style="width:25%">DESCRIPCIÓN</th>
+              <th rowspan="2" class="th-main" style="width:5%">UND</th>
+              <!-- Encabezado agrupado PLANIFICADO -->
+              <th colspan="3" class="th-presupuesto">PLANIFICADO</th>
+              <!-- Encabezado agrupado REAL -->
+              <th colspan="3" class="th-real">REAL</th>
+              <th rowspan="2" class="th-main" style="width:10%">ORIGEN</th>
+              <th rowspan="2" class="th-main" style="width:11%">FECHA</th>
+              <th rowspan="2" class="th-main" style="width:5%"></th>
+            </tr>
+            <tr>
+              <!-- Sub-encabezados PLANIFICADO -->
+              <th class="th-presupuesto" style="width:7%">CANT</th>
+              <th class="th-presupuesto" style="width:7%">P.U.</th>
+              <th class="th-presupuesto" style="width:8%">TOTAL</th>
+              <!-- Sub-encabezados REAL -->
+              <th class="th-real" style="width:7%">CANT</th>
+              <th class="th-real" style="width:7%">P.U.</th>
+              <th class="th-real" style="width:8%">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody id="bodyMat"></tbody>
+        </table>
+      </div>
+
+      <!-- MANO DE OBRA -->
+      <div id="sec-mo" class="content">
+        <button class="btn-add" onclick="addRowDet('bodyMO')">+ Fila Mano Obra</button>
+        <button class="btn-save-local" onclick="saveLocal('MANO_OBRA')">💾 Guardar Mano Obra</button>
+        <table id="tblMO">
+          <thead>
+            <tr>
+              <th class="th-main" style="width:15%">PROVEEDOR</th>
+              <th class="th-main" style="width:30%">DESCRIPCIÓN</th>
+              <th class="th-main" style="width:10%">PLAN</th>
+              <th class="th-main" style="width:10%">REAL</th>
+              <th class="th-main" style="width:15%">ORIGEN</th>
+              <th class="th-main" style="width:15%">FECHA</th>
+              <th class="th-main" style="width:5%"></th>
+            </tr>
+          </thead>
+          <tbody id="bodyMO"></tbody>
+        </table>
+      </div>
+
+      <!-- MOVILIDAD -->
+      <div id="sec-mov" class="content">
+        <button class="btn-add" onclick="addRowDet('bodyMov')">+ Fila Movilidad</button>
+        <button class="btn-save-local" onclick="saveLocal('MOVILIDAD')">💾 Guardar Movilidad</button>
+        <table id="tblMov">
+          <thead>
+            <tr>
+              <th class="th-main" style="width:15%">PROVEEDOR</th>
+              <th class="th-main" style="width:30%">DESCRIPCIÓN</th>
+              <th class="th-main" style="width:10%">PLAN</th>
+              <th class="th-main" style="width:10%">REAL</th>
+              <th class="th-main" style="width:15%">ORIGEN</th>
+              <th class="th-main" style="width:15%">FECHA</th>
+              <th class="th-main" style="width:5%"></th>
+            </tr>
+          </thead>
+          <tbody id="bodyMov"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      const initial = <?!= initialData ?>;
+      const optOri = ["2049", "4071", "9001", "8059", "EFECTIVO", "YAPE", "ALMACÉN"];
+      const optProv = ["TERCEROS", "PLANILLA HACE"];
+
+      window.onload = () => {
+        if(initial.materiales.length) initial.materiales.forEach(r => addRowMat(r)); else addRowMat();
+        if(initial.manoObra.length) initial.manoObra.forEach(r => addRowDet('bodyMO', r)); else addRowDet('bodyMO');
+        if(initial.movilidad.length) initial.movilidad.forEach(r => addRowDet('bodyMov', r)); else addRowDet('bodyMov');
+      };
+
+      function switchTab(contentId, btnId) {
+        document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.getElementById(contentId).classList.add('active');
+        document.getElementById(btnId).classList.add('active');
+      }
+
+      // --- MATERIALES ---
+      function addRowMat(v=[]) {
+        const b = document.getElementById('bodyMat'); const tr = document.createElement('tr');
+        
+        let s = `<select onchange="validateRow(this)"><option value="" disabled ${!v[8]?'selected':''}>Origen</option>`;
+        optOri.forEach(o => s += `<option value="${o}" ${v[8]==o?'selected':''}>${o}</option>`);
+        
+        const fechaVal = v[9] || initial.hoy;
+
+        // Se agregan validaciones oninput para Descripción, Unidad, y los pares Plan/Real
+        tr.innerHTML = `
+          <td><input type="text" value="${v[0]||''}" oninput="validateRow(this)"></td>
+          <td><input type="text" value="${v[1]||''}" oninput="validateRow(this)"></td>
+          
+          <td><input type="number" value="${v[2]||''}" oninput="calc(this); validateRow(this)"></td>
+          <td><input type="number" value="${v[3]||''}" oninput="calc(this); validateRow(this)"></td>
+          <td><input type="text" readonly value="${v[4]||''}"></td>
+          
+          <td><input type="number" value="${v[5]||''}" oninput="calc(this); validateRow(this)"></td>
+          <td><input type="number" value="${v[6]||''}" oninput="calc(this); validateRow(this)"></td>
+          <td><input type="text" readonly value="${v[7]||''}"></td>
+          
+          <td>${s}</select></td>
+          <td><input type="date" value="${fechaVal}"></td>
+          <td><button class="btn-del" onclick="this.closest('tr').remove()">🗑</button></td>`;
+        b.appendChild(tr);
+        validateRow(tr.querySelector('select')); // Validar estado inicial
+      }
+
+      // --- DETALLES (MO / MOV) ---
+      function addRowDet(tid, v=[]) {
+        const b = document.getElementById(tid); const tr = document.createElement('tr');
+        let sp = `<select><option value="" disabled ${!v[0]?'selected':''}>Prov.</option>`;
+        optProv.forEach(p => sp += `<option value="${p}" ${v[0]==p?'selected':''}>${p}</option>`);
+        
+        let so = `<select onchange="validateRow(this)"><option value="" disabled ${!v[4]?'selected':''}>Origen</option>`;
+        optOri.filter(x=>x!=='ALMACÉN').forEach(o => so += `<option value="${o}" ${v[4]==o?'selected':''}>${o}</option>`);
+        
+        const fechaVal = v[5] || initial.hoy;
+
+        tr.innerHTML = `<td>${sp}</select></td><td><input type="text" value="${v[1]||''}"></td>
+          <td><input type="number" value="${v[2]||''}"></td>
+          <td><input type="number" value="${v[3]||''}" oninput="validateRow(this)"></td>
+          <td>${so}</select></td>
+          <td><input type="date" value="${fechaVal}"></td>
+          <td><button class="btn-del" onclick="this.closest('tr').remove()">🗑</button></td>`;
+        b.appendChild(tr);
+        validateRow(tr.querySelectorAll('select')[1]); 
+      }
+
+      function calc(el) {
+        const r = el.closest('tr').querySelectorAll('input');
+        r[4].value = ((parseFloat(r[2].value)||0)*(parseFloat(r[3].value)||0)).toFixed(2);
+        r[7].value = ((parseFloat(r[5].value)||0)*(parseFloat(r[6].value)||0)).toFixed(2);
+      }
+
+      /**
+       * VALIDACIÓN DE FILA 
+       */
+      function validateRow(el) {
+        if (!el) return;
+        const tr = el.closest('tr');
+        if (!tr) return;
+        
+        const inputs = tr.querySelectorAll('input');
+        const selects = tr.querySelectorAll('select');
+        const tbodyId = tr.closest('tbody').id;
+
+        let realVal = 0;
+        let origenSelect;
+
+        if (tbodyId === 'bodyMat') {
+            // --- LÓGICA ESPECÍFICA PARA MATERIALES ---
+            
+            // 1. Descripción y Unidad Obligatorios
+            const desc = inputs[0];
+            const und = inputs[1];
+            
+            if (desc.value.trim() === "") desc.classList.add('invalid-field');
+            else desc.classList.remove('invalid-field');
+
+            if (und.value.trim() === "") und.classList.add('invalid-field');
+            else und.classList.remove('invalid-field');
+
+            // 2. Validación cruzada de PLANIFICADO (Cant vs PU)
+            // Inputs: [2] Plan Cant, [3] Plan PU
+            const planCant = parseFloat(inputs[2].value) || 0;
+            const planPu = parseFloat(inputs[3].value) || 0;
+            const planCantStr = inputs[2].value;
+            const planPuStr = inputs[3].value;
+
+            // Si uno tiene texto pero el otro es 0/vacío -> error
+            // Ojo: usamos los strings para detectar si escribieron algo aunque no sea número válido aún
+            if (planCantStr && !planPuStr) {
+               inputs[3].classList.add('invalid-field'); 
+            } else if (!planCantStr && planPuStr) {
+               inputs[2].classList.add('invalid-field');
+            } else {
+               inputs[2].classList.remove('invalid-field');
+               inputs[3].classList.remove('invalid-field');
+            }
+
+            // 3. Validación cruzada de REAL (Cant vs PU)
+            // Inputs: [5] Real Cant, [6] Real PU
+            const realCant = parseFloat(inputs[5].value) || 0;
+            const realPu = parseFloat(inputs[6].value) || 0;
+            const realCantStr = inputs[5].value;
+            const realPuStr = inputs[6].value;
+
+            if (realCantStr && !realPuStr) {
+               inputs[6].classList.add('invalid-field');
+            } else if (!realCantStr && realPuStr) {
+               inputs[5].classList.add('invalid-field');
+            } else {
+               inputs[5].classList.remove('invalid-field');
+               inputs[6].classList.remove('invalid-field');
+            }
+
+            // Preparar valores para la lógica de Origen
+            // Inputs[7] es Real Total calculado
+            realVal = parseFloat(inputs[7].value) || 0;
+            origenSelect = selects[0];
+
+        } else {
+            // --- LÓGICA PARA MANO DE OBRA / MOVILIDAD ---
+            realVal = parseFloat(inputs[2].value) || 0;
+            origenSelect = selects[1];
+        }
+
+        // --- LÓGICA COMÚN: ORIGEN OBLIGATORIO SI HAY MONTO REAL ---
+        if (realVal > 0 && !origenSelect.value) {
+            origenSelect.classList.add('invalid-field');
+        } else {
+            origenSelect.classList.remove('invalid-field');
+        }
+      }
+
+      // Validar todas las filas de una tabla antes de guardar
+      function validateTable(bodyId) {
+        const rows = document.querySelectorAll('#' + bodyId + ' tr');
+        let isValid = true;
+        rows.forEach(tr => {
+            // Disparar validación
+            const el = tr.querySelector('select'); // Usar cualquier elemento para invocar
+            validateRow(el);
+            // Chequeamos si hay rojos
+            const invalidElements = tr.querySelectorAll('.invalid-field');
+            if (invalidElements.length > 0) isValid = false;
+        });
+        return isValid;
+      }
+
+      function getTableData(id) {
+        return Array.from(document.querySelectorAll('#'+id+' tr')).map(tr => Array.from(tr.querySelectorAll('input, select')).map(i => i.value)).filter(r => r[0] || r[1]);
+      }
+
+      function saveLocal(type) {
+        let bodyId = '';
+        if (type === 'MATERIALES') bodyId = 'bodyMat';
+        else if (type === 'MANO_OBRA') bodyId = 'bodyMO';
+        else if (type === 'MOVILIDAD') bodyId = 'bodyMov';
+
+        if (!validateTable(bodyId)) {
+            alert("⚠️ NO SE PUEDE GUARDAR\n\nRevise los campos marcados en rojo:\n- Descripción y Unidad son obligatorios (Materiales).\n- Si llena Cantidad, P.U. es obligatorio (y viceversa).\n- Si hay Monto Real, Origen es obligatorio.");
+            return;
+        }
+
+        const st = document.getElementById('global-status'); st.innerText = "⏳ Guardando...";
+        let data, func;
+        if(type==='MATERIALES') { data = getTableData('bodyMat'); func = 'guardarSoloMateriales'; }
+        if(type==='MANO_OBRA') { data = getTableData('bodyMO'); func = 'guardarSoloManoObra'; }
+        if(type==='MOVILIDAD') { data = getTableData('bodyMov'); func = 'guardarSoloMovilidad'; }
+
+        google.script.run.withSuccessHandler(r => { st.innerText = r.message; setTimeout(()=>st.innerText="",3000); }).withFailureHandler(e => { alert(e); })[func](data);
+      }
+
+      function saveAll() {
+        const vMat = validateTable('bodyMat');
+        const vMO = validateTable('bodyMO');
+        const vMov = validateTable('bodyMov');
+
+        if (!vMat || !vMO || !vMov) {
+             alert("⚠️ NO SE PUEDE GUARDAR TODO\n\nHay errores de validación en las filas (campos rojos).");
+             return;
+        }
+
+        const payload = { materiales: getTableData('bodyMat'), manoObra: getTableData('bodyMO'), movilidad: getTableData('bodyMov') };
+        const st = document.getElementById('global-status'); st.innerText = "⏳ Guardando TODO...";
+        google.script.run.withSuccessHandler(r => { st.innerText = r.message; setTimeout(()=>st.innerText="",3000); }).guardarAdicionalesTodo(payload);
+      }
+    </script>
+  </body>
+</html>

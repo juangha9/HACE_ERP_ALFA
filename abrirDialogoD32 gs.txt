@@ -1,0 +1,317 @@
+/**
+ * ------------------------------------------------------------------
+ * GESTIÓN INTEGRAL DE ADICIONALES (D32) - ACTUALIZADO FECHAS
+ * ------------------------------------------------------------------
+ */
+
+function abrirDialogoD32() {
+  try {
+    const data = {
+      materiales: leerSeccionParaFormulario("ADICIONAL DE MATERIALES", "ADICIONAL DE MANO DE OBRA", 4, "MAT"),
+      manoObra: leerSeccionParaFormulario("ADICIONAL DE DETALLE DE MANO DE OBRA", "ADICIONAL DE MOVILIDAD", 2, "DET"),
+      movilidad: leerSeccionParaFormulario("ADICIONAL DE DETALLE DE MOVILIDAD", "FIN_TOTAL", 2, "DET"),
+      // Enviamos la fecha de hoy en GMT-5 para usarla por defecto
+      hoy: Utilities.formatDate(new Date(), "GMT-5", "yyyy-MM-dd")
+    };
+
+    const template = HtmlService.createTemplateFromFile('FormularioAdicionales');
+    template.initialData = JSON.stringify(data);
+    
+    const html = template.evaluate()
+        .setWidth(1350)
+        .setHeight(750)
+        .setTitle('GESTIÓN DE ADICIONALES');
+    
+    SpreadsheetApp.getUi().showModelessDialog(html, 'ADICIONALES');
+  } catch (e) {
+    SpreadsheetApp.getUi().alert("Error al abrir: " + e.message);
+  }
+}
+
+/**
+ * BUSCADOR DE LÍMITES ESTRICTO
+ */
+function encontrarLimitesSeccion(inicioTxt, finTxt, offset) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const lastRow = sheet.getLastRow();
+  const values = sheet.getRange(1, 1, lastRow, 10).getValues(); 
+
+  let ini = -1;
+  let fin = -1;
+
+  for (let i = 0; i < values.length; i++) {
+    let b = values[i][1].toString().trim().toUpperCase();
+    let d = values[i][3].toString().trim().toUpperCase();
+    
+    if (ini === -1) {
+      if (b === inicioTxt.toUpperCase() || d === inicioTxt.toUpperCase()) {
+        ini = i + 1 + offset;
+      }
+    } else {
+      if (finTxt !== "FIN_TOTAL") {
+        if (b === finTxt.toUpperCase() || d === finTxt.toUpperCase()) {
+          fin = i + 1;
+          break;
+        }
+      }
+    }
+  }
+  if (ini === -1) return null;
+  if (fin === -1 || fin <= ini) fin = lastRow + 1;
+  return { start: ini, end: fin - 1 };
+}
+
+/**
+ * LECTURA DE DATOS PARA EL HTML
+ */
+function leerSeccionParaFormulario(iniTxt, finTxt, offset, tipo) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const limites = encontrarLimitesSeccion(iniTxt, finTxt, offset);
+  if (!limites || limites.end < limites.start) return [];
+
+  const numCols = (tipo === "MAT") ? 27 : 26;
+  const values = sheet.getRange(limites.start, 2, limites.end - limites.start + 1, numCols).getValues();
+
+  return values.filter(r => {
+    const colPrincipal = (tipo === "MAT") ? r[0] : r[0]; 
+    const colSecundaria = (tipo === "MAT") ? r[23] : r[3]; 
+    return colPrincipal.toString().trim() !== "" || colSecundaria.toString().trim() !== "";
+  }).map(r => {
+    // NOTA: Para que el input type="date" funcione, la fecha debe enviarse como yyyy-MM-dd
+    if (tipo === "MAT") {
+      return [r[0], r[9], r[11], r[13], r[15], r[17], r[19], r[21], r[23], 
+              r[25] ? (r[25] instanceof Date ? Utilities.formatDate(r[25], "GMT-5", "yyyy-MM-dd") : r[25]) : ""];
+    } else {
+      return [r[0], r[3], r[13], r[17], r[21], 
+              r[24] instanceof Date ? Utilities.formatDate(r[24], "GMT-5", "yyyy-MM-dd") : r[24]];
+    }
+  });
+}
+
+/**
+ * GUARDADO CON LÓGICA DE INSERCIÓN FÍSICA
+ */
+function guardarSeccionIndependiente(tipo, data) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    let limites, esMat = false;
+
+    if (tipo === "MATERIALES") {
+      limites = encontrarLimitesSeccion("ADICIONAL DE MATERIALES", "ADICIONAL DE MANO DE OBRA", 4);
+      esMat = true;
+    } else if (tipo === "MANO_OBRA") {
+      limites = encontrarLimitesSeccion("ADICIONAL DE DETALLE DE MANO DE OBRA", "ADICIONAL DE MOVILIDAD", 2);
+    } else {
+      limites = encontrarLimitesSeccion("ADICIONAL DE DETALLE DE MOVILIDAD", "FIN_TOTAL", 2);
+    }
+
+    if (!limites) throw new Error("Sección no localizada.");
+
+    const startRow = limites.start;
+    const endRowLimit = limites.end;
+    const colCount = esMat ? 27 : 26;
+
+    // 1. Contar filas con datos actuales
+    let oldRowCount = 0;
+    if (endRowLimit >= startRow) {
+      const currentRows = sheet.getRange(startRow, 2, endRowLimit - startRow + 1, colCount).getValues();
+      for (let i = 0; i < currentRows.length; i++) {
+        const checkCol1 = currentRows[i][0].toString().trim();
+        const checkCol2 = esMat ? currentRows[i][23].toString().trim() : currentRows[i][3].toString().trim();
+        if (checkCol1 !== "" || checkCol2 !== "") {
+          oldRowCount++;
+        } else { break; }
+      }
+    }
+
+    const newRowCount = data.length;
+
+    // 2. Lógica de Inserción/Eliminación Física
+    if (newRowCount > oldRowCount) {
+      const rowsToAdd = newRowCount - oldRowCount;
+      const insertAt = oldRowCount > 0 ? startRow + oldRowCount : startRow;
+      sheet.insertRowsBefore(insertAt, rowsToAdd);
+    } else if (newRowCount < oldRowCount) {
+      sheet.deleteRows(startRow + newRowCount, oldRowCount - newRowCount);
+    }
+
+    // 3. Escritura y Formato
+    if (newRowCount > 0) {
+      const targetRange = sheet.getRange(startRow, 2, newRowCount, colCount);
+      targetRange.breakApart().clearFormat();
+      targetRange.setFontFamily("Times New Roman").setFontSize(15).setHorizontalAlignment("center").setVerticalAlignment("middle");
+
+      const finalValues = data.map(r => {
+        let row = new Array(colCount).fill("");
+        if (esMat) {
+          row[0]=r[0]; row[9]=r[1]; row[11]=Number(r[2])||""; row[13]=Number(r[3])||""; row[15]=Number(r[4])||"";
+          row[17]=Number(r[5])||""; row[19]=Number(r[6])||""; row[21]=Number(r[7])||""; row[23]=r[8]; row[25]=r[9];
+        } else {
+          // Mano de obra y Movilidad
+          row[0]=r[0]; row[3]=r[1]; row[13]=Number(r[2])||""; row[17]=Number(r[3])||""; row[21]=r[4];
+          
+          // Procesamiento de fecha corregido para input type="date" (yyyy-MM-dd)
+          if(r[5] && typeof r[5] === 'string') {
+             if (r[5].includes('-')) {
+               // Formato yyyy-MM-dd
+               let p = r[5].split("-"); 
+               row[24] = new Date(p[0], p[1]-1, p[2]);
+             } else if (r[5].includes('/')) {
+               // Formato antiguo dd/MM/yyyy (por seguridad)
+               let p = r[5].split("/"); 
+               row[24] = new Date(p[2], p[1]-1, p[0]);
+             } else {
+               row[24] = r[5];
+             }
+          } else { 
+            row[24] = r[5]; 
+          }
+        }
+        return row;
+      });
+
+      targetRange.setValues(finalValues);
+
+      // Re-aplicar combinaciones (Merge)
+      for (let i = 0; i < newRowCount; i++) {
+        const currR = startRow + i;
+        if (esMat) {
+          const m = (c, w) => sheet.getRange(currR, c, 1, w).merge();
+          m(2,9); m(11,2); m(13,2); m(15,2); m(17,2); m(19,2); m(21,2); m(23,2); m(25,2); m(27,2);
+        } else {
+          sheet.getRange(currR, 2, 1, 3).merge(); sheet.getRange(currR, 5, 1, 10).merge();
+          sheet.getRange(currR, 15, 1, 4).merge(); sheet.getRange(currR, 19, 1, 4).merge();
+          sheet.getRange(currR, 23, 1, 3).merge(); sheet.getRange(currR, 26, 1, 2).merge();
+        }
+      }
+      targetRange.setBorder(true, true, true, true, true, true, "black", SpreadsheetApp.BorderStyle.SOLID);
+      sheet.getRange(startRow, esMat ? 13 : 15, newRowCount, esMat ? 6 : 4).setBackground("#fffbf1");
+      sheet.getRange(startRow, esMat ? 19 : 19, newRowCount, esMat ? 6 : 4).setBackground("#c5ffff");
+    }
+
+    actualizarTotalesD32(sheet);
+    return { success: true, message: "¡Guardado con inserción de filas exitoso!" };
+  } catch (e) {
+    return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ACTUALIZACIÓN DE TOTALES INTEGRAL (D32)
+ */
+function actualizarTotalesD32(sheet) {
+  const mat = leerSeccionParaFormulario("ADICIONAL DE MATERIALES", "ADICIONAL DE MANO DE OBRA", 4, "MAT");
+  const mo = leerSeccionParaFormulario("ADICIONAL DE DETALLE DE MANO DE OBRA", "ADICIONAL DE MOVILIDAD", 2, "DET");
+  const mov = leerSeccionParaFormulario("ADICIONAL DE DETALLE DE MOVILIDAD", "FIN_TOTAL", 2, "DET");
+
+  // --- CÁLCULOS DE MO ---
+  let planTercerosMO = 0, realTercerosMO = 0;
+  let planHaceMO = 0, realHaceMO = 0;
+  let totalRealMO = 0;
+  
+  mo.forEach(r => {
+    let prov = r[0].toString().trim().toUpperCase();
+    let pVal = parseFloat(r[2]) || 0;
+    let rVal = parseFloat(r[3]) || 0;
+    totalRealMO += rVal;
+    if (prov === "TERCEROS") { planTercerosMO += pVal; realTercerosMO += rVal; }
+    if (prov === "PLANILLA HACE") { planHaceMO += pVal; realHaceMO += rVal; }
+  });
+
+  // --- CÁLCULOS DE MOVILIDAD ---
+  let planTercerosMov = 0, realTercerosMov = 0;
+  let planHaceMov = 0, realHaceMov = 0;
+  let totalRealMov = 0;
+
+  mov.forEach(r => {
+    let prov = r[0].toString().trim().toUpperCase();
+    let pVal = parseFloat(r[2]) || 0;
+    let rVal = parseFloat(r[3]) || 0;
+    totalRealMov += rVal;
+    if (prov === "TERCEROS") { planTercerosMov += pVal; realTercerosMov += rVal; }
+    if (prov === "PLANILLA HACE") { planHaceMov += pVal; realHaceMov += rVal; }
+  });
+
+  // --- CÁLCULOS TOTALES ADICIONALES (MAT + MO + MOV) ---
+  let totalPlanAdicionales = 0;
+  let totalRealAdicionales = 0;
+
+  // Sumar Materiales
+  mat.forEach(r => { 
+    totalPlanAdicionales += parseFloat(r[4]) || 0; 
+    totalRealAdicionales += parseFloat(r[7]) || 0; 
+  });
+  // Sumar MO y Movilidad
+  totalPlanAdicionales += (planTercerosMO + planHaceMO + planTercerosMov + planHaceMov);
+  totalRealAdicionales += (realTercerosMO + realHaceMO + realTercerosMov + realHaceMov);
+
+  // --- BÚSQUEDA Y ESCRITURA EN HOJA ---
+  const lastRow = sheet.getLastRow();
+  const rangeValues = sheet.getRange(1, 1, lastRow, 10).getValues(); 
+
+  for (let i = 0; i < rangeValues.length; i++) {
+    let filaTextoUnido = rangeValues[i].join("").replace(/\s/g, "").toUpperCase();
+    let colD = rangeValues[i][3].toString().trim().toUpperCase(); 
+    let fila = i + 1;
+
+    if (filaTextoUnido === "ADICIONALDEMANODEOBRA") {
+      sheet.getRange(fila, 13).setValue(totalRealMO); 
+      for (let j = i; j < Math.min(i + 10, rangeValues.length); j++) {
+        let valB = rangeValues[j][1].toString().trim().toUpperCase();
+        if (valB === "TERCEROS") {
+          sheet.getRange(j + 1, 9).setValue(planTercerosMO); 
+          sheet.getRange(j + 1, 18).setValue(realTercerosMO); 
+        }
+        if (valB === "PLANILLA HACE") {
+          sheet.getRange(j + 1, 9).setValue(planHaceMO); 
+          sheet.getRange(j + 1, 18).setValue(realHaceMO); 
+        }
+      }
+    }
+
+    if (filaTextoUnido === "ADICIONALDEMOVILIDAD") {
+      sheet.getRange(fila, 13).setValue(totalRealMov); 
+      for (let j = i; j < Math.min(i + 10, rangeValues.length); j++) {
+        let valB = rangeValues[j][1].toString().trim().toUpperCase();
+        if (valB === "TERCEROS") {
+          sheet.getRange(j + 1, 9).setValue(planTercerosMov); 
+          sheet.getRange(j + 1, 18).setValue(realTercerosMov); 
+        }
+        if (valB === "PLANILLA HACE") {
+          sheet.getRange(j + 1, 9).setValue(planHaceMov); 
+          sheet.getRange(j + 1, 18).setValue(realHaceMov); 
+        }
+      }
+    }
+
+    if (colD === "ADICIONALES") {
+      sheet.getRange(fila, 13).setValue(totalRealAdicionales); 
+    }
+
+    if (filaTextoUnido === "ADICIONAL") {
+      for (let j = i; j < Math.min(i + 10, rangeValues.length); j++) {
+        let valB = rangeValues[j][1].toString().trim().toUpperCase();
+        if (valB === "GASTO") {
+          sheet.getRange(j + 1, 9).setValue(totalPlanAdicionales); 
+          sheet.getRange(j + 1, 18).setValue(totalRealAdicionales); 
+          break;
+        }
+      }
+    }
+  }
+}
+
+// Accesos para el HTML
+function guardarSoloMateriales(d) { return guardarSeccionIndependiente("MATERIALES", d); }
+function guardarSoloManoObra(d) { return guardarSeccionIndependiente("MANO_OBRA", d); }
+function guardarSoloMovilidad(d) { return guardarSeccionIndependiente("MOVILIDAD", d); }
+function guardarAdicionalesTodo(p) {
+  guardarSeccionIndependiente("MATERIALES", p.materiales);
+  guardarSeccionIndependiente("MANO_OBRA", p.manoObra);
+  guardarSeccionIndependiente("MOVILIDAD", p.movilidad);
+  return { success: true, message: "Todos los adicionales procesados." };
+}

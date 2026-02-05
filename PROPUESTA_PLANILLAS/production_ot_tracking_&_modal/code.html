@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Seguimiento de OT y Producción</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#463acb",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#14131f",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        :root {
+            --primary-indigo: #463acb;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-[#101019] dark:text-white min-h-screen">
+<div class="flex h-screen overflow-hidden">
+<aside class="w-64 border-r border-[#eae9f1] dark:border-gray-800 bg-white dark:bg-background-dark flex flex-col justify-between p-6">
+<div class="flex flex-col gap-8">
+<div class="flex flex-col px-2">
+<div class="flex items-center gap-3 mb-1">
+<div class="bg-primary text-white p-1 rounded">
+<span class="material-symbols-outlined">factory</span>
+</div>
+<h1 class="text-lg font-bold">M&amp;M Fabril</h1>
+</div>
+<p class="text-[#5d588d] text-xs font-medium uppercase tracking-wider">Módulo de Producción</p>
+</div>
+<nav class="flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[#eae9f1] dark:hover:bg-gray-800 transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-sm font-medium">Panel General</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl bg-primary/10 text-primary" href="#">
+<span class="material-symbols-outlined">analytics</span>
+<span class="text-sm font-semibold">Seguimiento OT</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[#eae9f1] dark:hover:bg-gray-800 transition-colors" href="#">
+<span class="material-symbols-outlined">inventory_2</span>
+<span class="text-sm font-medium">Recursos</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[#eae9f1] dark:hover:bg-gray-800 transition-colors" href="#">
+<span class="material-symbols-outlined">verified</span>
+<span class="text-sm font-medium">Control de Calidad</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[#eae9f1] dark:hover:bg-gray-800 transition-colors" href="#">
+<span class="material-symbols-outlined">settings_suggest</span>
+<span class="text-sm font-medium">Mantenimiento</span>
+</a>
+</nav>
+</div>
+<div class="flex flex-col gap-4 border-t border-[#eae9f1] dark:border-gray-800 pt-6">
+<div class="flex items-center gap-3 px-2">
+<div class="size-10 rounded-full bg-primary/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">person</span>
+</div>
+<div class="flex flex-col overflow-hidden">
+<span class="text-sm font-bold truncate">Gerente de Prod.</span>
+<span class="text-xs text-[#5d588d]">ID: 942201</span>
+</div>
+</div>
+</div>
+</aside>
+<main class="flex-1 flex flex-col overflow-hidden">
+<header class="h-16 border-b border-[#eae9f1] dark:border-gray-800 bg-white dark:bg-background-dark px-8 flex items-center justify-between">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#5d588d] text-lg">search</span>
+<input class="w-full bg-[#f6f6f8] dark:bg-gray-800 border-none rounded-full pl-10 pr-4 h-10 text-sm focus:ring-2 focus:ring-primary/20" placeholder="Buscar órdenes, clientes o materiales..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="size-10 rounded-full bg-[#f6f6f8] dark:bg-gray-800 flex items-center justify-center text-[#5d588d]">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="size-10 rounded-full bg-[#f6f6f8] dark:bg-gray-800 flex items-center justify-center text-[#5d588d]">
+<span class="material-symbols-outlined">help</span>
+</button>
+</div>
+</header>
+<div class="flex-1 overflow-y-auto p-8">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h2 class="text-3xl font-black tracking-tight mb-1">Seguimiento de Órdenes de Trabajo (OT)</h2>
+<p class="text-[#5d588d]">Monitoreo de producción de alta densidad para planta.</p>
+</div>
+<button class="bg-primary text-white px-6 py-2.5 rounded-full font-bold flex items-center gap-2 hover:bg-primary/90 transition-all">
+<span class="material-symbols-outlined">add</span>
+<span>Nueva OT</span>
+</button>
+</div>
+<div class="bg-white dark:bg-background-dark border border-[#eae9f1] dark:border-gray-800 rounded-xl overflow-hidden shadow-sm">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-[#eae9f1] dark:border-gray-800 bg-[#f9f9fb] dark:bg-gray-900/50">
+<th class="px-6 py-4 text-xs font-bold uppercase text-[#5d588d] tracking-wider">N° de OT</th>
+<th class="px-6 py-4 text-xs font-bold uppercase text-[#5d588d] tracking-wider">Cliente</th>
+<th class="px-6 py-4 text-xs font-bold uppercase text-[#5d588d] tracking-wider">Material</th>
+<th class="px-6 py-4 text-xs font-bold uppercase text-[#5d588d] tracking-wider text-right">Valor (S/.)</th>
+<th class="px-6 py-4 text-xs font-bold uppercase text-[#5d588d] tracking-wider">Estado</th>
+<th class="px-6 py-4 text-xs font-bold uppercase text-[#5d588d] tracking-wider">Progreso</th>
+<th class="px-6 py-4 text-xs font-bold uppercase text-[#5d588d] tracking-wider text-right">Acciones</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-[#eae9f1] dark:divide-gray-800">
+<tr class="hover:bg-[#f9f9fb] dark:hover:bg-gray-800/30 transition-colors">
+<td class="px-6 py-4 text-sm font-bold">OT-2024-001</td>
+<td class="px-6 py-4 text-sm">Corporación Aceros S.A.</td>
+<td class="px-6 py-4">
+<span class="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs font-medium">Perfiles de Acero</span>
+</td>
+<td class="px-6 py-4 text-sm font-medium text-right">S/. 12,450.00</td>
+<td class="px-6 py-4">
+<span class="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 text-xs font-bold">
+<span class="size-2 bg-amber-500 rounded-full"></span>
+                                    En Proceso
+                                </span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-[6px]">
+<div class="bg-primary h-[6px] rounded-full" style="width: 75%"></div>
+</div>
+<span class="text-xs font-bold w-8 text-indigo-700">75%</span>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="text-primary hover:underline text-sm font-bold">Editar</button>
+</td>
+</tr>
+<tr class="hover:bg-[#f9f9fb] dark:hover:bg-gray-800/30 transition-colors">
+<td class="px-6 py-4 text-sm font-bold">OT-2024-002</td>
+<td class="px-6 py-4 text-sm">Muebles Modernos Lima</td>
+<td class="px-6 py-4">
+<span class="px-3 py-1 bg-gray-100 dark:bg-gray-800 rounded-full text-xs font-medium">Tableros de Melamina</span>
+</td>
+<td class="px-6 py-4 text-sm font-medium text-right">S/. 8,900.00</td>
+<td class="px-6 py-4">
+<span class="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 text-xs font-bold">
+<span class="size-2 bg-blue-500 rounded-full"></span>
+                                    Pendiente
+                                </span>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-[6px]">
+<div class="bg-primary h-[6px] rounded-full" style="width: 0%"></div>
+</div>
+<span class="text-xs font-bold w-8 text-indigo-700">0%</span>
+</div>
+</td>
+<td class="px-6 py-4 text-right">
+<button class="text-primary hover:underline text-sm font-bold">Editar</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</div>
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md">
+<div class="w-full max-w-2xl bg-white dark:bg-[#1c1b2e] rounded-xl shadow-2xl overflow-hidden rounded-lg">
+<div class="flex items-center justify-between px-8 py-6 border-b border-[#eae9f1] dark:border-gray-800">
+<div>
+<h3 class="text-2xl font-black tracking-tight">Editar Orden de Trabajo</h3>
+<p class="text-[#5d588d] text-sm font-medium">Detalles de OT • OT-2024-001</p>
+</div>
+<button class="text-[#5d588d] hover:text-[#101019] dark:hover:text-white transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="px-8 py-8">
+<div class="mb-6 flex justify-end">
+<button class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition-all w-full md:w-auto justify-center">
+<span class="material-symbols-outlined">print</span>
+<span>Imprimir Orden</span>
+</button>
+</div>
+<form class="space-y-6">
+<div class="grid grid-cols-2 gap-6">
+<div class="flex flex-col gap-2">
+<label class="text-sm font-bold px-1">Tipo de Material</label>
+<select class="w-full rounded-xl border-[#d4d3e4] dark:border-gray-700 dark:bg-gray-900 bg-[#f9f9fb] text-sm focus:ring-primary h-12">
+<option>Perfiles de Acero</option>
+<option>Tableros de Melamina</option>
+<option>Planchas de Metal</option>
+</select>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-sm font-bold px-1">Estado de la Orden</label>
+<select class="w-full rounded-xl border-[#d4d3e4] dark:border-gray-700 dark:bg-gray-900 bg-[#f9f9fb] text-sm focus:ring-primary h-12">
+<option>En Proceso</option>
+<option>Pendiente</option>
+<option>Completado</option>
+<option>Retrasado</option>
+</select>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-6">
+<div class="flex flex-col gap-2">
+<label class="text-sm font-bold px-1">Precio Unitario (S/.)</label>
+<div class="relative">
+<span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-[#5d588d]">S/.</span>
+<input class="w-full rounded-xl border-[#d4d3e4] dark:border-gray-700 dark:bg-gray-900 bg-[#f9f9fb] text-sm focus:ring-primary h-12 pl-12" type="number" value="12450.00"/>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-sm font-bold px-1">Cantidad</label>
+<input class="w-full rounded-xl border-[#d4d3e4] dark:border-gray-700 dark:bg-gray-900 bg-[#f9f9fb] text-sm focus:ring-primary h-12 px-4" type="number" value="500"/>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-sm font-bold px-1 flex justify-between">
+<span>Progreso de Producción</span>
+<span class="text-primary">75%</span>
+</label>
+<input class="w-full h-[6px] bg-gray-200 dark:bg-gray-700 rounded-full appearance-none cursor-pointer accent-primary" type="range" value="75"/>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-sm font-bold px-1">Notas de Producción</label>
+<textarea class="w-full rounded-xl border-[#d4d3e4] dark:border-gray-700 dark:bg-gray-900 bg-[#f9f9fb] text-sm focus:ring-primary p-4 resize-none" placeholder="Agregar detalles sobre maquinaria u operario..." rows="3"></textarea>
+</div>
+</form>
+</div>
+<div class="px-8 pb-8 flex flex-col gap-3">
+<button class="w-full bg-primary text-white h-14 rounded-xl font-bold text-lg hover:shadow-lg hover:bg-primary/90 transition-all">Guardar Cambios</button>
+<button class="w-full bg-[#f6f6f8] dark:bg-gray-800 text-[#101019] dark:text-white h-12 rounded-xl font-bold text-sm hover:bg-[#eae9f1] dark:hover:bg-gray-700 transition-all">Cancelar</button>
+</div>
+</div>
+</div>
+
+</body></html>

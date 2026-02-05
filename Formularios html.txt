@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 10px; background-color: #f4f4f9; }
+      
+      table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); font-size: 11px; table-layout: fixed; }
+      
+      /* Anchos de columna idénticos al Almacenero */
+      th.desc { width: 20%; }
+      th.unit { width: 4%; }
+      th.col-num { width: 6.5%; } 
+      th.origen { width: 10%; } 
+      th.fecha { width: 9%; }
+      th.del { width: 3%; }
+      
+      th { border: 1px solid #bdc3c7; padding: 4px; text-align: center; color: white; font-weight: 600; }
+      td { border: 1px solid #ecf0f1; padding: 1px; text-align: center; }
+      
+      /* Colores header */
+      .th-presupuesto { background-color: #f39c12; }
+      .th-real { background-color: #3498db; }
+      .th-main { background-color: #2c3e50; }
+      
+      input, select { width: 96%; padding: 3px; border: 1px solid #ddd; border-radius: 2px; text-align: center; font-size: 11px; font-family: inherit; }
+      input:focus, select:focus { outline: 2px solid #3498db; border-color: transparent; }
+      input[readonly] { background-color: #f2f2f2; color: #333; border: none; font-weight: bold; cursor: default; }
+      
+      /* --- OCULTAR FLECHAS (SPINNERS) --- */
+      input[type=number]::-webkit-inner-spin-button, 
+      input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none; 
+        margin: 0; 
+      }
+      input[type=number] { -moz-appearance: textfield; }
+
+      .bg-plan { background-color: #fffbf1; }
+      .bg-real { background-color: #eafaf1; }
+      
+      /* Estilos de validación */
+      .invalid-field { border: 2px solid #e74c3c !important; background-color: #fadbd8 !important; }
+
+      .btn-container { margin-top: 15px; display: flex; gap: 10px; align-items: center; }
+      button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; color: white; }
+      
+      .btn-add { background-color: #27ae60; }
+      .btn-save { background-color: #2980b9; }
+      .btn-del { background-color: #e74c3c; padding: 2px 0; width: 100%; font-size: 12px; height: 24px; }
+      
+      button:disabled { background-color: #95a5a6; cursor: not-allowed; opacity: 0.7; }
+      #status { font-weight: bold; margin-left: auto; font-size: 13px; }
+      .success { color: #27ae60; }
+      .error { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+
+    <table id="dataTable">
+      <thead>
+        <tr>
+          <th rowspan="2" class="th-main desc">DESCRIPCIÓN</th>
+          <th rowspan="2" class="th-main unit">UND</th>
+          <th colspan="3" class="th-presupuesto">PLANIFICADO</th>
+          <th colspan="3" class="th-real">REAL</th>
+          <th rowspan="2" class="th-main origen">ORIGEN</th>
+          <th rowspan="2" class="th-main fecha">FECHA</th>
+          <th rowspan="2" class="th-main del"></th>
+        </tr>
+        <tr>
+          <th class="th-presupuesto col-num">CANT</th>
+          <th class="th-presupuesto col-num">P. U.</th>
+          <th class="th-presupuesto col-num">TOTAL</th>
+          <th class="th-real col-num">CANT</th>
+          <th class="th-real col-num">P. U.</th>
+          <th class="th-real col-num">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+
+    <div class="btn-container">
+      <button class="btn-add" onclick="attemptAddRow()">+ Fila</button>
+      <button class="btn-save" onclick="saveData()">💾 Guardar cambios</button>
+      <span id="status"></span>
+    </div>
+
+    <script>
+      const incomingData = <?!= initialData ?>;
+      const appMode = "<?= appMode ?>"; 
+
+      window.onload = function() {
+        if (incomingData && incomingData.length > 0) {
+          incomingData.forEach(row => addRow(row));
+        } else {
+          addRow();
+        }
+      };
+
+      function addRow(values = []) {
+        const tbody = document.getElementById('tableBody');
+        const tr = document.createElement('tr');
+        const val = (v) => (v === undefined || v === null || v === "0" || v === 0) ? "" : v;
+
+        // --- VALORES INICIALES ---
+        let tag = values[8]; 
+        
+        if (values.length === 0 && !tag) {
+           tag = (appMode === "ALMACEN_VIEW") ? "ALMACÉN" : "";
+        }
+        
+        let fechaVal = values[9];
+        if (!fechaVal) {
+          const now = new Date().toLocaleString("en-CA", {timeZone: "America/Lima"});
+          fechaVal = now.split(',')[0];
+        }
+
+        // --- LISTA DE ORIGEN ---
+        const options = ["2049", "4071", "9001", "8059", "EFECTIVO", "YAPE", "ALMACÉN"];
+        let optionsHtml = `<option value="" disabled ${!tag ? 'selected' : ''} hidden>Seleccionar</option>`;
+        
+        if (tag && !options.includes(tag)) {
+            optionsHtml += `<option value="${tag}" selected>${tag}</option>`;
+        }
+        
+        options.forEach(opt => {
+          if (tag && !options.includes(tag) && opt === tag) return; 
+          const sel = (tag === opt) ? "selected" : "";
+          optionsHtml += `<option value="${opt}" ${sel}>${opt}</option>`;
+        });
+
+
+        // --- CONSTRUCCIÓN HTML ---
+        tr.innerHTML = `
+          <td><input type="text" value="${val(values[0])}" oninput="validarTabla()" placeholder="Descripción"></td>
+          <td><input type="text" value="${val(values[1])}" oninput="validarTabla()" placeholder="Und"></td>
+          
+          <td><input type="number" step="0.01" class="bg-plan" value="${val(values[2])}" oninput="calcRow(this)"></td>
+          <td><input type="number" step="0.01" class="bg-plan" value="${val(values[3])}" oninput="calcRow(this)"></td>
+          <td><input type="text" value="${val(values[4])}" readonly></td>
+          
+          <td><input type="number" step="0.01" class="bg-real" value="${val(values[5])}" oninput="calcRow(this)"></td>
+          <td><input type="number" step="0.01" class="bg-real" value="${val(values[6])}" oninput="calcRow(this)"></td>
+          <td><input type="text" value="${val(values[7])}" readonly></td>
+          
+          <td><select class="select-origen" onchange="validarTabla()">${optionsHtml}</select></td>
+          <td><input type="date" value="${fechaVal}" oninput="validarTabla()"></td>
+          
+          <td><button class="btn-del" onclick="deleteRow(this)" tabindex="-1">🗑</button></td>
+        `;
+        
+        tbody.appendChild(tr);
+        validarTabla();
+        
+        if(values.length === 0) {
+           const inputs = tr.querySelectorAll('input');
+           if(inputs[0]) inputs[0].focus();
+        }
+      }
+
+      function deleteRow(btn) {
+        btn.closest('tr').remove();
+        validarTabla();
+      }
+
+      function calcRow(input) {
+        const row = input.closest('tr');
+        const inputs = row.querySelectorAll('input'); 
+        
+        const pQty = parseFloat(inputs[2].value) || 0;
+        const pPu = parseFloat(inputs[3].value) || 0;
+        inputs[4].value = (pQty || pPu) ? (pQty * pPu).toFixed(2) : "";
+
+        const rQty = parseFloat(inputs[5].value) || 0;
+        const rPu = parseFloat(inputs[6].value) || 0;
+        inputs[7].value = (rQty || rPu) ? (rQty * rPu).toFixed(2) : "";
+
+        validarTabla();
+      }
+
+      // --- LÓGICA DE RESTRICCIONES (ORIGEN OBLIGATORIO) ---
+      function validarTabla() {
+        const rows = document.querySelectorAll('#tableBody tr');
+        let isValid = true;
+        let msg = "";
+
+        if (rows.length === 0) return true; 
+
+        for (let i = 0; i < rows.length; i++) {
+          const inputs = rows[i].querySelectorAll('input');
+          const select = rows[i].querySelector('select');
+          
+          const desc = inputs[0].value.trim();
+          const unit = inputs[1].value.trim();
+          const pC = parseFloat(inputs[2].value) || 0;
+          const pP = parseFloat(inputs[3].value) || 0;
+          const rC = parseFloat(inputs[5].value) || 0;
+          const rP = parseFloat(inputs[6].value) || 0;
+
+          inputs[0].classList.remove('invalid-field');
+          inputs[1].classList.remove('invalid-field');
+          select.classList.remove('invalid-field');
+
+          if (!desc || !unit) {
+            isValid = false; msg = "Falta Descripción o Unidad.";
+            if (!desc) inputs[0].classList.add('invalid-field');
+            if (!unit) inputs[1].classList.add('invalid-field');
+          }
+
+          if ((pC > 0 && pP === 0) || (pC === 0 && pP > 0)) {
+            isValid = false; msg = "Planificado incompleto.";
+          }
+          if ((rC > 0 && rP === 0) || (rC === 0 && rP > 0)) {
+            isValid = false; msg = "Real incompleto.";
+          }
+
+          if (!(pC > 0 && pP > 0) && !(rC > 0 && rP > 0)) {
+            isValid = false; msg = "Fila vacía de montos.";
+          }
+
+          // MODIFICACIÓN: ORIGEN OBLIGATORIO SOLO SI HAY MONTO REAL
+          const hasReal = (rC > 0 || rP > 0);
+          
+          if (hasReal && select.value === "") {
+            isValid = false; 
+            msg = "Seleccione un ORIGEN (Monto Real detectado).";
+            select.classList.add('invalid-field');
+          }
+        }
+
+        const btnAdd = document.querySelector('.btn-add');
+        const btnSave = document.querySelector('.btn-save');
+        const status = document.getElementById('status');
+
+        if (isValid) {
+          btnAdd.disabled = false;
+          btnSave.disabled = false;
+          if (status.className === "error") status.innerText = "";
+        } else {
+          btnAdd.disabled = true;
+          btnSave.disabled = true; 
+          status.innerText = msg;
+          status.className = "error";
+        }
+        return isValid;
+      }
+
+      function attemptAddRow() {
+        if (validarTabla()) {
+          addRow();
+        }
+      }
+
+      function saveData() {
+        if (!validarTabla()) {
+            alert("Corrija los campos marcados en rojo antes de guardar.");
+            return;
+        }
+
+        const rows = document.querySelectorAll('#tableBody tr');
+        const dataToSave = [];
+        
+        rows.forEach(tr => {
+          const inputs = tr.querySelectorAll('input');
+          const select = tr.querySelector('select');
+          
+          if (inputs.length > 0) {
+            const rowData = [
+              inputs[0].value, inputs[1].value, 
+              inputs[2].value, inputs[3].value, inputs[4].value,
+              inputs[5].value, inputs[6].value, inputs[7].value,
+              select.value, 
+              inputs[8].value 
+            ];
+            
+            if (rowData[0].trim() !== "") {
+              dataToSave.push(rowData);
+            }
+          }
+        });
+
+        const status = document.getElementById('status');
+        const btn = document.querySelector('.btn-save');
+        
+        status.innerText = "Guardando...";
+        status.className = "";
+        btn.disabled = true; 
+        
+        google.script.run
+          .withSuccessHandler(function(response) {
+            btn.disabled = false;
+            if (response.success) {
+              status.innerText = response.message;
+              status.className = "success";
+              setTimeout(() => status.innerText = "", 4000);
+            } else {
+              status.innerText = response.message;
+              status.className = "error";
+            }
+          })
+          .withFailureHandler(function(err) {
+            btn.disabled = false;
+            status.innerText = "Error: " + err;
+            status.className = "error";
+          })
+          .saveDataToSheet(dataToSave, appMode);
+      }
+    </script>
+  </body>
+</html>

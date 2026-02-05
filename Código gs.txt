@@ -1,0 +1,276 @@
+  /**
+   * ------------------------------------------------------------------
+   * APERTURA DE DIÁLOGOS Y CONFIGURACIÓN
+   * ------------------------------------------------------------------
+   */
+
+  function abrirDialogoD28() {
+    abrirFormularioMaestro("COMPRAS_VIEW", "PEDIDO MATERIALES - COMPRAS (GENERAL)");
+  }
+
+  function abrirDialogoD29() {
+    abrirFormularioMaestro("ALMACEN_VIEW", "PEDIDO MATERIALES - ALMACÉN");
+  }
+
+  function abrirFormularioMaestro(mode, title) {
+    const limits = findSectionLimits();
+    if (limits.start === -1) {
+      SpreadsheetApp.getUi().alert('Error: No se encontró el encabezado único "PEDIDO DE MATERIALES".');
+      return;
+    }
+    const data = getDataForTemplate(limits, mode);
+    const template = HtmlService.createTemplateFromFile('Formulario');
+    template.initialData = JSON.stringify(data);
+    template.appMode = mode; 
+    const html = template.evaluate().setWidth(1350).setHeight(650).setTitle(title);
+    SpreadsheetApp.getUi().showModelessDialog(html, title);
+  }
+
+  /**
+   * ------------------------------------------------------------------
+   * BUSCADOR DE LÍMITES ESTRICTO
+   * ------------------------------------------------------------------
+   */
+  function findSectionLimits() {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+    
+    let startRowHeader = -1;
+    const startFinder = sheet.createTextFinder("PEDIDO DE MATERIALES").matchEntireCell(false);
+    let possibleStart = startFinder.findNext();
+    
+    while (possibleStart) {
+      const r = possibleStart.getRow();
+      const rowValues = sheet.getRange(r, 1, 1, Math.max(lastCol, 20)).getValues()[0];
+      const cleanString = rowValues.map(String).join("").toUpperCase().replace("PEDIDO DE MATERIALES", "").replace(/\s/g, "");
+      if (cleanString === "") { startRowHeader = r; break; }
+      possibleStart = startFinder.findNext();
+    }
+    
+    if (startRowHeader === -1) return { start: -1, end: -1 };
+    const startRowData = startRowHeader + 4;
+    
+    let endRow = lastRow + 1; 
+    if (lastRow >= startRowData) {
+      const rowsToScan = Math.min(lastRow - startRowData + 50, 1000); 
+      const rangeValues = sheet.getRange(startRowData, 2, rowsToScan, 26).getValues();
+      for (let i = 0; i < rangeValues.length; i++) {
+        if (String(rangeValues[i][0]).trim() === "MANO DE OBRA" && rangeValues[i].slice(1).join("").trim() === "") {
+          endRow = startRowData + i;
+          break;
+        }
+      }
+    }
+    return { start: startRowData, end: endRow - 1 };
+  }
+
+  /**
+   * ------------------------------------------------------------------
+   * LECTURA DE DATOS
+   * ------------------------------------------------------------------
+   */
+  function getDataForTemplate(limits, mode) {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const startRow = limits.start;
+    const endRow = limits.end;
+    if (endRow < startRow) return [];
+    const numRows = endRow - startRow + 1;
+    const rangeValues = sheet.getRange(startRow, 2, numRows, 27).getValues();
+    const mappedData = [];
+    for (let i = 0; i < rangeValues.length; i++) {
+      const row = rangeValues[i];
+      if (!row[0] && !row[23]) continue; 
+      const origen = (row[23] || "").toString(); 
+      const fecha = row[25] ? formatDate(row[25]) : ""; 
+      if ((mode === "ALMACEN_VIEW" && origen === "ALMACÉN") || (mode !== "ALMACEN_VIEW" && origen !== "ALMACÉN")) {
+        mappedData.push([row[0], row[9], row[11], row[13], row[15], row[17], row[19], row[21], origen, fecha]);
+      }
+    }
+    return mappedData;
+  }
+
+  /**
+   * ------------------------------------------------------------------
+   * GUARDADO CON LÓGICA DE RESUMEN INTEGRADA
+   * ------------------------------------------------------------------
+   */
+  function saveDataToSheet(dataFromForm, mode) {
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(30000);
+
+      const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+      const limits = findSectionLimits();
+      if (limits.start === -1) throw new Error("No se encontró la tabla.");
+
+      const startRow = limits.start;
+      const endOfSection = limits.end;
+
+      let currentRows = [];
+      let oldRowCount = 0;
+      if (endOfSection >= startRow) {
+        currentRows = sheet.getRange(startRow, 2, endOfSection - startRow + 1, 27).getValues();
+        for (let i = 0; i < currentRows.length; i++) {
+          if (currentRows[i][0].toString().trim() !== "" || currentRows[i][23].toString().trim() !== "") {
+            oldRowCount++;
+          } else { break; }
+        }
+      }
+
+      const preservedRows = currentRows.filter(row => {
+        const origen = (row[23] || "").toString();
+        return (mode === "ALMACEN_VIEW") ? (origen !== "ALMACÉN" && (row[0] !== "" || row[23] !== "")) : (origen === "ALMACÉN");
+      });
+
+      const newRowsFormatted = dataFromForm.map(r => {
+        let fullRow = new Array(27).fill("");
+        fullRow[0] = r[0]; // Desc
+        fullRow[9] = r[1]; // Und
+        fullRow[11] = r[2] === "" ? "" : Number(r[2]);
+        fullRow[13] = r[3] === "" ? "" : Number(r[3]);
+        fullRow[15] = r[4] === "" ? "" : Number(r[4]);
+        fullRow[17] = r[5] === "" ? "" : Number(r[5]);
+        fullRow[19] = r[6] === "" ? "" : Number(r[6]);
+        fullRow[21] = r[7] === "" ? "" : Number(r[7]); // Total Real
+        fullRow[23] = r[8]; // Origen
+        fullRow[25] = r[9]; // Fecha
+        return fullRow;
+      });
+
+      // Combinamos las filas preservadas (que no se ven en el form actual) con las nuevas
+      const finalData = [...preservedRows, ...newRowsFormatted];
+      const newRowCount = finalData.length;
+
+      if (newRowCount > oldRowCount) {
+        const rowsToAdd = newRowCount - oldRowCount;
+        if (oldRowCount > 0) sheet.insertRowsAfter(startRow + oldRowCount - 1, rowsToAdd);
+        else sheet.insertRows(startRow, rowsToAdd);
+      } else if (newRowCount < oldRowCount) {
+        sheet.deleteRows(startRow + newRowCount, oldRowCount - newRowCount);
+      }
+
+      if (newRowCount > 0) {
+        const rangeToFormat = sheet.getRange(startRow, 2, newRowCount, 27);
+        const existingMerges = rangeToFormat.getMergedRanges();
+        existingMerges.forEach(m => m.breakApart());
+        rangeToFormat.clearFormat();
+
+        rangeToFormat.setFontFamily("Times New Roman").setFontSize(15);
+
+        for (let i = 0; i < newRowCount; i++) {
+          const r = startRow + i;
+          const m = (c, w) => sheet.getRange(r, c, 1, w).merge();
+          m(2, 9); m(11, 2); m(13, 2); m(15, 2); m(17, 2); m(19, 2); m(21, 2); m(23, 2); m(25, 2); m(27, 2);
+        }
+
+        rangeToFormat.setValues(finalData);
+        rangeToFormat.setBorder(true, true, true, true, true, true, null, SpreadsheetApp.BorderStyle.SOLID);
+        rangeToFormat.setHorizontalAlignment("center").setVerticalAlignment("middle");
+        sheet.getRange(startRow, 13, newRowCount, 6).setBackground("#fffbf1"); 
+        sheet.getRange(startRow, 19, newRowCount, 6).setBackground("#c5ffff"); 
+      }
+
+      // --- LOGICA TOTALES REALES (Mismo de antes) ---
+      actualizarResumenTotalesLocal(sheet, finalData);
+
+      // --- NUEVA LÓGICA: ACTUALIZAR TOTAL PLANIFICADO EN I14 ---
+      actualizarTotalPlanificadoI14(sheet, finalData);
+
+      return { success: true, message: "Datos y totales actualizados correctamente." };
+
+    } catch (e) {
+      return { success: false, message: "Error: " + e.message };
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  /**
+   * Actualiza la celda I14 con los marcadores N() para Planificado Compras y Planificado Almacén
+   */
+  function actualizarTotalPlanificadoI14(sheet, fullTableData) {
+    let totalPlanCompras = 0;
+    let totalPlanAlmacen = 0;
+
+    // Calculamos los totales usando la data completa (finalData)
+    fullTableData.forEach(row => {
+      // Index 15 corresponde a "Total Planificado"
+      const montoPlan = parseFloat(row[15]) || 0; 
+      // Index 23 corresponde a "Origen"
+      const origen = (row[23] || "").toString().trim().toUpperCase(); 
+
+      if (origen === "ALMACÉN") {
+        totalPlanAlmacen += montoPlan;
+      } else if (row[0] || origen) {
+        // Todo lo que no sea ALMACÉN se suma a COMPRAS (siempre que la fila no esté vacía)
+        totalPlanCompras += montoPlan;
+      }
+    });
+
+    const celdaI14 = sheet.getRange("I14");
+    let formulaActual = celdaI14.getFormula();
+
+    // Si no hay fórmula (es un valor estático), lo convertimos a fórmula
+    if (!formulaActual) {
+      const val = celdaI14.getValue();
+      formulaActual = "=" + (typeof val === 'number' ? val : 0);
+    }
+
+    // Función auxiliar para insertar/actualizar el marcador
+    const actualizarMarcador = (form, marcador, valor) => {
+      // Busca: + N("MARCADOR") + numero (con decimales opcionales)
+      // Se usa regex con flags globales para asegurar reemplazo
+      const regex = new RegExp(`\\+ N\\("${marcador}"\\) \\+ \\d+(\\.\\d+)?`, "g");
+      const nuevoTexto = `+ N("${marcador}") + ${valor.toFixed(2)}`;
+
+      if (regex.test(form)) {
+        return form.replace(regex, nuevoTexto);
+      } else {
+        return form + " " + nuevoTexto;
+      }
+    };
+
+    // Actualizamos ambos marcadores con los totales recalculados
+    formulaActual = actualizarMarcador(formulaActual, "PLAN_COMPRAS", totalPlanCompras);
+    formulaActual = actualizarMarcador(formulaActual, "PLAN_ALMACEN", totalPlanAlmacen);
+
+    celdaI14.setFormula(formulaActual);
+  }
+
+  function actualizarResumenTotalesLocal(sheet, fullTableData) {
+    let totalAlmacen = 0;
+    let totalCompras = 0;
+
+    fullTableData.forEach(row => {
+      const montoReal = parseFloat(row[21]) || 0; // Columna W-X (Real)
+      const origen = (row[23] || "").toString().trim().toUpperCase(); // Columna Y-Z
+      
+      if (origen === "ALMACÉN") {
+        totalAlmacen += montoReal;
+      } else if (origen !== "") {
+        totalCompras += montoReal;
+      }
+    });
+
+    const lastRow = sheet.getLastRow();
+    const valuesD = sheet.getRange(1, 4, lastRow, 1).getValues();
+
+    for (let i = 0; i < valuesD.length; i++) {
+      const texto = valuesD[i][0].toString().trim().toUpperCase();
+      const fila = i + 1;
+
+      if (texto === "COMPRAS") {
+        sheet.getRange(fila, 13).setValue(totalCompras); // Columna M
+      } else if (texto === "ALMACÉN") {
+        sheet.getRange(fila, 13).setValue(totalAlmacen); // Columna M
+      }
+    }
+  }
+
+  function formatDate(dateObj) {
+    if (!dateObj || typeof dateObj !== 'object') return dateObj;
+    try {
+      return Utilities.formatDate(dateObj, SpreadsheetApp.getActive().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+    } catch(e) { return ""; }
+  }

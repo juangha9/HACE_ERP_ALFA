@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Inventario de Materiales y Ajustes</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#463acb",
+                        "background-light": "#f8fafc",
+                        "background-dark": "#0f172a",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "2xl": "2rem",
+                        "3xl": "2.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        body { font-family: 'Inter', sans-serif; }
+        .rounded-custom { border-radius: 2.5rem; }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen">
+<div class="flex flex-col min-h-screen">
+<header class="flex items-center justify-between whitespace-nowrap border-b border-solid border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-10 py-3 sticky top-0 z-40">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4 text-primary">
+<div class="size-8 flex items-center justify-center bg-primary rounded text-white">
+<span class="material-symbols-outlined">factory</span>
+</div>
+<h2 class="text-slate-900 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em]">ERP Industrial Soles</h2>
+</div>
+<label class="flex flex-col min-w-40 !h-10 max-w-64">
+<div class="flex w-full flex-1 items-stretch rounded-3xl h-full">
+<div class="text-slate-400 flex border-none bg-slate-100 dark:bg-slate-800 items-center justify-center pl-4 rounded-l-3xl border-r-0">
+<span class="material-symbols-outlined">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-r-3xl text-slate-900 dark:text-white focus:outline-0 focus:ring-0 border-none bg-slate-100 dark:bg-slate-800 placeholder:text-slate-400 px-4 text-sm font-normal" placeholder="Buscar Materiales..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex flex-1 justify-end gap-6 items-center">
+<nav class="flex items-center gap-6">
+<a class="text-slate-600 dark:text-slate-400 text-sm font-medium hover:text-primary" href="#">Panel Principal</a>
+<a class="text-primary text-sm font-bold border-b-2 border-primary py-1" href="#">Inventario</a>
+<a class="text-slate-600 dark:text-slate-400 text-sm font-medium hover:text-primary" href="#">Producción</a>
+<a class="text-slate-600 dark:text-slate-400 text-sm font-medium hover:text-primary" href="#">Ventas</a>
+</nav>
+<div class="flex gap-2">
+<button class="flex items-center justify-center rounded-full h-10 w-10 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="flex items-center justify-center rounded-full h-10 w-10 bg-primary text-white">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border border-slate-200" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBw2C5Wji1UFxd1WzpwgEGzoYlnZGt712F0fQwX_N6soN8yn6D5HBlTmATDGW9bAPrUjD_R0Mrs9BQtnuHK7asg6xp1wyQZkHPIscweu17oi_fVRVMIR_hCcNVW0I6ljrZLK6n_mfI21x8PqcojoZf0GnaHr-EI274Avvwrpr-0aFF8u9rZWW-2s0mjnGd09wezENcNotk-_sa0EAgcDRsufkJY0Nhl0-Do-rgrOGi-Nz2IApxUZnWF-1STtzKcoAgyzn62GcXWuSc");'></div>
+</div>
+</header>
+<div class="flex flex-1">
+<aside class="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 hidden lg:flex flex-col justify-between">
+<div class="flex flex-col gap-6">
+<div class="flex flex-col">
+<h1 class="text-slate-900 dark:text-white text-base font-bold">Fábrica Soles</h1>
+<p class="text-slate-500 text-xs font-normal">Sede Activa: Lima Centro</p>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-3 px-3 py-2 rounded-3xl bg-primary/10 text-primary">
+<span class="material-symbols-outlined">inventory_2</span>
+<p class="text-sm font-bold">Inventario</p>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-3xl transition-all">
+<span class="material-symbols-outlined">construction</span>
+<p class="text-sm font-medium">Perfiles Metálicos</p>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-3xl transition-all">
+<span class="material-symbols-outlined">table_chart</span>
+<p class="text-sm font-medium">Melamina</p>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-3xl transition-all">
+<span class="material-symbols-outlined">line_weight</span>
+<p class="text-sm font-medium">Tapacantos</p>
+</div>
+<div class="flex items-center gap-3 px-3 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-3xl transition-all">
+<span class="material-symbols-outlined">groups</span>
+<p class="text-sm font-medium">Proveedores</p>
+</div>
+</div>
+</div>
+<div class="bg-primary/5 p-4 rounded-3xl">
+<p class="text-primary text-xs font-bold uppercase tracking-wider mb-2">Moneda</p>
+<p class="text-slate-900 dark:text-white text-lg font-black">SOL (S/)</p>
+</div>
+</aside>
+<main class="flex-1 overflow-y-auto bg-slate-50 dark:bg-background-dark p-8 relative">
+<div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+<div class="flex flex-col gap-1">
+<p class="text-slate-900 dark:text-white text-3xl font-black leading-tight tracking-tight">Gestión de Inventario</p>
+<p class="text-slate-500 dark:text-slate-400 text-sm">Niveles de stock en tiempo real para unidades de Melamina, Metal y Tapacantos.</p>
+</div>
+<div class="flex gap-2">
+<button class="bg-primary text-white px-6 py-2.5 rounded-3xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
+<span class="material-symbols-outlined">add</span> Nuevo Ingreso
+                    </button>
+</div>
+</div>
+<div class="flex flex-wrap gap-4 mb-8">
+<div class="flex min-w-[200px] flex-1 flex-col gap-2 rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Valor Total del Stock</p>
+<p class="text-slate-900 dark:text-white tracking-tight text-2xl font-black">S/ 450,200.00</p>
+<p class="text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> +5.2% vs mes anterior
+                    </p>
+</div>
+<div class="flex min-w-[200px] flex-1 flex-col gap-2 rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm border-l-4 border-l-rose-500">
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Artículos Críticos</p>
+<p class="text-rose-600 tracking-tight text-2xl font-black">12</p>
+<p class="text-slate-500 dark:text-slate-400 text-xs font-medium italic">Requiere reposición inmediata</p>
+</div>
+<div class="flex min-w-[200px] flex-1 flex-col gap-2 rounded-3xl p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
+<p class="text-slate-500 dark:text-slate-400 text-sm font-medium">Proveedores Activos</p>
+<p class="text-slate-900 dark:text-white tracking-tight text-2xl font-black">45</p>
+<p class="text-slate-500 dark:text-slate-400 text-xs font-medium">3 contratos pendientes</p>
+</div>
+</div>
+<div class="flex gap-3 mb-6 flex-wrap items-center">
+<span class="text-slate-500 text-xs font-bold uppercase mr-2">Filtros:</span>
+<button class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary text-white px-5 shadow-sm">
+<p class="text-xs font-bold">Todos los Materiales</p>
+</button>
+<button class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-5 hover:bg-slate-50">
+<p class="text-slate-700 dark:text-slate-300 text-xs font-medium">Tableros Melamina</p>
+<span class="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+</button>
+<button class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-5 hover:bg-slate-50">
+<p class="text-slate-700 dark:text-slate-300 text-xs font-medium">Perfiles de Acero</p>
+<span class="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+</button>
+<button class="flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-5 hover:bg-slate-50">
+<p class="text-slate-700 dark:text-slate-300 text-xs font-medium">Tapacantos PVC</p>
+<span class="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+</button>
+<div class="ml-auto flex items-center gap-2">
+<span class="text-slate-400 text-xs font-medium">Ordenar por:</span>
+<select class="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer">
+<option>Nivel de Stock (Mayor a Menor)</option>
+<option>Costo (Mayor a Menor)</option>
+</select>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm mb-12">
+<table class="w-full text-left border-collapse">
+<thead class="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+<tr>
+<th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Descripción del Material</th>
+<th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Categoría</th>
+<th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Nivel Stock</th>
+<th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Costo Unitario (S/)</th>
+<th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Proveedor</th>
+<th class="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Estado</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-bold text-slate-900 dark:text-white">Melamina Roble 18mm</span>
+<span class="text-[10px] text-slate-400">SKU: MEL-RB-18-001</span>
+</div>
+</td>
+<td class="px-6 py-4"><span class="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 font-bold px-3">Melamina</span></td>
+<td class="px-6 py-4 text-right font-mono text-sm text-slate-700 dark:text-slate-300">245 Unid.</td>
+<td class="px-6 py-4 text-right font-bold text-sm text-slate-900 dark:text-white">S/ 145.00</td>
+<td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">Tableros Peruanos S.A.</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-emerald-600 font-bold text-xs uppercase">
+<div class="size-2 rounded-full bg-emerald-500"></div> Óptimo
+                                </div>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-bold text-slate-900 dark:text-white">Perfil Acero Galv. 40x40</span>
+<span class="text-[10px] text-slate-400">SKU: STL-GA-40-002</span>
+</div>
+</td>
+<td class="px-6 py-4"><span class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-bold px-3">Metal</span></td>
+<td class="px-6 py-4 text-right font-mono text-sm text-slate-700 dark:text-slate-300">12 Unid.</td>
+<td class="px-6 py-4 text-right font-bold text-sm text-slate-900 dark:text-white">S/ 68.50</td>
+<td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">Siderperú Corp.</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-rose-600 font-bold text-xs uppercase">
+<div class="size-2 rounded-full bg-rose-500 animate-pulse"></div> Crítico
+                                </div>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-bold text-slate-900 dark:text-white">Tapacanto PVC Blanco 22x0.45</span>
+<span class="text-[10px] text-slate-400">SKU: EDG-WH-22-005</span>
+</div>
+</td>
+<td class="px-6 py-4"><span class="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 font-bold px-3">Tapacanto</span></td>
+<td class="px-6 py-4 text-right font-mono text-sm text-slate-700 dark:text-slate-300">1,200 Metros</td>
+<td class="px-6 py-4 text-right font-bold text-sm text-slate-900 dark:text-white">S/ 2.40</td>
+<td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">Importaciones Leo</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-emerald-600 font-bold text-xs uppercase">
+<div class="size-2 rounded-full bg-emerald-500"></div> Óptimo
+                                </div>
+</td>
+</tr>
+<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+<td class="px-6 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-bold text-slate-900 dark:text-white">Melamina Gris Humo 18mm</span>
+<span class="text-[10px] text-slate-400">SKU: MEL-GR-18-009</span>
+</div>
+</td>
+<td class="px-6 py-4"><span class="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 font-bold px-3">Melamina</span></td>
+<td class="px-6 py-4 text-right font-mono text-sm text-slate-700 dark:text-slate-300">45 Unid.</td>
+<td class="px-6 py-4 text-right font-bold text-sm text-slate-900 dark:text-white">S/ 152.00</td>
+<td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">Tableros Peruanos S.A.</td>
+<td class="px-6 py-4">
+<div class="flex items-center gap-1.5 text-amber-600 font-bold text-xs uppercase">
+<div class="size-2 rounded-full bg-amber-500"></div> Reordenar
+                                </div>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="px-6 py-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
+<p class="text-xs text-slate-500 font-medium">Mostrando 4 de 1,240 materiales</p>
+<div class="flex gap-2">
+<button class="px-4 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-3xl font-bold hover:bg-white transition-colors">Anterior</button>
+<button class="px-4 py-1.5 text-xs border border-slate-300 dark:border-slate-700 rounded-3xl font-bold bg-white dark:bg-slate-800 hover:bg-slate-50 transition-colors">Siguiente</button>
+</div>
+</div>
+</div>
+<div class="absolute top-4 right-10 w-80 bg-white dark:bg-slate-900 rounded-3xl shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] border border-slate-200 dark:border-slate-800 p-8 z-50">
+<div class="flex items-center justify-between mb-6">
+<h3 class="font-black text-slate-900 dark:text-white text-lg">Ajustes Rápidos</h3>
+<button class="text-slate-400 hover:text-slate-600">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="flex flex-col gap-5">
+<div class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-slate-500">dark_mode</span>
+<span class="text-sm font-bold text-slate-700 dark:text-slate-300">Modo Oscuro</span>
+</div>
+<button class="w-10 h-5 bg-primary rounded-full relative">
+<div class="absolute right-0.5 top-0.5 size-4 bg-white rounded-full"></div>
+</button>
+</div>
+<div class="flex flex-col gap-3">
+<p class="text-[10px] font-black uppercase text-slate-400 tracking-widest px-2">Perfil de Usuario</p>
+<button class="flex items-center gap-3 px-2 py-1 hover:text-primary transition-colors text-slate-700 dark:text-slate-300 group text-sm font-medium">
+<span class="material-symbols-outlined text-slate-400 group-hover:text-primary">person</span>
+                            Editar Perfil
+                        </button>
+<button class="flex items-center gap-3 px-2 py-1 hover:text-primary transition-colors text-slate-700 dark:text-slate-300 group text-sm font-medium">
+<span class="material-symbols-outlined text-slate-400 group-hover:text-primary">download</span>
+                            Exportar Datos
+                        </button>
+<button class="flex items-center gap-3 px-2 py-1 hover:text-rose-600 transition-colors text-slate-700 dark:text-slate-300 group text-sm font-medium">
+<span class="material-symbols-outlined text-slate-400 group-hover:text-rose-600">logout</span>
+                            Cerrar Sesión
+                        </button>
+</div>
+<div class="pt-4 border-t border-slate-100 dark:border-slate-800">
+<div class="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl">
+<p class="text-xs font-bold text-indigo-700 dark:text-indigo-300 mb-1">Licencia Industrial</p>
+<p class="text-[10px] text-indigo-600/80 dark:text-indigo-400/80">Plan Premium Enterprise expira en 45 días.</p>
+<button class="mt-3 w-full py-2 bg-indigo-700 text-white rounded-full text-xs font-bold shadow-lg shadow-indigo-200 dark:shadow-none">Renovar Ahora</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+</div>
+
+</body></html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Vista de Planilla Quincenal - ERP Fábrica</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#2a19e6",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#121121",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Fixed column shadow */
+        .sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-[#0f0e1b] dark:text-white min-h-screen">
+<!-- TopNavBar -->
+<header class="border-b border-solid border-[#e8e7f3] dark:border-[#2a2845] bg-white dark:bg-[#1a1931] px-10 py-3 sticky top-0 z-50">
+<div class="max-w-[1440px] mx-auto flex items-center justify-between whitespace-nowrap">
+<div class="flex items-center gap-8">
+<div class="flex items-center gap-4 text-primary">
+<div class="size-8">
+<svg fill="none" viewbox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_6_543)">
+<path d="M42.1739 20.1739L27.8261 5.82609C29.1366 7.13663 28.3989 10.1876 26.2002 13.7654C24.8538 15.9564 22.9595 18.3449 20.6522 20.6522C18.3449 22.9595 15.9564 24.8538 13.7654 26.2002C10.1876 28.3989 7.13663 29.1366 5.82609 27.8261L20.1739 42.1739C21.4845 43.4845 24.5355 42.7467 28.1133 40.548C30.3042 39.2016 32.6927 37.3073 35 35C37.3073 32.6927 39.2016 30.3042 40.548 28.1133C42.7467 24.5355 43.4845 21.4845 42.1739 20.1739Z" fill="currentColor"></path>
+</g>
+</svg>
+</div>
+<h2 class="text-[#0f0e1b] dark:text-white text-lg font-bold leading-tight tracking-[-0.015em]">ERP Fábrica</h2>
+</div>
+<label class="flex flex-col min-w-40 !h-10 max-w-64">
+<div class="flex w-full flex-1 items-stretch rounded-xl h-full">
+<div class="text-[#544e97] flex border-none bg-[#e8e7f3] dark:bg-[#2a2845] items-center justify-center pl-4 rounded-l-xl">
+<span class="material-symbols-outlined text-xl">search</span>
+</div>
+<input class="form-input flex w-full min-w-0 flex-1 border-none bg-[#e8e7f3] dark:bg-[#2a2845] text-[#0f0e1b] dark:text-white focus:ring-0 h-full placeholder:text-[#544e97] px-4 rounded-r-xl pl-2 text-base font-normal" placeholder="Buscar empleado..." value=""/>
+</div>
+</label>
+</div>
+<div class="flex flex-1 justify-end gap-8 items-center">
+<nav class="flex items-center gap-9">
+<a class="text-[#544e97] dark:text-gray-300 text-sm font-medium hover:text-primary transition-colors" href="#">Dashboard</a>
+<a class="text-[#544e97] dark:text-gray-300 text-sm font-medium hover:text-primary transition-colors" href="#">Personal</a>
+<a class="text-primary text-sm font-bold border-b-2 border-primary pb-1" href="#">Planillas</a>
+<a class="text-[#544e97] dark:text-gray-300 text-sm font-medium hover:text-primary transition-colors" href="#">Almacén</a>
+</nav>
+<button class="flex min-w-[120px] cursor-pointer items-center justify-center rounded-full h-10 px-5 bg-primary text-white text-sm font-bold tracking-[0.015em] hover:opacity-90 transition-opacity">
+<span>Nuevo Registro</span>
+</button>
+<div class="bg-center bg-no-repeat aspect-square bg-cover rounded-full size-10 border-2 border-primary/20" data-alt="Avatar de usuario administrador" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDk8EsoJAsQ8aZthC1xZkfNCUg_6_1ToPJZaKbXMbtV8_hh1pv1BMqD7cUMvzA3Vf7oTivzdV6vDaYLEuzUK_aEm6LwSEMywIXDBlrsOzVChYSdx6a6aC3tX-waEo-z7weK_j3OM5ngIRKwPVpk1sNhgfi3Ncdzn4oYnXdLeYSWbF1k9jBTt6LUCoaZLf9ZHZKg_oFWuLoN52j7K1Msj9VP_RqhDoJMaEQ-YalRMNoOVaUEjmxaik4e8vNDuU5WsMhX6D0m_PaB40Q");'></div>
+</div>
+</div>
+</header>
+<main class="px-40 py-8 max-w-[1440px] mx-auto">
+<!-- Breadcrumbs -->
+<div class="flex flex-wrap gap-2 mb-2">
+<a class="text-[#544e97] dark:text-gray-400 text-sm font-medium hover:underline" href="#">Gestión de Nómina</a>
+<span class="text-[#544e97] dark:text-gray-400 text-sm font-medium">/</span>
+<span class="text-[#0f0e1b] dark:text-white text-sm font-semibold">Planilla Quincenal</span>
+</div>
+<!-- Page Heading -->
+<div class="flex flex-wrap justify-between items-end gap-3 mb-6">
+<div class="flex min-w-72 flex-col gap-1">
+<p class="text-[#0f0e1b] dark:text-white text-4xl font-black leading-tight tracking-[-0.033em]">Planilla Quincenal</p>
+<p class="text-[#544e97] dark:text-gray-400 text-base font-normal">Desglose detallado de pagos, adelantos y bonos de producción.</p>
+</div>
+<div class="flex gap-3">
+<button class="flex min-w-[84px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-white dark:bg-[#1a1931] border border-[#e8e7f3] dark:border-[#2a2845] text-[#0f0e1b] dark:text-white text-sm font-bold tracking-[0.015em] hover:bg-gray-50 dark:hover:bg-[#23223f] transition-colors">
+<span class="material-symbols-outlined mr-2 text-xl">upload_file</span>
+<span class="truncate">Importar</span>
+</button>
+<button class="flex min-w-[84px] cursor-pointer items-center justify-center rounded-full h-10 px-4 bg-[#e8e7f3] dark:bg-[#2a2845] text-[#0f0e1b] dark:text-white text-sm font-bold tracking-[0.015em] hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined mr-2 text-xl">download</span>
+<span class="truncate">Exportar Excel</span>
+</button>
+</div>
+</div>
+<!-- Filters & Segmented Buttons -->
+<div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 bg-white dark:bg-[#1a1931] p-4 rounded-xl shadow-sm">
+<div class="flex items-center gap-3">
+<div class="flex h-10 w-64 items-center justify-center rounded-full bg-[#e8e7f3] dark:bg-[#2a2845] p-1">
+<label class="flex cursor-pointer h-full grow items-center justify-center overflow-hidden rounded-full px-2 has-[:checked]:bg-white dark:has-[:checked]:bg-background-dark has-[:checked]:shadow-sm has-[:checked]:text-[#0f0e1b] dark:has-[:checked]:text-white text-[#544e97] text-xs font-bold leading-normal uppercase">
+<span>Mensual</span>
+<input class="invisible w-0" name="period_type" type="radio" value="MENSUAL"/>
+</label>
+<label class="flex cursor-pointer h-full grow items-center justify-center overflow-hidden rounded-full px-2 bg-white dark:bg-background-dark shadow-sm text-primary text-xs font-black leading-normal uppercase">
+<span>Quincenal</span>
+<input checked="" class="invisible w-0" name="period_type" type="radio" value="QUINCENAL"/>
+</label>
+</div>
+</div>
+<div class="flex gap-3 flex-wrap">
+<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#e8e7f3] dark:bg-[#2a2845] px-4 border border-transparent hover:border-primary/30 transition-all">
+<span class="text-[#0f0e1b] dark:text-white text-sm font-medium">1ra Quincena</span>
+<span class="material-symbols-outlined text-lg">expand_more</span>
+</button>
+<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#e8e7f3] dark:bg-[#2a2845] px-4 border border-transparent hover:border-primary/30 transition-all">
+<span class="text-[#0f0e1b] dark:text-white text-sm font-medium">Soles (S/)</span>
+<span class="material-symbols-outlined text-lg">expand_more</span>
+</button>
+<button class="flex h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-[#e8e7f3] dark:bg-[#2a2845] px-4 border border-transparent hover:border-primary/30 transition-all">
+<span class="text-[#0f0e1b] dark:text-white text-sm font-medium">Agosto 2023</span>
+<span class="material-symbols-outlined text-lg">calendar_today</span>
+</button>
+</div>
+</div>
+<!-- High Density Table -->
+<div class="bg-white dark:bg-[#1a1931] rounded-xl overflow-hidden shadow-xl border border-[#e8e7f3] dark:border-[#2a2845]">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse min-w-[1000px]">
+<thead>
+<tr class="bg-gray-50 dark:bg-[#23223f] text-[#544e97] dark:text-gray-300 text-xs font-bold uppercase tracking-wider">
+<th class="sticky-col bg-gray-50 dark:bg-[#23223f] px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845] min-w-[240px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Empleado</th>
+<th class="px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845]">Sueldo Base</th>
+<th class="px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845]">Asig. Fam.</th>
+<th class="px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845]">Bonos Prod.</th>
+<th class="px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845]">Horas Extra</th>
+<th class="px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845] text-red-500">Adelantos</th>
+<th class="px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845] text-red-500">Dscto. Ley</th>
+<th class="px-6 py-4 border-b border-[#e8e7f3] dark:border-[#2a2845] bg-primary/5 text-primary text-right font-black">Neto S/</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-[#e8e7f3] dark:divide-[#2a2845]">
+<!-- Row 1 -->
+<tr class="hover:bg-gray-50/50 dark:hover:bg-[#2a2845]/30 transition-colors">
+<td class="sticky-col bg-white dark:bg-[#1a1931] px-6 py-4 flex items-center gap-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+<div class="size-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">JR</div>
+<div>
+<p class="text-sm font-bold text-[#0f0e1b] dark:text-white leading-none">Juan Rodriguez</p>
+<p class="text-[10px] text-[#544e97] mt-1 uppercase">Operario Melamina</p>
+</div>
+</td>
+<td class="px-6 py-4 text-sm font-medium">1,250.00</td>
+<td class="px-6 py-4 text-sm">102.50</td>
+<td class="px-6 py-4 text-sm text-green-600 font-bold">+150.00</td>
+<td class="px-6 py-4 text-sm">45.00</td>
+<td class="px-6 py-4 text-sm text-red-500 font-medium">-200.00</td>
+<td class="px-6 py-4 text-sm text-red-500">-162.50</td>
+<td class="px-6 py-4 text-sm text-primary font-black text-right bg-primary/5">1,185.00</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-gray-50/50 dark:hover:bg-[#2a2845]/30 transition-colors">
+<td class="sticky-col bg-white dark:bg-[#1a1931] px-6 py-4 flex items-center gap-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+<div class="size-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-xs">MC</div>
+<div>
+<p class="text-sm font-bold text-[#0f0e1b] dark:text-white leading-none">Maria Castillo</p>
+<p class="text-[10px] text-[#544e97] mt-1 uppercase">Soldador Metal</p>
+</div>
+</td>
+<td class="px-6 py-4 text-sm font-medium">1,400.00</td>
+<td class="px-6 py-4 text-sm">0.00</td>
+<td class="px-6 py-4 text-sm text-green-600 font-bold">+200.00</td>
+<td class="px-6 py-4 text-sm">120.00</td>
+<td class="px-6 py-4 text-sm text-red-500 font-medium">-150.00</td>
+<td class="px-6 py-4 text-sm text-red-500">-182.00</td>
+<td class="px-6 py-4 text-sm text-primary font-black text-right bg-primary/5">1,388.00</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-gray-50/50 dark:hover:bg-[#2a2845]/30 transition-colors">
+<td class="sticky-col bg-white dark:bg-[#1a1931] px-6 py-4 flex items-center gap-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+<div class="size-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">CP</div>
+<div>
+<p class="text-sm font-bold text-[#0f0e1b] dark:text-white leading-none">Carlos Pineda</p>
+<p class="text-[10px] text-[#544e97] mt-1 uppercase">Control de Calidad</p>
+</div>
+</td>
+<td class="px-6 py-4 text-sm font-medium">1,100.00</td>
+<td class="px-6 py-4 text-sm">102.50</td>
+<td class="px-6 py-4 text-sm text-green-600 font-bold">+80.00</td>
+<td class="px-6 py-4 text-sm">0.00</td>
+<td class="px-6 py-4 text-sm text-red-500 font-medium">-50.00</td>
+<td class="px-6 py-4 text-sm text-red-500">-143.00</td>
+<td class="px-6 py-4 text-sm text-primary font-black text-right bg-primary/5">1,089.50</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-gray-50/50 dark:hover:bg-[#2a2845]/30 transition-colors">
+<td class="sticky-col bg-white dark:bg-[#1a1931] px-6 py-4 flex items-center gap-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+<div class="size-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xs">LA</div>
+<div>
+<p class="text-sm font-bold text-[#0f0e1b] dark:text-white leading-none">Lucía Alva</p>
+<p class="text-[10px] text-[#544e97] mt-1 uppercase">Diseño de Planos</p>
+</div>
+</td>
+<td class="px-6 py-4 text-sm font-medium">1,800.00</td>
+<td class="px-6 py-4 text-sm">102.50</td>
+<td class="px-6 py-4 text-sm text-green-600 font-bold">+300.00</td>
+<td class="px-6 py-4 text-sm">50.00</td>
+<td class="px-6 py-4 text-sm text-red-500 font-medium">-400.00</td>
+<td class="px-6 py-4 text-sm text-red-500">-234.00</td>
+<td class="px-6 py-4 text-sm text-primary font-black text-right bg-primary/5">1,618.50</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-gray-50/50 dark:hover:bg-[#2a2845]/30 transition-colors">
+<td class="sticky-col bg-white dark:bg-[#1a1931] px-6 py-4 flex items-center gap-3 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+<div class="size-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-xs">RT</div>
+<div>
+<p class="text-sm font-bold text-[#0f0e1b] dark:text-white leading-none">Ricardo Torres</p>
+<p class="text-[10px] text-[#544e97] mt-1 uppercase">Pintura Electroestática</p>
+</div>
+</td>
+<td class="px-6 py-4 text-sm font-medium">1,350.00</td>
+<td class="px-6 py-4 text-sm">0.00</td>
+<td class="px-6 py-4 text-sm text-green-600 font-bold">+180.00</td>
+<td class="px-6 py-4 text-sm">85.00</td>
+<td class="px-6 py-4 text-sm text-red-500 font-medium">-100.00</td>
+<td class="px-6 py-4 text-sm text-red-500">-175.50</td>
+<td class="px-6 py-4 text-sm text-primary font-black text-right bg-primary/5">1,339.50</td>
+</tr>
+</tbody>
+<tfoot class="bg-primary/90 text-white font-bold">
+<tr>
+<td class="sticky-col bg-primary px-6 py-4 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)]">TOTAL QUINCENA</td>
+<td class="px-6 py-4">6,900.00</td>
+<td class="px-6 py-4">307.50</td>
+<td class="px-6 py-4">910.00</td>
+<td class="px-6 py-4">300.00</td>
+<td class="px-6 py-4">-900.00</td>
+<td class="px-6 py-4">-897.00</td>
+<td class="px-6 py-4 text-right text-lg">S/ 6,620.50</td>
+</tr>
+</tfoot>
+</table>
+</div>
+</div>
+<!-- Pagination / Footer Info -->
+<div class="mt-6 flex justify-between items-center text-sm text-[#544e97] dark:text-gray-400">
+<p>Mostrando 5 de 48 empleados activos en planilla</p>
+<div class="flex gap-2">
+<button class="size-10 flex items-center justify-center rounded-full border border-[#e8e7f3] dark:border-[#2a2845] hover:bg-white dark:hover:bg-[#1a1931]">
+<span class="material-symbols-outlined">chevron_left</span>
+</button>
+<button class="size-10 flex items-center justify-center rounded-full bg-primary text-white font-bold">1</button>
+<button class="size-10 flex items-center justify-center rounded-full border border-[#e8e7f3] dark:border-[#2a2845] hover:bg-white dark:hover:bg-[#1a1931]">2</button>
+<button class="size-10 flex items-center justify-center rounded-full border border-[#e8e7f3] dark:border-[#2a2845] hover:bg-white dark:hover:bg-[#1a1931]">3</button>
+<button class="size-10 flex items-center justify-center rounded-full border border-[#e8e7f3] dark:border-[#2a2845] hover:bg-white dark:hover:bg-[#1a1931]">
+<span class="material-symbols-outlined">chevron_right</span>
+</button>
+</div>
+</div>
+</main>
+<!-- Floating Action Button for Mobile Context (Decorative for Desktop) -->
+<div class="fixed bottom-8 right-8">
+<button class="flex items-center justify-center size-14 bg-primary text-white rounded-full shadow-2xl hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-3xl">add</span>
+</button>
+</div>
+</body></html>

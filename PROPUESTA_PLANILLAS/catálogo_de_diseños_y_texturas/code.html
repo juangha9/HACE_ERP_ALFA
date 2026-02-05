@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Catálogo Melamina 16:9 - ERP Industrial</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#4f46e5", // Indigo 600
+                        "accent": "#6366f1",  // Indigo 500
+                        "slate-50": "#f8fafc",
+                    },
+                    fontFamily: {
+                        "sans": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "xl": "1rem",
+                        "2xl": "2.5rem",
+                    },
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        @layer base {
+            body { @apply bg-slate-50 text-slate-900; }
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            @apply bg-slate-200 rounded-full;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased">
+<div class="flex flex-col min-h-screen">
+<header class="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200 px-6 py-3">
+<div class="max-w-[1920px] mx-auto flex items-center justify-between">
+<div class="flex items-center gap-10">
+<div class="flex items-center gap-2.5">
+<div class="size-9 bg-primary rounded-lg flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+<span class="material-symbols-outlined text-[20px]">factory</span>
+</div>
+<div>
+<h1 class="text-sm font-bold uppercase tracking-wider text-slate-800">ERP Industrial</h1>
+<p class="text-[10px] text-slate-500 font-medium">Soles (S/) • Melamina &amp; Metal</p>
+</div>
+</div>
+<div class="hidden xl:flex items-center bg-slate-100 rounded-full px-4 py-1.5 border border-slate-200">
+<span class="material-symbols-outlined text-slate-400 text-[20px] mr-2">search</span>
+<input class="bg-transparent border-none p-0 text-sm focus:ring-0 w-64 placeholder:text-slate-400" placeholder="Buscar por código, nombre o textura..." type="text"/>
+</div>
+</div>
+<nav class="flex items-center gap-8">
+<div class="hidden lg:flex items-center gap-1 text-[13px] font-semibold text-slate-600">
+<a class="px-3 py-2 hover:bg-slate-100 rounded-lg transition-colors" href="#">Inventario</a>
+<a class="px-3 py-2 hover:bg-slate-100 rounded-lg transition-colors" href="#">Producción</a>
+<a class="px-3 py-2 text-primary bg-indigo-50 rounded-lg" href="#">Catálogo</a>
+<a class="px-3 py-2 hover:bg-slate-100 rounded-lg transition-colors" href="#">Ventas</a>
+</div>
+<div class="flex items-center gap-3 pl-6 border-l border-slate-200">
+<button class="size-10 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors">
+<span class="material-symbols-outlined text-slate-500">notifications</span>
+</button>
+<div class="size-9 rounded-full bg-cover bg-center ring-2 ring-indigo-100" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBP-LZh90DebAIhCILp4ITAJBxZfMWzsjf9uskG_d5ChSJMwc-pA376HHMCPKf6KIh3yBclwrPvQi6MLMwTFtlKVQsC_jsqxKL6z1N8KxD-Mx5oCPIoBcWr-Q13bZFzFEox_u-uJQ-V2IVhCKExXIQfNamqaDBgbkgmyQg1u-XcyYSW0oWMZw1vYkOYwaOcl9BddvgGN3gvtxOkq7pY0-aiOP13N_tNw7PYceXpHvCVp1OJeqToUzMHX_NDCeACdFvl5WUN8KUXH6o')"></div>
+</div>
+</nav>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden">
+<aside class="w-72 bg-white border-r border-slate-200 flex flex-col">
+<div class="p-6 overflow-y-auto custom-scrollbar flex-1">
+<div class="flex items-center justify-between mb-8">
+<h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">tune</span>
+                            FILTROS AVANZADOS
+                        </h2>
+<button class="text-[11px] font-bold text-primary hover:underline">LIMPIAR</button>
+</div>
+<div class="space-y-1 mb-8">
+<p class="text-[11px] font-bold text-slate-400 mb-3 tracking-widest uppercase">Colecciones</p>
+<button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary text-white text-sm font-medium shadow-md shadow-indigo-100">
+<span class="material-symbols-outlined text-[20px]">auto_awesome_motion</span>
+                            Todos los Diseños
+                        </button>
+<button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors">
+<span class="material-symbols-outlined text-[20px]">forest</span>
+                            Maderas Naturales
+                        </button>
+<button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors">
+<span class="material-symbols-outlined text-[20px]">palette</span>
+                            Unicolores Mate
+                        </button>
+<button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-50 text-sm font-medium transition-colors">
+<span class="material-symbols-outlined text-[20px]">layers</span>
+                            Texturas Especiales
+                        </button>
+</div>
+<div class="mb-8">
+<p class="text-[11px] font-bold text-slate-400 mb-4 tracking-widest uppercase">Acabado Supericial</p>
+<div class="grid grid-cols-2 gap-2">
+<button class="px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:border-primary hover:text-primary transition-all">Texturizado</button>
+<button class="px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:border-primary hover:text-primary transition-all">Mate</button>
+<button class="px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:border-primary hover:text-primary transition-all">Soft</button>
+<button class="px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold hover:border-primary hover:text-primary transition-all">Brillo</button>
+</div>
+</div>
+<div class="mb-8">
+<p class="text-[11px] font-bold text-slate-400 mb-3 tracking-widest uppercase">Marcas Aliadas</p>
+<div class="space-y-2">
+<label class="flex items-center group cursor-pointer">
+<input checked="" class="rounded border-slate-300 text-primary focus:ring-primary" type="checkbox"/>
+<span class="ml-3 text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Soles</span>
+</label>
+<label class="flex items-center group cursor-pointer">
+<input checked="" class="rounded border-slate-300 text-primary focus:ring-primary" type="checkbox"/>
+<span class="ml-3 text-sm text-slate-600 group-hover:text-slate-900 transition-colors">Inter</span>
+</label>
+</div>
+</div>
+</div>
+<div class="p-6 border-t border-slate-200 bg-slate-50">
+<div class="bg-indigo-600 rounded-2xl p-4 text-white">
+<p class="text-xs opacity-80 mb-1">Stock Valorizado</p>
+<p class="text-lg font-bold">S/ 245,800.00</p>
+</div>
+</div>
+</aside>
+<main class="flex-1 overflow-y-auto custom-scrollbar bg-slate-50">
+<div class="p-8 max-w-[1600px] mx-auto">
+<div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+<div>
+<div class="flex items-center gap-2 text-slate-500 text-xs mb-1">
+<span>ERP</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span>Gestión de Materiales</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-primary font-medium">Catálogo de Diseños</span>
+</div>
+<h2 class="text-3xl font-extrabold text-slate-900 tracking-tight">Catálogo de Diseños y Texturas</h2>
+</div>
+<div class="flex items-center gap-4">
+<div class="bg-white border border-slate-200 rounded-xl px-4 py-2 flex items-center gap-3">
+<div class="size-2 rounded-full bg-green-500 animate-pulse"></div>
+<div class="text-left leading-tight">
+<p class="text-[10px] text-slate-400 font-bold uppercase">Tableros Totales</p>
+<p class="text-sm font-bold text-slate-800">1,420 Unidades</p>
+</div>
+</div>
+<button class="bg-primary text-white h-11 px-6 rounded-xl font-bold text-sm hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-100">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                                Nuevo Diseño
+                            </button>
+</div>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+<div class="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:shadow-indigo-100 hover:border-primary/20 transition-all duration-300">
+<div class="relative aspect-square overflow-hidden bg-slate-100">
+<img alt="Roble Americano" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCMzBs2lsYruSoObEfm9pHQ4xHVmlqIP8NR-h5k7luY8z19oq4JT5oik5H9uC6I1fdtyxaVYCnjEn7qJ6c6yCxDB1NNf292ya1CbN4LwEfVDIOI_gL_T05QTkB8OzKKdwNdDnhgTInAM2bahJrSw_51UqMmGuQn5FtGa42S3t_iElHjf8YmxBZfIQDHwNQja4qdC8m2EwTnoS4wrvMUjqV9cn8FDIfng6Fp89cVkzu_LugxLU3ZqGmi456dpAmNJy4a6iGqPf0iitY"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="absolute top-3 left-3 flex gap-2">
+<span class="bg-white/95 backdrop-blur px-2 py-1 rounded-md text-[9px] font-bold text-slate-700 uppercase tracking-tight shadow-sm">SOLES</span>
+</div>
+<div class="absolute top-3 right-3">
+<span class="bg-green-500 text-white text-[9px] font-bold px-2 py-1 rounded-md">EN STOCK</span>
+</div>
+</div>
+<div class="p-4">
+<h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">Roble Americano</h3>
+<div class="flex items-center gap-2 mb-3">
+<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium italic">Texturizado</span>
+<span class="text-[10px] text-slate-400">•</span>
+<span class="text-[10px] text-slate-500 font-medium">Cod: ML-402</span>
+</div>
+<div class="flex items-center justify-between pt-3 border-t border-slate-100">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Precio m²</span>
+<span class="text-sm font-bold text-slate-900">S/ 45.00</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Stock</span>
+<p class="text-sm font-bold text-indigo-600">45 Unid.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:shadow-indigo-100 hover:border-primary/20 transition-all duration-300">
+<div class="relative aspect-square overflow-hidden bg-slate-100">
+<img alt="Blanco Humo" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwpZ0OAFd0HR6sd9Ze1ClmP6wM8d6_7cMJKjGWyyBh5DAFGVTCHFCLlhgOvUYDQEzFL2vi2JMc42uTLekLRzYz0m_52RZP1Sz3A4IJ-HXpWcHflt0ivyUQbLwOFGYXN2yxfu5WMz8jLIw_W-PAH-ho3k_gLKTztJCzeTk6SLsnO_NoatlavHC7IcbNI6jccD-Vf9CA33qJIZVRNe6ASbyM0aZAxCfhKhq5HbA7msfSZ9WKsmi6SJFKeoJMN19mu_5HT5WNbJUVvtU"/>
+<div class="absolute top-3 left-3">
+<span class="bg-white/95 backdrop-blur px-2 py-1 rounded-md text-[9px] font-bold text-slate-700 uppercase shadow-sm tracking-tight">INTER</span>
+</div>
+<div class="absolute top-3 right-3">
+<span class="bg-green-500 text-white text-[9px] font-bold px-2 py-1 rounded-md">EN STOCK</span>
+</div>
+</div>
+<div class="p-4">
+<h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">Blanco Humo</h3>
+<div class="flex items-center gap-2 mb-3">
+<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium italic">Mate</span>
+<span class="text-[10px] text-slate-400">•</span>
+<span class="text-[10px] text-slate-500 font-medium">Cod: ML-105</span>
+</div>
+<div class="flex items-center justify-between pt-3 border-t border-slate-100">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Precio m²</span>
+<span class="text-sm font-bold text-slate-900">S/ 38.50</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Stock</span>
+<p class="text-sm font-bold text-indigo-600">120 Unid.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:shadow-indigo-100 hover:border-primary/20 transition-all duration-300">
+<div class="relative aspect-square overflow-hidden bg-slate-100">
+<img alt="Nogal Amazónico" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_m9YtDylU7W8VUvDxKz5EP-W1GEJiC2UweuRlyvhmiqJPyOsLsF-Fd1aNamL5v5pq1HDGapYuojXQGOLpvuxkXTcClR4j3MTnbBg5usqKzc7botMOBWIwrReDJSygFzg6RSBZ3LWlEVJ69x813ik3UBHSecBqXRL8kwZNEL9hqS9cdgfcREwLNUG_DdjPUge96ckIT2TGpE32Cfc_IASSAslcaRzE4-LY9Fyw9tdogWpUa73M4Lqklb9xiVVNi4iCmaSJJd5qDFU"/>
+<div class="absolute top-3 left-3">
+<span class="bg-white/95 backdrop-blur px-2 py-1 rounded-md text-[9px] font-bold text-slate-700 uppercase shadow-sm tracking-tight">SOLES</span>
+</div>
+<div class="absolute top-3 right-3">
+<span class="bg-amber-500 text-white text-[9px] font-bold px-2 py-1 rounded-md">STOCK BAJO</span>
+</div>
+</div>
+<div class="p-4">
+<h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">Nogal Amazónico</h3>
+<div class="flex items-center gap-2 mb-3">
+<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium italic">Texturizado</span>
+<span class="text-[10px] text-slate-400">•</span>
+<span class="text-[10px] text-slate-500 font-medium">Cod: ML-822</span>
+</div>
+<div class="flex items-center justify-between pt-3 border-t border-slate-100">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Precio m²</span>
+<span class="text-sm font-bold text-slate-900">S/ 52.00</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Stock</span>
+<p class="text-sm font-bold text-amber-600">15 Unid.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:shadow-indigo-100 hover:border-primary/20 transition-all duration-300">
+<div class="relative aspect-square overflow-hidden bg-slate-100">
+<img alt="Gris Ceniza" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuApl7roSIQEIdxay0JaAQX9Lcq03o5U0o5dz8d8Jyl1nPfhWN4x6-8N6c2zg7U0pIe3USEWjZtD-TlhfeZ1A3HNCaBxZ-uE7qiYm8HX2ZxFtiT77K3TXmQI-jRbT1zz-ELdv4Oz8_X4Pwxrk0bG3LdhGWdp0XzCUWwvxCxfJIOmsYplVz761a7cSZ8ggTs7jbQQoSuX-OBPDXiXoly8qGHKZguXzvvjHE1MP7yWt3rHcp4UxAmyk2VcLZDjqTsESRoMbq7kRxNnePs"/>
+<div class="absolute top-3 left-3">
+<span class="bg-white/95 backdrop-blur px-2 py-1 rounded-md text-[9px] font-bold text-slate-700 uppercase shadow-sm tracking-tight">INTER</span>
+</div>
+<div class="absolute top-3 right-3">
+<span class="bg-green-500 text-white text-[9px] font-bold px-2 py-1 rounded-md">EN STOCK</span>
+</div>
+</div>
+<div class="p-4">
+<h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">Gris Ceniza</h3>
+<div class="flex items-center gap-2 mb-3">
+<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium italic">Mate</span>
+<span class="text-[10px] text-slate-400">•</span>
+<span class="text-[10px] text-slate-500 font-medium">Cod: ML-310</span>
+</div>
+<div class="flex items-center justify-between pt-3 border-t border-slate-100">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Precio m²</span>
+<span class="text-sm font-bold text-slate-900">S/ 41.20</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Stock</span>
+<p class="text-sm font-bold text-indigo-600">88 Unid.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:shadow-indigo-100 hover:border-primary/20 transition-all duration-300">
+<div class="relative aspect-square overflow-hidden bg-slate-100">
+<img alt="Haya Natural" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBkzRAS2_TM98Rw82KGZR0tdL1aAW7LBIfHL8ahbCclYwGqpuptGp94cxDMJdoKFcJdvxbOFne1AF0GXHsctUAEk819YAad18boxTcZEcCitsgxwhrjSwgDhy_VaQPvLkDp_UkaRFmazDt9aH_nT6wWXfwg-knnC-odzTDskvMgM1r5PB3UzXawPJ0YwAH0fwR_GS7PQaAvhqbxzckYByrVGJlFRRilFjKTbhbHBneVtwsuXzWo0lHszoPxII2SLigUiLRviKPpr_g"/>
+<div class="absolute top-3 left-3">
+<span class="bg-white/95 backdrop-blur px-2 py-1 rounded-md text-[9px] font-bold text-slate-700 uppercase shadow-sm tracking-tight">SOLES</span>
+</div>
+<div class="absolute top-3 right-3">
+<span class="bg-green-500 text-white text-[9px] font-bold px-2 py-1 rounded-md">EN STOCK</span>
+</div>
+</div>
+<div class="p-4">
+<h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">Haya Natural</h3>
+<div class="flex items-center gap-2 mb-3">
+<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium italic">Texturizado</span>
+<span class="text-[10px] text-slate-400">•</span>
+<span class="text-[10px] text-slate-500 font-medium">Cod: ML-441</span>
+</div>
+<div class="flex items-center justify-between pt-3 border-t border-slate-100">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Precio m²</span>
+<span class="text-sm font-bold text-slate-900">S/ 46.50</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Stock</span>
+<p class="text-sm font-bold text-indigo-600">32 Unid.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:shadow-indigo-100 hover:border-primary/20 transition-all duration-300">
+<div class="relative aspect-square overflow-hidden bg-slate-100">
+<img alt="Negro Mate" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCcl1apogpCEciY50MrIKEG2exRv7yj0HDLzV1HCj4k_xjniR50MxJLCgaSYnWHqIzv49hwVEGAjPw-lFJ7dBrE5V5_Jtoj7lrPOcYCA_T7XiXncBiVjpAPTXtaR6due3iVKyBG9J8P_1kq2V7zlOJ2SGWJweERsk9tEPGx-4tAJsNiYAIbtH1xfGngiFBDXfOUkOPuPthE1sRgB9cMC510yajV2a6YuTWqURNnaljFKC-JjGoVtmcIIPYnEcmWMbUJBB2hNgVjVsc"/>
+<div class="absolute top-3 left-3">
+<span class="bg-white/95 backdrop-blur px-2 py-1 rounded-md text-[9px] font-bold text-slate-700 uppercase shadow-sm tracking-tight">INTER</span>
+</div>
+<div class="absolute top-3 right-3">
+<span class="bg-green-500 text-white text-[9px] font-bold px-2 py-1 rounded-md">EN STOCK</span>
+</div>
+</div>
+<div class="p-4">
+<h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">Negro Mate</h3>
+<div class="flex items-center gap-2 mb-3">
+<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium italic">Mate</span>
+<span class="text-[10px] text-slate-400">•</span>
+<span class="text-[10px] text-slate-500 font-medium">Cod: ML-100</span>
+</div>
+<div class="flex items-center justify-between pt-3 border-t border-slate-100">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Precio m²</span>
+<span class="text-sm font-bold text-slate-900">S/ 42.00</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Stock</span>
+<p class="text-sm font-bold text-indigo-600">54 Unid.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="group bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-2xl hover:shadow-indigo-100 hover:border-primary/20 transition-all duration-300">
+<div class="relative aspect-square overflow-hidden bg-slate-100">
+<img alt="Diseño" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 grayscale group-hover:grayscale-0" src="https://lh3.googleusercontent.com/aida-public/AB6AXuApl7roSIQEIdxay0JaAQX9Lcq03o5U0o5dz8d8Jyl1nPfhWN4x6-8N6c2zg7U0pIe3USEWjZtD-TlhfeZ1A3HNCaBxZ-uE7qiYm8HX2ZxFtiT77K3TXmQI-jRbT1zz-ELdv4Oz8_X4Pwxrk0bG3LdhGWdp0XzCUWwvxCxfJIOmsYplVz761a7cSZ8ggTs7jbQQoSuX-OBPDXiXoly8qGHKZguXzvvjHE1MP7yWt3rHcp4UxAmyk2VcLZDjqTsESRoMbq7kRxNnePs"/>
+<div class="absolute top-3 left-3"><span class="bg-white/95 px-2 py-1 rounded-md text-[9px] font-bold text-slate-700 uppercase shadow-sm">SOLES</span></div>
+<div class="absolute top-3 right-3"><span class="bg-slate-400 text-white text-[9px] font-bold px-2 py-1 rounded-md">AGOTADO</span></div>
+</div>
+<div class="p-4">
+<h3 class="font-bold text-slate-800 text-sm mb-1 line-clamp-1">Cemento Pulido</h3>
+<div class="flex items-center gap-2 mb-3">
+<span class="text-[10px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium italic">Texturizado</span>
+<span class="text-[10px] text-slate-400">•</span>
+<span class="text-[10px] text-slate-500 font-medium">Cod: ML-901</span>
+</div>
+<div class="flex items-center justify-between pt-3 border-t border-slate-100">
+<div class="flex flex-col">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Precio m²</span>
+<span class="text-sm font-bold text-slate-900">S/ 48.00</span>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-slate-400 font-medium uppercase">Stock</span>
+<p class="text-sm font-bold text-slate-400">0 Unid.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between mt-12 pt-6 border-t border-slate-200">
+<p class="text-xs font-semibold text-slate-500">Mostrando 1 - 20 de 145 diseños</p>
+<div class="flex items-center gap-1">
+<button class="size-9 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-white hover:shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">chevron_left</span>
+</button>
+<button class="size-9 flex items-center justify-center rounded-lg bg-primary text-white font-bold text-xs shadow-md shadow-indigo-100">1</button>
+<button class="size-9 flex items-center justify-center rounded-lg hover:bg-white hover:border-slate-300 font-bold text-xs text-slate-600 transition-all border border-transparent">2</button>
+<button class="size-9 flex items-center justify-center rounded-lg hover:bg-white hover:border-slate-300 font-bold text-xs text-slate-600 transition-all border border-transparent">3</button>
+<span class="px-2 text-slate-400">...</span>
+<button class="size-9 flex items-center justify-center rounded-lg hover:bg-white hover:border-slate-300 font-bold text-xs text-slate-600 transition-all border border-transparent">8</button>
+<button class="size-9 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-white hover:shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</div>
+<footer class="bg-white border-t border-slate-200 py-4 px-8">
+<div class="max-w-[1920px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+<div class="flex items-center gap-6">
+<p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">© 2024 ERP Melamina S.A.C.</p>
+<div class="flex gap-4">
+<a class="text-[11px] font-bold text-slate-500 hover:text-primary" href="#">SOPORTE</a>
+<a class="text-[11px] font-bold text-slate-500 hover:text-primary" href="#">DOCUMENTACIÓN</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<span class="size-2 rounded-full bg-green-500"></span>
+<span class="text-[10px] font-bold text-slate-500 uppercase">Servidor: Sede Central</span>
+</div>
+<p class="text-[10px] font-bold text-slate-400 uppercase tracking-tight">v2.4.0-build</p>
+</div>
+</div>
+</footer>
+</div>
+
+</body></html>

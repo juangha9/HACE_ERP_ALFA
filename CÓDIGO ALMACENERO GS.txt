@@ -1,0 +1,314 @@
+/**
+ * CONFIGURACIÓN
+ * Pega aquí el ID (la parte larga de la URL) de tu hoja de Google Sheets de "PROYECTOS"
+ */
+const ID_ARCHIVO_PROYECTOS = ""; // <-- ASEGÚRATE DE QUE ESTE ID ESTÉ CONFIGURADO
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('📦 ALMACÉN')
+    .addItem('Gestionar Materiales (Remoto)', 'abrirDialogoAlmacen')
+    .addToUi();
+}
+
+function abrirDialogoAlmacen() {
+  const html = HtmlService.createTemplateFromFile('FormularioAlmacen');
+  html.initialData = JSON.stringify([]); 
+  
+  const ui = html.evaluate()
+      .setWidth(1350) 
+      .setHeight(650)
+      .setTitle('ALMACÉN - GESTIÓN DE MATERIALES');
+  
+  SpreadsheetApp.getUi().showModelessDialog(ui, 'ALMACÉN - CONEXIÓN A PROYECTOS');
+}
+
+/**
+ * ------------------------------------------------------------------
+ * BUSCADOR DE LÍMITES ESTRICTO (VERSIÓN MEJORADA)
+ * ------------------------------------------------------------------
+ * Adaptado del script local para mayor robustez. Encuentra el inicio y fin exactos de la tabla.
+ */
+function findSectionLimitsRemoto(sheet) {
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  let startRowHeader = -1;
+  const startFinder = sheet.createTextFinder("PEDIDO DE MATERIALES").matchEntireCell(false);
+  let possibleStart = startFinder.findNext();
+  
+  while (possibleStart) {
+    const r = possibleStart.getRow();
+    const rowValues = sheet.getRange(r, 1, 1, Math.max(lastCol, 20)).getValues()[0];
+    const cleanString = rowValues.map(String).join("").toUpperCase().replace("PEDIDO DE MATERIALES", "").replace(/\s/g, "");
+    if (cleanString === "") { startRowHeader = r; break; }
+    possibleStart = startFinder.findNext();
+  }
+  
+  if (startRowHeader === -1) return { start: -1, end: -1 };
+  const startRowData = startRowHeader + 4;
+  
+  let endRow = lastRow + 1; 
+  if (lastRow >= startRowData) {
+    const rowsToScan = Math.min(lastRow - startRowData + 50, 1000); 
+    const rangeValues = sheet.getRange(startRowData, 2, rowsToScan, 26).getValues();
+    for (let i = 0; i < rangeValues.length; i++) {
+      // Si encuentra "MANO DE OBRA" o una fila completamente vacía, termina la tabla.
+      if ((String(rangeValues[i][0]).trim().toUpperCase() === "MANO DE OBRA" && rangeValues[i].slice(1).join("").trim() === "") ||
+          (rangeValues[i].join("").trim() === "")) {
+        endRow = startRowData + i;
+        break;
+      }
+    }
+  }
+  return { start: startRowData, end: endRow - 1 };
+}
+
+/**
+ * ------------------------------------------------------------------
+ * CONEXIÓN Y BÚSQUEDA
+ * ------------------------------------------------------------------
+ */
+function buscarDatosPorFicha(fichaBuscada) {
+  if (!ID_ARCHIVO_PROYECTOS) throw new Error("Falta el ID del archivo de PROYECTOS");
+
+  const ss = SpreadsheetApp.openById(ID_ARCHIVO_PROYECTOS);
+  const sheets = ss.getSheets();
+  const coincidencias = [];
+
+  for (let sheet of sheets) {
+    const val = sheet.getRange("F4").getValue(); 
+    if (val.toString() === fichaBuscada.toString()) {
+      const nombreProyecto = sheet.getRange("R4").getValue();
+      coincidencias.push({
+        nombreHoja: sheet.getName(),
+        nombreProyecto: nombreProyecto
+      });
+    }
+  }
+
+  if (coincidencias.length === 0) {
+    throw new Error(`No se encontró hoja con Ficha N° ${fichaBuscada}`);
+  }
+
+  if (coincidencias.length > 1) {
+    return { multiple: true, opciones: coincidencias };
+  }
+
+  const targetSheet = ss.getSheetByName(coincidencias[0].nombreHoja);
+  return {
+    multiple: false,
+    datos: leerTablaRemota(targetSheet),
+    nombreProyecto: coincidencias[0].nombreProyecto,
+    nombreHoja: coincidencias[0].nombreHoja 
+  };
+}
+
+function cargarDatosDeHojaEspecifica(nombreHoja) {
+  const ss = SpreadsheetApp.openById(ID_ARCHIVO_PROYECTOS);
+  const sheet = ss.getSheetByName(nombreHoja);
+  if (!sheet) throw new Error("La hoja seleccionada ya no existe.");
+
+  const nombreProyecto = sheet.getRange("R4").getValue();
+  return {
+    datos: leerTablaRemota(sheet),
+    nombreProyecto: nombreProyecto,
+    nombreHoja: nombreHoja
+  };
+}
+
+/**
+ * LECTURA DE DATOS (VERSIÓN MEJORADA)
+ * Utiliza los límites exactos de la tabla para una lectura eficiente.
+ */
+function leerTablaRemota(sheet) {
+  const limits = findSectionLimitsRemoto(sheet);
+  if (limits.start === -1 || limits.end < limits.start) return [];
+
+  const numRows = limits.end - limits.start + 1;
+  const rangeValues = sheet.getRange(limits.start, 2, numRows, 27).getValues(); 
+  
+  const mappedData = rangeValues.map(row => {
+    // La condición de parada está implícita al leer solo el rango necesario.
+    if (!row[0] && !row[23]) return null;
+
+    const origen = (row[23] || "").toString();
+    const fecha = row[25] instanceof Date ? Utilities.formatDate(row[25], "GMT-5", "yyyy-MM-dd") : "";
+
+    return [
+      row[0],  // 0: Desc
+      row[9],  // 1: Unit
+      row[11], // 2: Cant P
+      row[13], // 3: PU P
+      row[15], // 4: Tot P
+      row[17], // 5: Cant R
+      row[19], // 6: PU R
+      row[21], // 7: Tot R
+      origen,  // 8: ORIGEN
+      fecha    // 9: FECHA
+    ];
+  }).filter(Boolean); // Filtra los nulos si alguna fila estaba vacía
+
+  return mappedData;
+}
+
+
+/**
+ * ------------------------------------------------------------------
+ * GUARDADO DE DATOS (VERSIÓN MEJORADA Y EFICIENTE)
+ * ------------------------------------------------------------------
+ */
+function guardarDatosRemotos(fichaBuscada, dataFromForm, nombreHoja) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000); 
+
+    const ss = SpreadsheetApp.openById(ID_ARCHIVO_PROYECTOS);
+    const sheet = ss.getSheetByName(nombreHoja);
+
+    if (!sheet || sheet.getRange("F4").getValue().toString() !== fichaBuscada.toString()) {
+       throw new Error("La hoja destino no coincide o ha cambiado de nombre/ficha.");
+    }
+
+    const limits = findSectionLimitsRemoto(sheet);
+    if (limits.start === -1) throw new Error("No se encontró la tabla en la hoja de destino.");
+
+    const startRow = limits.start;
+    const oldRowCount = limits.end >= startRow ? (limits.end - startRow + 1) : 0;
+    const newRowCount = dataFromForm.length;
+
+    // Prepara la matriz completa de datos con el formato correcto para una escritura única
+    const finalData = dataFromForm.map(r => {
+      let fullRow = new Array(27).fill("");
+      fullRow[0] = r[0];  // Desc (Col B)
+      fullRow[9] = r[1];  // Und (Col K)
+      fullRow[11] = r[2] === "" ? "" : Number(r[2]);
+      fullRow[13] = r[3] === "" ? "" : Number(r[3]);
+      fullRow[15] = r[4] === "" ? "" : Number(r[4]);
+      fullRow[17] = r[5] === "" ? "" : Number(r[5]);
+      fullRow[19] = r[6] === "" ? "" : Number(r[6]);
+      fullRow[21] = r[7] === "" ? "" : Number(r[7]); // Total Real
+      fullRow[23] = r[8]; // Origen
+      fullRow[25] = r[9]; // Fecha
+      return fullRow;
+    });
+
+    // --- MANEJO DE FILAS ---
+    if (newRowCount > oldRowCount) {
+      const rowsToAdd = newRowCount - oldRowCount;
+      if (oldRowCount > 0) sheet.insertRowsAfter(startRow + oldRowCount - 1, rowsToAdd);
+      else sheet.insertRows(startRow, rowsToAdd);
+    } else if (newRowCount < oldRowCount) {
+      sheet.deleteRows(startRow + newRowCount, oldRowCount - newRowCount);
+    }
+
+    // --- ESCRITURA Y FORMATEO ---
+    if (newRowCount > 0) {
+      const rangeToUpdate = sheet.getRange(startRow, 2, newRowCount, 27);
+      
+      // Limpia formato y celdas combinadas antes de escribir
+      const existingMerges = rangeToUpdate.getMergedRanges();
+      existingMerges.forEach(m => m.breakApart());
+      rangeToUpdate.clearFormat();
+
+      // *** ESCRITURA ÚNICA Y EFICIENTE ***
+      rangeToUpdate.setValues(finalData);
+
+      // Aplica formato después de escribir
+      rangeToUpdate.setFontFamily("Times New Roman").setFontSize(15);
+      
+      for (let i = 0; i < newRowCount; i++) {
+        const r = startRow + i;
+        const merge = (c, w) => sheet.getRange(r, c, 1, w).merge();
+        merge(2, 9); merge(11, 2); merge(13, 2); merge(15, 2); merge(17, 2); 
+        merge(19, 2); merge(21, 2); merge(23, 2); merge(25, 2); merge(27, 2);
+      }
+      
+      rangeToUpdate.setBorder(true, true, true, true, true, true, null, SpreadsheetApp.BorderStyle.SOLID)
+                   .setHorizontalAlignment("center")
+                   .setVerticalAlignment("middle");
+      sheet.getRange(startRow, 13, newRowCount, 6).setBackground("#fffbf1"); 
+      sheet.getRange(startRow, 19, newRowCount, 6).setBackground("#c5ffff");
+      sheet.getRange(startRow, 25, newRowCount, 1).setNumberFormat("@"); // Forzar origen como texto
+    }
+    
+    // --- LÓGICAS DE ACTUALIZACIÓN DE TOTALES ---
+    actualizarResumenTotales(sheet, finalData);
+    actualizarTotalPlanificadoI14(sheet, finalData);
+
+    return { success: true, message: "Datos guardados correctamente en: " + nombreHoja };
+
+  } catch (e) {
+    Logger.log(e.stack); // Loguea el error completo para depuración
+    return { success: false, message: "Error: " + e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ------------------------------------------------------------------
+ * FUNCIONES DE ACTUALIZACIÓN DE TOTALES (ADAPTADAS)
+ * ------------------------------------------------------------------
+ * Ahora reciben `fullTableData` (matriz de 27 columnas) para consistencia.
+ */
+function actualizarTotalPlanificadoI14(sheet, fullTableData) {
+  let totalPlanCompras = 0;
+  let totalPlanAlmacen = 0;
+
+  fullTableData.forEach(row => {
+    const montoPlan = parseFloat(row[15]) || 0; // Columna Q-R (Total Planificado)
+    const origen = (row[23] || "").toString().trim().toUpperCase(); // Columna Y-Z (Origen)
+
+    if (origen === "ALMACÉN") {
+      totalPlanAlmacen += montoPlan;
+    } else if (row[0] || origen) { // Si hay descripción u origen, no es una fila vacía
+      totalPlanCompras += montoPlan;
+    }
+  });
+
+  const celdaI14 = sheet.getRange("I14");
+  let formulaActual = celdaI14.getFormula();
+  if (!formulaActual) {
+    const val = celdaI14.getValue();
+    formulaActual = "=" + (typeof val === 'number' ? val : 0);
+  }
+
+  const actualizarMarcador = (form, marcador, valor) => {
+    const regex = new RegExp(`\\+ N\\("${marcador}"\\) \\+ \\d+(\\.\\d+)?`, "g");
+    const nuevoTexto = `+ N("${marcador}") + ${valor.toFixed(2)}`;
+    return regex.test(form) ? form.replace(regex, nuevoTexto) : form + " " + nuevoTexto;
+  };
+
+  formulaActual = actualizarMarcador(formulaActual, "PLAN_COMPRAS", totalPlanCompras);
+  formulaActual = actualizarMarcador(formulaActual, "PLAN_ALMACEN", totalPlanAlmacen);
+  celdaI14.setFormula(formulaActual);
+}
+
+function actualizarResumenTotales(sheet, fullTableData) {
+  let totalAlmacen = 0;
+  let totalCompras = 0;
+
+  fullTableData.forEach(row => {
+    const montoReal = parseFloat(row[21]) || 0; // Columna W-X (Total Real)
+    const origen = (row[23] || "").toString().trim().toUpperCase(); // Columna Y-Z
+
+    if (origen === "ALMACÉN") {
+      totalAlmacen += montoReal;
+    } else if (row[0] || origen) {
+      totalCompras += montoReal;
+    }
+  });
+
+  const lastRow = sheet.getLastRow();
+  const valuesD = sheet.getRange(1, 4, lastRow, 1).getValues();
+
+  for (let i = 0; i < valuesD.length; i++) {
+    const texto = valuesD[i][0].toString().trim().toUpperCase();
+    const fila = i + 1;
+    if (texto === "COMPRAS") {
+      sheet.getRange(fila, 13).setValue(totalCompras); // Columna M
+    } else if (texto === "ALMACÉN") {
+      sheet.getRange(fila, 13).setValue(totalAlmacen); // Columna M
+    }
+  }
+}

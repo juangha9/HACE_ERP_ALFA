@@ -1,0 +1,229 @@
+/**
+ * ------------------------------------------------------------------
+ * GESTIÓN DE DETALLE DE MANO DE OBRA (D30)
+ * ------------------------------------------------------------------
+ */
+
+function abrirDialogoD30() {
+  const limits = findLimitsManoObra();
+  
+  if (limits.start === -1) {
+    SpreadsheetApp.getUi().alert('Error: No se encontró el encabezado "DETALLE DE MANO DE OBRA".');
+    return;
+  }
+
+  const data = getDataManoObra(limits);
+  
+  const template = HtmlService.createTemplateFromFile('FormularioManoObra');
+  template.initialData = JSON.stringify(data);
+  
+  const html = template.evaluate()
+      .setWidth(1350) 
+      .setHeight(650)
+      .setTitle('GESTIÓN - DETALLE DE MANO DE OBRA');
+  
+  SpreadsheetApp.getUi().showModelessDialog(html, 'DETALLE DE MANO DE OBRA');
+}
+
+/**
+ * BUSCADOR DE LÍMITES ESPECÍFICO
+ */
+function findLimitsManoObra() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  
+  let startRowHeader = -1;
+  const startFinder = sheet.createTextFinder("DETALLE DE MANO DE OBRA").matchEntireCell(false);
+  let possibleStart = startFinder.findNext();
+  
+  while (possibleStart) {
+    const r = possibleStart.getRow();
+    const rowValues = sheet.getRange(r, 1, 1, Math.max(lastCol, 20)).getValues()[0];
+    const cleanString = rowValues.map(String).join("").toUpperCase().replace("DETALLE DE MANO DE OBRA", "").replace(/\s/g, "");
+    
+    if (cleanString === "") {
+      startRowHeader = r;
+      break; 
+    }
+    possibleStart = startFinder.findNext();
+  }
+  
+  if (startRowHeader === -1) return { start: -1, end: -1 };
+  const startRowData = startRowHeader + 2;
+  
+  let endRow = lastRow + 1; 
+  if (lastRow >= startRowData) {
+    const rowsToScan = Math.min(lastRow - startRowData + 50, 1000); 
+    const rangeValues = sheet.getRange(startRowData, 2, rowsToScan, 26).getValues();
+    for (let i = 0; i < rangeValues.length; i++) {
+      const row = rangeValues[i];
+      const cellB = String(row[0]).trim(); 
+      if (cellB === "MOVILIDAD") {
+        const restOfRow = row.slice(1).join("").trim();
+        if (restOfRow === "") {
+          endRow = startRowData + i; 
+          break;
+        }
+      }
+    }
+  }
+  return { start: startRowData, end: endRow - 1 };
+}
+
+/**
+ * LEER DATOS MANO DE OBRA
+ */
+function getDataManoObra(limits) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const startRow = limits.start;
+  const endRow = limits.end;
+  if (endRow < startRow) return [];
+  const numRows = endRow - startRow + 1;
+  const rangeValues = sheet.getRange(startRow, 2, numRows, 26).getValues();
+  const mappedData = [];
+  for (let i = 0; i < rangeValues.length; i++) {
+    const row = rangeValues[i];
+    if (!row[0] && !row[3]) continue; 
+    mappedData.push([
+      row[0], row[3], row[13], row[17], row[21],
+      row[24] instanceof Date ? Utilities.formatDate(row[24], "GMT-5", "dd/MM/yyyy") : row[24]
+    ]);
+  }
+  return mappedData;
+}
+
+/**
+ * GUARDAR MANO DE OBRA
+ */
+function guardarManoObra(data) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const limits = findLimitsManoObra();
+    if (limits.start === -1) throw new Error("No se encontró la tabla.");
+
+    const startRow = limits.start;
+    const endRowLimit = limits.end;
+    
+    let oldRowCount = 0;
+    if (endRowLimit >= startRow) {
+      const currentRows = sheet.getRange(startRow, 2, endRowLimit - startRow + 1, 26).getValues();
+      for (let i = 0; i < currentRows.length; i++) {
+        if (currentRows[i][0].toString().trim() !== "" || currentRows[i][3].toString().trim() !== "") {
+          oldRowCount++;
+        } else { break; }
+      }
+    }
+
+    const newRowCount = data.length;
+
+    if (newRowCount > oldRowCount) {
+      const rowsToAdd = newRowCount - oldRowCount;
+      if (oldRowCount > 0) sheet.insertRowsAfter(startRow + oldRowCount - 1, rowsToAdd);
+      else sheet.insertRows(startRow, rowsToAdd);
+    } else if (newRowCount < oldRowCount) {
+      sheet.deleteRows(startRow + newRowCount, oldRowCount - newRowCount);
+    }
+
+    if (newRowCount > 0) {
+      const range = sheet.getRange(startRow, 2, newRowCount, 26);
+      const existingMerges = range.getMergedRanges();
+      existingMerges.forEach(m => m.breakApart());
+      range.clearFormat();
+      
+      range.setFontFamily("Times New Roman").setFontSize(15).setHorizontalAlignment("center").setVerticalAlignment("middle");
+
+      const finalValues = data.map(r => {
+        let row = new Array(26).fill("");
+        row[0]  = r[0]; row[3]  = r[1]; row[13] = r[2]; row[17] = r[3]; row[21] = r[4];
+        if (r[5]) {
+          const parts = r[5].split("/"); 
+          row[24] = new Date(parts[2], parts[1] - 1, parts[0]);
+        }
+        return row;
+      });
+
+      for (let i = 0; i < newRowCount; i++) {
+        const r = startRow + i;
+        const m = (c, w) => sheet.getRange(r, c, 1, w).merge();
+        m(2, 3); m(5, 10); m(15, 4); m(19, 4); m(23, 3); m(26, 2);
+      }
+
+      range.setValues(finalValues);
+      range.setBorder(true, true, true, true, true, true, null, SpreadsheetApp.BorderStyle.SOLID);
+      sheet.getRange(startRow, 15, newRowCount, 4).setBackground("#fffbf1"); 
+      sheet.getRange(startRow, 19, newRowCount, 4).setBackground("#c5ffff"); 
+    }
+
+    // --- NUEVA LÓGICA DE RESUMEN INTEGRADA ---
+    actualizarResumenManoObraCompleto(sheet, data);
+
+    return { success: true, message: "Mano de Obra y Resumen actualizados correctamente." };
+  } catch (e) {
+    return { success: false, message: e.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Función para actualizar totales por Proveedor y Total Global
+ */
+function actualizarResumenManoObraCompleto(sheet, data) {
+  let totalRealGlobal = 0;
+  let planTerceros = 0, realTerceros = 0;
+  let planHace = 0, realHace = 0;
+
+  // 1. Calcular los totales desde los datos del formulario
+  data.forEach(row => {
+    let prov = (row[0] || "").toString().trim().toUpperCase();
+    let pVal = parseFloat(row[2]) || 0; // Planificado
+    let rVal = parseFloat(row[3]) || 0; // Real
+    
+    totalRealGlobal += rVal;
+
+    if (prov === "TERCEROS") {
+      planTerceros += pVal;
+      realTerceros += rVal;
+    } else if (prov === "PLANILLA HACE") {
+      planHace += pVal;
+      realHace += rVal;
+    }
+  });
+
+  // 2. Buscar en la hoja las filas correspondientes
+  const lastRow = sheet.getLastRow();
+  const rangeBD = sheet.getRange(1, 2, lastRow, 3).getValues(); // Columnas B, C, D
+
+  for (let i = 0; i < rangeBD.length; i++) {
+    let colB = rangeBD[i][0].toString().trim().toUpperCase(); // Col B
+    let colD = rangeBD[i][2].toString().trim().toUpperCase(); // Col D
+    let fila = i + 1;
+
+    // A. Buscar MANO DE OBRA en columna D para Total Real Global en M (13)
+    if (colD === "MANO DE OBRA") {
+      sheet.getRange(fila, 13).setValue(totalRealGlobal);
+    }
+
+    // B. Buscar TERCEROS en columna B para I (9) y R (18)
+    if (colB === "TERCEROS") {
+      sheet.getRange(fila, 9).setValue(planTerceros);
+      sheet.getRange(fila, 18).setValue(realTerceros);
+    }
+
+    // C. Buscar PLANILLA HACE en columna B para I (9) y R (18)
+    if (colB === "PLANILLA HACE") {
+      sheet.getRange(fila, 9).setValue(planHace);
+      sheet.getRange(fila, 18).setValue(realHace);
+    }
+  }
+}
+
+function formatDate(dateObj) {
+  if (!dateObj || typeof dateObj !== 'object') return dateObj;
+  try {
+    return Utilities.formatDate(dateObj, SpreadsheetApp.getActive().getSpreadsheetTimeZone(), "yyyy-MM-dd");
+  } catch(e) { return ""; }
+}

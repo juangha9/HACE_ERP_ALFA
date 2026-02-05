@@ -1,0 +1,42 @@
+/**
+* Duplica una hoja específica conservando todos los formatos,
+* tamaños de celdas y elementos gráficos (figuras).
+*/
+function duplicarHojaExacta() {
+ const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // 1. Configuración de nombres
+ const nombreHojaOrigen = "CONSULTORIO DENTAL";
+ const nombreNuevaHoja = "Copia_" + Utilities.formatDate(new Date(), "GMT-5", "dd_MM_yyyy_HHmm");
+  // 2. Obtener la hoja de origen
+ // Se corrigió el nombre de la variable (antes decía hojaHorigen con H extra)
+ const hojaOrigen = ss.getSheetByName(nombreHojaOrigen);
+  // Validamos que la hoja exista antes de continuar
+ if (!hojaOrigen) {
+   SpreadsheetApp.getUi().alert("Error: No se encontró la hoja llamada '" + nombreHojaOrigen + "'");
+   return; // Detenemos la ejecución si no existe
+ }
+
+
+ // 3. Crear la copia
+ const nuevaHoja = hojaOrigen.copyTo(ss);
+  // 4. Asignar el nuevo nombre (Se corrigió la mayúscula de nombreNuevaHoja)
+ nuevaHoja.setName(nombreNuevaHoja);
+  // 5. Mover la hoja al final
+ ss.setActiveSheet(nuevaHoja);
+ // Se agregaron los paréntesis () a getNumSheets para que funcione correctamente
+ ss.moveActiveSheet(ss.getNumSheets());
+
+
+ SpreadsheetApp.getUi().alert("Se ha creado la pestaña: " + nombreNuevaHoja);
+}
+
+
+/**
+* Crea el menú en la parte superior.
+*/
+function onOpen() {
+ const ui = SpreadsheetApp.getUi();
+ ui.createMenu('Crear Duplicado')
+   .addItem('Duplicar Plantilla', 'duplicarHojaExacta')
+   .addToUi();
+}

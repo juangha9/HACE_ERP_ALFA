@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dashboard de Control v1.5 - ERP Melamina y Metal</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,700;1,900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#463acb",
+                        "background-light": "#f1f5f9",
+                        "background-dark": "#0f172a",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "3xl": "1.875rem"
+                    },
+                },
+            },
+        }
+    </script>
+<style type="text/tailwindcss">
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .sidebar-active {
+            background-color: #463acb;
+            color: white;
+        }
+        .sidebar-inactive {
+            color: #64748b;
+        }@media (min-width: 1280px) {
+            .dashboard-container {
+                max-width: 1920px;
+                margin: 0 auto;
+                aspect-ratio: 16 / 9;
+                max-height: 1080px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased overflow-x-hidden lg:overflow-hidden">
+<div class="flex h-screen dashboard-container">
+<aside class="w-[72px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-6 shrink-0 z-30">
+<div class="mb-10">
+<div class="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-white">
+<span class="material-symbols-outlined text-2xl">factory</span>
+</div>
+</div>
+<nav class="flex flex-col gap-4 flex-1">
+<a class="w-12 h-12 flex items-center justify-center rounded-2xl sidebar-active shadow-lg shadow-primary/20" href="#" title="Resumen">
+<span class="material-symbols-outlined">dashboard</span>
+</a>
+<a class="w-12 h-12 flex items-center justify-center rounded-2xl sidebar-inactive hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" href="#" title="Ventas">
+<span class="material-symbols-outlined">payments</span>
+</a>
+<a class="w-12 h-12 flex items-center justify-center rounded-2xl sidebar-inactive hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" href="#" title="Producción">
+<span class="material-symbols-outlined">precision_manufacturing</span>
+</a>
+<a class="w-12 h-12 flex items-center justify-center rounded-2xl sidebar-inactive hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" href="#" title="Inventario">
+<span class="material-symbols-outlined">inventory_2</span>
+</a>
+<a class="w-12 h-12 flex items-center justify-center rounded-2xl sidebar-inactive hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" href="#" title="Finanzas">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+</a>
+<div class="h-px w-8 bg-slate-200 dark:bg-slate-800 my-2"></div>
+<a class="w-12 h-12 flex items-center justify-center rounded-2xl sidebar-inactive hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" href="#" title="Configuración">
+<span class="material-symbols-outlined">settings</span>
+</a>
+</nav>
+<div class="mt-auto">
+<div class="w-10 h-10 rounded-full bg-slate-200 border-2 border-white dark:border-slate-700 overflow-hidden">
+<img alt="Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSJViVycgHLhFX-5yXdjdbUeS45wc4dPB442uklljStkjqhQgLi1p4kBCtUtokz0U_BaWMz5mIPcF1h7rIY-glijijQ6DKK1be-eHl7OT24WcECUnlJV4RWoyrJFw0SwTZANz2BqIGuNNDzkRNStSw9lqCn4qSnhlDoLe1IRC5i2In4i3aYvcwl5NH9NVXgvZslu7DfRD8XalBb_P0tzicuU2WW9MO5glWbvAqEfAd_J0QL1UBLy69OJRZCXlPzugHeYhdxYgyXcQ"/>
+</div>
+</div>
+</aside>
+<main class="flex-1 flex flex-col h-full overflow-hidden">
+<header class="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 shrink-0">
+<h2 class="text-xl font-black italic tracking-tight text-slate-900 dark:text-white uppercase font-display">Dashboard de Control v1.5</h2>
+<div class="flex items-center gap-6">
+<div class="relative w-96 hidden md:block">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+<input class="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-full pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-primary/50" placeholder="Buscar en fábrica (órdenes, clientes, materiales)..." type="text"/>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-10 h-10 flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 relative">
+<span class="material-symbols-outlined text-xl">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+</button>
+<div class="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-2"></div>
+<div class="flex items-center gap-3">
+<div class="text-right hidden sm:block">
+<p class="text-xs font-bold leading-none">Admin Usuario</p>
+<p class="text-[10px] text-slate-500 font-medium">Jefe de Planta</p>
+</div>
+</div>
+</div>
+</div>
+</header>
+<div class="flex-1 p-6 space-y-6 overflow-y-auto">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm flex flex-col justify-between min-h-[140px]">
+<div class="flex justify-between items-start">
+<div class="p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl text-indigo-600">
+<span class="material-symbols-outlined">trending_up</span>
+</div>
+<span class="text-emerald-500 text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded-full">+12.5%</span>
+</div>
+<div>
+<p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Ventas Mensuales</p>
+<p class="text-2xl font-black text-slate-900 dark:text-white mt-1">S/ 45,200.00</p>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm flex flex-col justify-between min-h-[140px]">
+<div class="flex justify-between items-start">
+<div class="p-3 bg-amber-50 dark:bg-amber-900/30 rounded-2xl text-amber-600">
+<span class="material-symbols-outlined">precision_manufacturing</span>
+</div>
+<span class="text-rose-500 text-xs font-bold bg-rose-50 dark:bg-rose-900/30 px-2 py-1 rounded-full">-2.4%</span>
+</div>
+<div>
+<p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Salida de Producción</p>
+<p class="text-2xl font-black text-slate-900 dark:text-white mt-1">1,240 <span class="text-sm font-normal text-slate-400">unid.</span></p>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm flex flex-col justify-between min-h-[140px]">
+<div class="flex justify-between items-start">
+<div class="p-3 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-emerald-600">
+<span class="material-symbols-outlined">inventory</span>
+</div>
+<span class="text-emerald-500 text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded-full">+5.0%</span>
+</div>
+<div>
+<p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Nivel de Stock Melamina</p>
+<p class="text-2xl font-black text-slate-900 dark:text-white mt-1">85%</p>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-900 p-6 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm flex flex-col justify-between min-h-[140px]">
+<div class="flex justify-between items-start">
+<div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-600">
+<span class="material-symbols-outlined">account_balance</span>
+</div>
+<span class="text-emerald-500 text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded-full">+0.8%</span>
+</div>
+<div>
+<p class="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Flujo de Caja (Soles)</p>
+<p class="text-2xl font-black text-slate-900 dark:text-white mt-1">S/ 12,500.00</p>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-sm">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h3 class="text-lg font-bold text-slate-900 dark:text-white">Rendimiento de Producción Mensual</h3>
+<p class="text-sm text-slate-500">Unidades manufacturadas (Acero vs Melamina)</p>
+</div>
+<div class="flex gap-2">
+<button class="px-4 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 rounded-full">Últimos 6 Meses</button>
+<button class="px-4 py-1.5 text-xs font-bold text-slate-400 hover:text-primary transition-colors">Histórico Anual</button>
+</div>
+</div>
+<div class="relative h-64 flex items-end justify-between gap-6 px-4">
+<div class="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
+<div class="w-full flex gap-1 items-end h-[60%]">
+<div class="flex-1 bg-primary/40 rounded-t-lg group-hover:bg-primary/60 transition-colors" style="height: 100%;"></div>
+<div class="flex-1 bg-primary rounded-t-lg group-hover:scale-y-105 origin-bottom transition-transform" style="height: 70%;"></div>
+</div>
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Enero</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
+<div class="w-full flex gap-1 items-end h-[75%]">
+<div class="flex-1 bg-primary/40 rounded-t-lg group-hover:bg-primary/60 transition-colors" style="height: 80%;"></div>
+<div class="flex-1 bg-primary rounded-t-lg group-hover:scale-y-105 origin-bottom transition-transform" style="height: 100%;"></div>
+</div>
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Febrero</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
+<div class="w-full flex gap-1 items-end h-[90%]">
+<div class="flex-1 bg-primary/40 rounded-t-lg group-hover:bg-primary/60 transition-colors" style="height: 60%;"></div>
+<div class="flex-1 bg-primary rounded-t-lg group-hover:scale-y-105 origin-bottom transition-transform" style="height: 100%;"></div>
+</div>
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Marzo</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
+<div class="w-full flex gap-1 items-end h-[65%]">
+<div class="flex-1 bg-primary/40 rounded-t-lg group-hover:bg-primary/60 transition-colors" style="height: 90%;"></div>
+<div class="flex-1 bg-primary rounded-t-lg group-hover:scale-y-105 origin-bottom transition-transform" style="height: 70%;"></div>
+</div>
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Abril</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
+<div class="w-full flex gap-1 items-end h-[95%]">
+<div class="flex-1 bg-primary/40 rounded-t-lg group-hover:bg-primary/60 transition-colors" style="height: 100%;"></div>
+<div class="flex-1 bg-primary rounded-t-lg group-hover:scale-y-105 origin-bottom transition-transform" style="height: 85%;"></div>
+</div>
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Mayo</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-3 group h-full justify-end">
+<div class="w-full flex gap-1 items-end h-[80%]">
+<div class="flex-1 bg-primary/40 rounded-t-lg group-hover:bg-primary/60 transition-colors" style="height: 70%;"></div>
+<div class="flex-1 bg-primary rounded-t-lg group-hover:scale-y-105 origin-bottom transition-transform" style="height: 100%;"></div>
+</div>
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">Junio</span>
+</div>
+</div>
+</div>
+<div class="bg-primary text-white rounded-3xl p-8 flex flex-col justify-between shadow-xl relative overflow-hidden group">
+<div class="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -mr-20 -mt-20 blur-3xl transition-transform group-hover:scale-125"></div>
+<div class="z-10">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-indigo-300">target</span>
+<h3 class="text-indigo-100 text-[10px] font-bold uppercase tracking-[0.2em]">Meta Trimestral (Q2)</h3>
+</div>
+<p class="text-4xl font-black italic mb-2">14,880 UNID.</p>
+<p class="text-indigo-200 text-sm leading-relaxed">Faltan 2,678 unidades para alcanzar el objetivo del semestre. El ritmo actual es óptimo.</p>
+</div>
+<div class="z-10 mt-8">
+<div class="flex justify-between items-end mb-3">
+<div>
+<span class="text-3xl font-black">82%</span>
+<span class="text-indigo-200 text-xs ml-1">Completado</span>
+</div>
+<span class="text-indigo-100 text-xs font-bold uppercase">Junio 2024</span>
+</div>
+<div class="w-full bg-white/20 h-3 rounded-full overflow-hidden">
+<div class="bg-white h-full rounded-full" style="width: 82%"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+<div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<h3 class="text-lg font-bold text-slate-900 dark:text-white">Órdenes Activas de Producción</h3>
+<span class="px-2.5 py-0.5 bg-primary/10 text-primary text-[10px] font-bold rounded-md">24 TOTAL</span>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex -space-x-2">
+<div class="w-7 h-7 rounded-full border-2 border-white dark:border-slate-900 bg-slate-200 flex items-center justify-center text-[10px] font-bold">JD</div>
+<div class="w-7 h-7 rounded-full border-2 border-white dark:border-slate-900 bg-slate-300 flex items-center justify-center text-[10px] font-bold">AM</div>
+<div class="w-7 h-7 rounded-full border-2 border-white dark:border-slate-900 bg-slate-400 flex items-center justify-center text-[10px] font-bold">+5</div>
+</div>
+<button class="bg-primary hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+                            Nueva Orden
+                        </button>
+</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead class="bg-slate-50 dark:bg-slate-800/50">
+<tr>
+<th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">ID Orden</th>
+<th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Cliente / Proyecto</th>
+<th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Material</th>
+<th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Estado</th>
+<th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Prioridad</th>
+<th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Monto (S/)</th>
+<th class="px-8 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Acción</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white">#1024</td>
+<td class="px-8 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-semibold text-slate-900 dark:text-white">Metal-Corp S.A.</span>
+<span class="text-[10px] text-slate-500">Estructuras Metálicas Gral.</span>
+</div>
+</td>
+<td class="px-8 py-4 text-center">
+<span class="material-symbols-outlined text-slate-400" title="Metal">square_foot</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-black uppercase rounded-full">Completado</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 text-[10px] font-black uppercase rounded-full">Urgente</span>
+</td>
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white text-right">S/ 4,500.00</td>
+<td class="px-8 py-4 text-center">
+<button class="material-symbols-outlined text-slate-400 hover:text-primary transition-colors">more_horiz</button>
+</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white">#1025</td>
+<td class="px-8 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-semibold text-slate-900 dark:text-white">Soles Design</span>
+<span class="text-[10px] text-slate-500">Mueblería de Melamina</span>
+</div>
+</td>
+<td class="px-8 py-4 text-center">
+<span class="material-symbols-outlined text-slate-400" title="Melamina">inventory_2</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px] font-black uppercase rounded-full">En Proceso</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black uppercase rounded-full">Media</span>
+</td>
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white text-right">S/ 2,300.00</td>
+<td class="px-8 py-4 text-center">
+<button class="material-symbols-outlined text-slate-400 hover:text-primary transition-colors">more_horiz</button>
+</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white">#1026</td>
+<td class="px-8 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-semibold text-slate-900 dark:text-white">Kitchen-Build Ltd</span>
+<span class="text-[10px] text-slate-500">Módulos de Cocina</span>
+</div>
+</td>
+<td class="px-8 py-4 text-center">
+<span class="material-symbols-outlined text-slate-400" title="Melamina">inventory_2</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 text-[10px] font-black uppercase rounded-full">Enviado</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 text-[10px] font-black uppercase rounded-full">Alta</span>
+</td>
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white text-right">S/ 1,200.00</td>
+<td class="px-8 py-4 text-center">
+<button class="material-symbols-outlined text-slate-400 hover:text-primary transition-colors">more_horiz</button>
+</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white">#1027</td>
+<td class="px-8 py-4">
+<div class="flex flex-col">
+<span class="text-sm font-semibold text-slate-900 dark:text-white">Melamine Plus</span>
+<span class="text-[10px] text-slate-500">Corte y Canteado Especial</span>
+</div>
+</td>
+<td class="px-8 py-4 text-center">
+<span class="material-symbols-outlined text-slate-400" title="Melamina">inventory_2</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 text-[10px] font-black uppercase rounded-full">Pendiente</span>
+</td>
+<td class="px-8 py-4">
+<span class="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black uppercase rounded-full">Baja</span>
+</td>
+<td class="px-8 py-4 text-sm font-bold text-slate-900 dark:text-white text-right">S/ 5,800.00</td>
+<td class="px-8 py-4 text-center">
+<button class="material-symbols-outlined text-slate-400 hover:text-primary transition-colors">more_horiz</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-4 bg-slate-50 dark:bg-slate-800/30 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center px-8">
+<p class="text-xs text-slate-500 font-medium">Mostrando 4 de 24 órdenes activas</p>
+<div class="flex gap-2">
+<button class="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold hover:bg-white transition-colors">Anterior</button>
+<button class="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold bg-white dark:bg-slate-900">1</button>
+<button class="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold hover:bg-white transition-colors">Siguiente</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+
+</body></html>

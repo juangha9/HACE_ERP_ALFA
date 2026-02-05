@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 10px; background-color: #f4f4f9; }
+      table { width: 100%; border-collapse: collapse; background: white; font-size: 11px; table-layout: fixed; }
+      th { background-color: #2c3e50; color: white; padding: 8px; border: 1px solid #bdc3c7; }
+      td { border: 1px solid #ecf0f1; padding: 2px; text-align: center; }
+      input, select { width: 95%; padding: 4px; border: 1px solid #ddd; border-radius: 2px; text-align: center; font-size: 11px; }
+      .invalid-field { border: 2px solid #e74c3c !important; background-color: #fadbd8 !important; }
+      .btn-container { margin-top: 15px; display: flex; gap: 10px; align-items: center; }
+      button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; transition: 0.2s; }
+      .btn-add { background-color: #27ae60; }
+      .btn-save { background-color: #2980b9; }
+      .btn-del { background-color: #e74c3c; width: 100%; }
+      button:hover { opacity: 0.9; }
+      button:active { transform: scale(0.98); }
+      input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+      #status { font-weight: bold; margin-left: auto; }
+    </style>
+  </head>
+  <body>
+    <table id="dataTable">
+      <thead>
+        <tr>
+          <th style="width: 20%;">PROVEEDOR</th>
+          <th style="width: 30%;">DESCRIPCIÓN</th>
+          <th style="width: 10%;">MONTO PLAN.</th>
+          <th style="width: 10%;">MONTO REAL</th>
+          <th style="width: 12%;">ORIGEN</th>
+          <th style="width: 12%;">FECHA</th>
+          <th style="width: 4%;"></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+
+    <div class="btn-container">
+      <button class="btn-add" onclick="attemptAddRow()">+ Fila</button>
+      <button class="btn-save" onclick="saveData()">💾 Guardar Mano de Obra</button>
+      <span id="status"></span>
+    </div>
+
+    <script>
+      const incomingData = <?!= initialData ?>;
+
+      window.onload = () => {
+        if (incomingData.length > 0) incomingData.forEach(r => addRow(r));
+        else addRow();
+      };
+
+      function addRow(values = []) {
+        const tbody = document.getElementById('tableBody');
+        const tr = document.createElement('tr');
+        
+        const provActual = values[0] || "";
+        const provOptions = ["TERCEROS", "PLANILLA HACE"];
+        let provHtml = `<option value="" disabled ${!provActual ? 'selected' : ''} hidden>Seleccionar</option>`;
+        provOptions.forEach(opt => {
+          const selected = (provActual === opt) ? "selected" : "";
+          provHtml += `<option value="${opt}" ${selected}>${opt}</option>`;
+        });
+
+        const origenActual = values[4] || "";
+        const origenOptions = ["2049", "4071", "9001", "8059", "EFECTIVO", "YAPE"];
+        let origenHtml = `<option value="" disabled ${!origenActual ? 'selected' : ''} hidden>Seleccionar</option>`;
+        origenOptions.forEach(o => {
+          const selected = (origenActual === o) ? "selected" : "";
+          origenHtml += `<option value="${o}" ${selected}>${o}</option>`;
+        });
+
+        const today = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const fecha = values[5] || today;
+
+        tr.innerHTML = `
+          <td><select class="prov-select" onchange="validar(false)">${provHtml}</select></td>
+          <td><input type="text" value="${values[1] || ''}" oninput="validar(false)"></td>
+          <td><input type="number" step="0.01" value="${values[2] || ''}" oninput="validar(false)"></td>
+          <td><input type="number" step="0.01" value="${values[3] || ''}" oninput="validar(false)"></td>
+          <td><select class="origen-select" onchange="validar(false)">${origenHtml}</select></td>
+          <td><input type="text" value="${fecha}" placeholder="dd/mm/yyyy" oninput="validar(false)"></td>
+          <td><button class="btn-del" onclick="deleteRow(this)" tabindex="-1">🗑</button></td>
+        `;
+        tbody.appendChild(tr);
+        validar(false);
+      }
+
+      function deleteRow(btn) {
+        btn.closest('tr').remove();
+        validar(false);
+      }
+
+      function validar(showAlerts) {
+        const rows = document.querySelectorAll('#tableBody tr');
+        let allOk = true;
+        
+        rows.forEach((row) => {
+          const selects = row.querySelectorAll('select');
+          const inputs = row.querySelectorAll('input');
+          
+          const provSelect = selects[0];
+          const descInput = inputs[0];
+          const planInput = inputs[1];
+          const realInput = inputs[2];
+          const origenSelect = selects[1];
+          
+          const prov = provSelect.value;
+          const desc = descInput.value.trim();
+          const plan = parseFloat(planInput.value) || 0;
+          const real = parseFloat(realInput.value) || 0;
+          const origen = origenSelect.value;
+          
+          provSelect.classList.toggle('invalid-field', !prov);
+          descInput.classList.toggle('invalid-field', !desc);
+          
+          const hasMoney = (plan > 0 || real > 0);
+          if (!hasMoney) {
+             planInput.classList.add('invalid-field'); 
+             realInput.classList.add('invalid-field');
+          } else {
+             planInput.classList.remove('invalid-field'); 
+             realInput.classList.remove('invalid-field');
+          }
+
+          // LÓGICA DE ORIGEN CORREGIDA:
+          // Solo es obligatorio si el Monto Real > 0
+          let origenValido = true;
+          if (real > 0 && !origen) {
+            origenValido = false; // Hay monto real pero no se eligió origen
+          }
+
+          origenSelect.classList.toggle('invalid-field', !origenValido);
+
+          if (!prov || !desc || !hasMoney || !origenValido) {
+            allOk = false;
+          }
+        });
+
+        const btnAdd = document.querySelector('.btn-add');
+        const btnSave = document.querySelector('.btn-save');
+        
+        if (allOk) {
+          btnAdd.disabled = false;
+          btnSave.disabled = false;
+        } else {
+          btnAdd.disabled = true;
+          btnSave.disabled = true;
+        }
+
+        return allOk;
+      }
+
+      function attemptAddRow() { 
+        if (validar(true)) {
+          addRow(); 
+        } else {
+          alert("⚠️ NO SE PUEDE AGREGAR FILA\n\nComplete los datos requeridos (Origen es obligatorio solo si hay Monto Real).");
+        }
+      }
+
+      function saveData() {
+        if (!validar(true)) {
+            alert("⚠️ NO SE PUEDE GUARDAR\n\nHay filas incompletas marcadas en rojo.");
+            return;
+        }
+        
+        const rows = Array.from(document.querySelectorAll('#tableBody tr')).map(tr => {
+          const selects = tr.querySelectorAll('select');
+          const inputs = tr.querySelectorAll('input');
+          
+          return [
+            selects[0].value, 
+            inputs[0].value,  
+            inputs[1].value,  
+            inputs[2].value,  
+            selects[1].value, 
+            inputs[3].value   
+          ];
+        });
+
+        const status = document.getElementById('status');
+        const btnSave = document.querySelector('.btn-save');
+        
+        status.innerText = "Guardando...";
+        btnSave.disabled = true; 
+        
+        google.script.run
+          .withSuccessHandler(res => {
+            btnSave.disabled = false;
+            status.innerText = res.message;
+            if(res.success) {
+               status.style.color = "green";
+               setTimeout(() => { status.innerText = ""; status.style.color = "black"; }, 3000);
+            } else {
+               status.style.color = "red";
+            }
+          })
+          .withFailureHandler(err => {
+             btnSave.disabled = false;
+             status.innerText = "Error: " + err;
+             status.style.color = "red";
+          })
+          .guardarManoObra(rows);
+      }
+    </script>
+  </body>
+</html>
