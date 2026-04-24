@@ -1,0 +1,104 @@
+/* --- Estilos para el Medidor de Cilindro (Versión Compacta) --- */
+
+.cylinder-gauge-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 16px; /* Reducimos el padding */
+  height: 100%;
+}
+
+.cylinder-gauge-card .header {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.cylinder-gauge-card .header h3 {
+  margin: 0 0 4px 0;
+  font-size: 14px; /* Un poco más pequeño */
+  font-weight: 600;
+}
+
+.cylinder-gauge-card .header p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--secondary-text);
+  max-width: 200px; /* Evita que el texto se desborde */
+  margin: 0 auto;
+}
+
+.cylinder-container {
+  width: 70px; /* Ancho reducido */
+  height: 120px; /* Alto reducido */
+  margin: 0 auto;
+  position: relative;
+  background-color: #e2e8f0;
+  border: 3px solid #94a3b8;
+  border-bottom: none;
+  border-top: none; /* Eliminamos el borde superior del contenedor principal */
+  /* quitamos el border-radius para que sea recto */
+}
+
+.cylinder-liquid {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: var(--cyan-color);
+  transition: height 0.5s ease-in-out;
+}
+
+/* Tapa superior del LÍQUIDO (simula elipse 3D) */
+.cylinder-liquid::before {
+  content: '';
+  position: absolute;
+  top: -8px; /* Ajustado al nuevo tamaño */
+  left: -3px;
+  right: -3px;
+  height: 16px; /* Ajustado al nuevo tamaño */
+  background-color: var(--cyan-color-darker);
+  border-radius: 50%;
+}
+
+/* Tapa superior del CILINDRO (simula elipse 3D) */
+.cylinder-container::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -3px;
+  right: -3px;
+  height: 16px;
+  background-color: transparent;
+  border-radius: 50%;
+  border: 3px solid #94a3b8;
+}
+
+/* Base inferior del CILINDRO (simula elipse 3D) */
+.cylinder-container::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: -3px;
+  right: -3px;
+  height: 16px;
+  background-color: #e2e8f0;
+  border-radius: 50%;
+  border: 3px solid #94a3b8;
+}
+
+.cylinder-info {
+  text-align: center;
+  margin-top: 12px;
+}
+
+.cylinder-percentage {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.cylinder-values {
+  font-size: 11px;
+  color: var(--secondary-text);
+  margin-top: 4px;
+}

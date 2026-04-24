@@ -1,0 +1,58 @@
+/* --- Estilos para el Contenedor del Modal (Fondo Oscuro) --- */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.7); /* slate-900 con 70% de opacidad */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+/* --- Estilos para el Contenido del Modal (La Ventana Blanca) --- */
+.modal-content {
+  position: relative;
+  padding: 24px;
+  min-width: 400px; /* Ancho mínimo para que no se colapse */
+  width: 90%;       /* Ocupa el 90% del ancho de la pantalla */
+  max-width: 800px; /* Pero no más de 800px en pantallas grandes */
+  max-height: 90vh; /* No más del 90% de la altura de la pantalla */
+  overflow-y: auto; /* Permite scroll si el contenido es muy alto */
+}
+
+.modal-close-button {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 100;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 24px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: 50%;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.modal-close-button:hover {
+  background-color: var(--page-bg);
+  color: var(--text-primary);
+}
+
+/* Modal customization utilities */
+.modal-content-flush {
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-radius: 2rem;
+  max-width: 900px !important;
+}
+
+.modal-content-no-scroll {
+  overflow: hidden !important;
+}

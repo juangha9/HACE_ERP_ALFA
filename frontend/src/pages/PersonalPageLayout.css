@@ -1,0 +1,60 @@
+/* --- Estilos para la disposición de la página de Personal --- */
+
+.personal-page-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px; /* Espacio entre el encabezado y la tabla */
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  /* Eliminamos el padding aquí para que los widgets se peguen a la derecha */
+}
+
+.page-header .page-title h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.page-header .page-title p {
+  margin: 4px 0 0 0;
+  color: var(--secondary-text);
+}
+
+.financial-widgets {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* Dos columnas de igual tamaño */
+  gap: 16px;
+  min-width: 500px; /* Ancho mínimo para que no se deformen */
+}
+
+/* La tarjeta de la tabla no necesita cambios */
+.main-card {
+  width: 100%;
+}
+
+/* --- Media Queries para Adaptabilidad --- */
+
+/* Para tablets y pantallas medianas */
+@media (max-width: 1024px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .financial-widgets {
+    min-width: unset;
+    width: 100%;
+  }
+}
+
+/* Para móviles */
+@media (max-width: 640px) {
+  .financial-widgets {
+    grid-template-columns: 1fr; /* Se apilan verticalmente */
+  }
+}
