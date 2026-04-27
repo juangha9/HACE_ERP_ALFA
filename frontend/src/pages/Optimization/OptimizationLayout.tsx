@@ -216,6 +216,8 @@ export const OptimizationLayout = () => {
         }
     }, [pieces, config, boards, projectName, selectedProject, originType, showRecoveryModal, projectId, initialHash]);
 
+    const isManualAdjustingRef = useRef(false);
+
     // Track piece geometry changes to invalidate optimized boards
     const lastGeometryRef = useRef<string>("");
     useEffect(() => {
@@ -239,7 +241,7 @@ export const OptimizationLayout = () => {
         });
 
         if (lastGeometryRef.current && lastGeometryRef.current !== currentGeometry) {
-            if (boards.length > 0) {
+            if (boards.length > 0 && !isManualAdjustingRef.current) {
                 // Non-urgent: defer board invalidation so typing stays responsive
                 startTransition(() => {
                     setBoards([]);
@@ -247,6 +249,7 @@ export const OptimizationLayout = () => {
             }
         }
         lastGeometryRef.current = currentGeometry;
+        isManualAdjustingRef.current = false;
     }, [pieces, config.boardWidth, config.boardHeight, config.sawKerf, config.trimming, config.grainDirection, config.preFresado, boards.length]);
 
     // Keep projectName and config.clientName in sync
@@ -956,6 +959,14 @@ export const OptimizationLayout = () => {
                             boards={annotatedBoards}
                             boardWidth={config.boardWidth}
                             boardHeight={config.boardHeight}
+                            sawKerf={config.sawKerf}
+                            onPiecesAdjust={(delta) => {
+                                isManualAdjustingRef.current = true;
+                                setPieces(prev => prev.map(p => {
+                                    if (!Object.prototype.hasOwnProperty.call(delta, p.id)) return p;
+                                    return { ...p, quantity: Math.max(0, (p.quantity || 0) + delta[p.id]) };
+                                }));
+                            }}
                         />
                     </div>
                 </main>

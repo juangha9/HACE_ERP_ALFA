@@ -5,3 +5,5 @@ dist
 .env.local
 .wrangler
 .vscode
+.dev.vars
+**/node_modules

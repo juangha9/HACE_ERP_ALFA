@@ -1,6 +1,10 @@
+/* === Organigrama — Pastel Desaturated Palette + Glassmorph === */
 .organigrama-container {
     padding: 24px;
-    background: #f8fafc;
+    background:
+        radial-gradient(circle at 12% 8%, rgba(196, 213, 215, 0.35) 0%, transparent 45%),
+        radial-gradient(circle at 88% 92%, rgba(214, 207, 224, 0.30) 0%, transparent 50%),
+        linear-gradient(135deg, #f3f6f5 0%, #eef2f3 50%, #ecedef 100%);
     min-height: calc(100vh - 100px);
     display: flex;
     flex-direction: column;
@@ -16,46 +20,58 @@
 .organigrama-header h1 {
     font-size: 24px;
     font-weight: 900;
-    color: #1e293b;
+    color: #2c3434;
     text-transform: uppercase;
     line-height: 1;
+    letter-spacing: -0.01em;
 }
 
 .view-toggle {
     display: flex;
-    background: #e2e8f0;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     padding: 4px;
-    border-radius: 12px;
+    border-radius: 14px;
     gap: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 4px 16px rgba(44, 52, 52, 0.05);
 }
 
 .view-toggle button {
     padding: 8px 16px;
-    border-radius: 8px;
+    border-radius: 10px;
     border: none;
     font-weight: 700;
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
     background: transparent;
-    color: #64748b;
+    color: #366480;
 }
 
 .view-toggle button.active {
-    background: white;
-    color: #1e293b;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    background: rgba(255, 255, 255, 0.9);
+    color: #2c3434;
+    box-shadow: 0 4px 10px -2px rgba(74, 144, 226, 0.18);
 }
 
 .organigrama-viewport {
     flex: 1;
-    background: white;
-    border-radius: 24px;
-    border: 1px solid #e2e8f0;
+    background:
+        radial-gradient(circle at 30% 20%, rgba(214, 226, 222, 0.25) 0%, transparent 40%),
+        radial-gradient(circle at 80% 80%, rgba(226, 220, 232, 0.20) 0%, transparent 45%),
+        rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
     overflow: auto;
     padding: 80px 48px;
     position: relative;
-    box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.6),
+        0 10px 40px rgba(44, 52, 52, 0.05);
     display: block; /* Reverting to block to allow native scrolling/centering of min-content */
 }
 
@@ -94,13 +110,13 @@
     left: 50%;
     width: 2px;
     height: 64px; /* Bridge the gap between levels */
-    background: #cbd5e1;
+    background: #c4d0d2;
     transform: translateX(-50%);
     z-index: 5;
 }
 
 .active-path > .children-container-line {
-    background: #6366f1 !important;
+    background: #4A90E2 !important;
 }
 
 /* Vertical line down from parent is handled by .children-container-line */
@@ -112,20 +128,29 @@
     display: flex;
     justify-content: center;
     position: relative;
+    padding-bottom: 60px; /* Space for area labels */
 }
 
 .flat-area-label {
     position: absolute;
     /* top is set inline from JS (cardBottom value) */
     /* left and transform are set inline from JS */
-    color: #94a3b8;
-    font-size: 10px;
-    font-weight: 800;
+    color: #366480;
+    font-size: 11px;
+    font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.15em;
     white-space: nowrap;
-    opacity: 0.7;
-    z-index: 1;
+    opacity: 0.85;
+    z-index: 500;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 2px 8px rgba(44, 52, 52, 0.04);
 }
 
 /* Removed Area Group Styling */
@@ -158,8 +183,8 @@
     position: absolute;
     /* top and height are set inline from JS */
     width: 0;
-    border-left: 2px dashed #818cf8; /* indigo-400 for better visibility */
-    opacity: 0.6;
+    border-left: 2px dashed #a8b8d0; /* desaturated pastel azure */
+    opacity: 0.55;
     z-index: 2; /* below cards, above lines */
     pointer-events: none;
 }
@@ -169,12 +194,12 @@
     position: absolute;
     top: 0;
     height: 2px;
-    background: #cbd5e1;
+    background: #c4d0d2;
     z-index: 1;
 }
 .h-line-bar.active {
-    background: #6366f1;
-    box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+    background: #4A90E2;
+    box-shadow: 0 0 12px rgba(74, 144, 226, 0.45);
     z-index: 5;
 }
 
@@ -198,7 +223,7 @@
     height: 6px;
     background: white;
     border-radius: 999px;
-    box-shadow: 0 0 10px #fff, 0 0 15px #6366f1;
+    box-shadow: 0 0 10px #fff, 0 0 15px #4A90E2;
     top: -2px; /* Center on the 2px line */
     opacity: 0;
 }
@@ -232,7 +257,7 @@
     left: 50%;
     width: 2px;
     height: 32px;
-    background: #cbd5e1;
+    background: #c4d0d2;
     transform: translateX(-50%);
     z-index: 5;
 }
@@ -241,45 +266,55 @@
 .tree-node-center-line.active,
 .children-container.active-path::before,
 .children-container-line.active {
-    background: #6366f1 !important;
-    box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+    background: #4A90E2 !important;
+    box-shadow: 0 0 12px rgba(74, 144, 226, 0.4);
 }
 
 .node-card {
-    background: white;
-    border: 2px solid #f1f5f9;
-    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1.5px solid rgba(255, 255, 255, 0.7);
+    border-radius: 18px;
     padding: 16px;
     width: 210px;
+    min-height: 130px;
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    box-shadow:
+        0 4px 14px rgba(44, 52, 52, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
     position: relative;
     z-index: 10;
 }
 
 .node-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.1);
+    box-shadow:
+        0 14px 28px -8px rgba(74, 144, 226, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.92);
 }
 
 .node-card.active-card {
-    background: white;
-    box-shadow: 0 0 25px rgba(0,0,0,0.1);
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow:
+        0 0 0 2px rgba(74, 144, 226, 0.35),
+        0 14px 32px rgba(74, 144, 226, 0.12);
     transform: scale(1.05);
 }
 
 .node-card.active-path-card {
-    background: white;
+    background: rgba(255, 255, 255, 0.88);
 }
 
 .node-card.active-card .node-icon,
 .node-card.active-path-card .node-icon {
-    background: #1e293b;
+    background: #2c3434;
     color: white;
 }
 
@@ -309,7 +344,7 @@
     background: white;
     left: -2px;
     border-radius: 999px;
-    box-shadow: 0 0 10px #fff, 0 0 15px #6366f1;
+    box-shadow: 0 0 10px #fff, 0 0 15px #4A90E2;
     z-index: 15;
     animation: travelV 2s infinite ease-in-out;
 }
@@ -338,9 +373,9 @@
 .node-icon {
     width: 32px;
     height: 32px;
-    background: #f1f5f9;
-    color: #64748b;
-    border-radius: 8px;
+    background: rgba(214, 226, 222, 0.55);
+    color: #366480;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -351,27 +386,28 @@
 .role-title {
     font-size: 10px;
     font-weight: 900;
-    color: #1e293b;
+    color: #2c3434;
     text-transform: uppercase;
     margin-bottom: 4px;
 }
 
-.salary-range { font-size: 8px; font-weight: 600; color: #6366f1; margin-bottom: 4px; }
-.occupant-name { font-size: 11px; font-weight: 700; color: #475569; border-top: 1px solid #f1f5f9; padding-top: 6px; margin-top: 4px; }
-.salary-actual { font-size: 11px; font-weight: 900; color: #16a34a; }
-.node-schedule { font-size: 10px; color: #94a3b8; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.salary-range { font-size: 8px; font-weight: 600; color: #4A90E2; margin-bottom: 4px; }
+.occupant-name { font-size: 11px; font-weight: 700; color: #366480; border-top: 1px solid rgba(196, 208, 210, 0.4); padding-top: 6px; margin-top: 4px; }
+.salary-actual { font-size: 11px; font-weight: 900; color: #5b9b7a; }
+.node-schedule { font-size: 10px; color: #8aa0a8; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 4px; }
 
 .dotacion-badge {
     position: absolute;
     top: -8px;
     right: -8px;
-    background: #1e293b;
+    background: #2c3434;
     color: white;
     font-size: 10px;
     font-weight: 900;
     padding: 4px 8px;
     border-radius: 999px;
-    border: 2px solid white;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 2px 8px rgba(44, 52, 52, 0.15);
 }
 
 /* Modals & Panels */
@@ -381,19 +417,50 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(15, 23, 42, 0.4);
-    backdrop-filter: blur(4px);
+    background: rgba(44, 52, 52, 0.25);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
     z-index: 1000;
     display: flex;
     justify-content: flex-end;
 }
 
 .role-details-panel {
-    width: 450px;
-    background: white;
+    width: 580px;
+    max-width: 92vw;
+    background:
+        radial-gradient(circle at 20% 0%, rgba(214, 226, 222, 0.35) 0%, transparent 45%),
+        radial-gradient(circle at 90% 100%, rgba(214, 207, 224, 0.28) 0%, transparent 50%),
+        rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(28px) saturate(140%);
+    -webkit-backdrop-filter: blur(28px) saturate(140%);
+    border-left: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: -20px 0 60px rgba(44, 52, 52, 0.12);
     height: 100%;
-    overflow-y: auto;
+    overflow: hidden; /* sticky header lives inside; inner body scrolls */
+    display: flex;
+    flex-direction: column;
     animation: slideInRight 0.3s ease-out;
+}
+
+/* Sticky header for the sidebar so the role title is always visible */
+.role-details-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    flex-shrink: 0;
+    padding: 24px 28px 18px 28px;
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border-bottom: 1px solid rgba(196, 208, 210, 0.4);
+    box-shadow: 0 4px 18px -8px rgba(44, 52, 52, 0.08);
+}
+
+.role-details-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 28px 32px 28px;
 }
 
 @keyframes slideInRight {
@@ -407,8 +474,9 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(44, 52, 52, 0.35);
     backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     z-index: 2000;
     display: flex;
     align-items: center;
@@ -417,12 +485,16 @@
 }
 
 .role-form-modal {
-    background: white;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.55);
     width: 100%;
     max-width: 1000px;
     max-height: 90%;
     border-radius: 32px;
     overflow-y: auto;
+    box-shadow: 0 30px 80px rgba(44, 52, 52, 0.18);
 }
 
 .form-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -437,14 +509,28 @@
 .button-icon {
     width: 36px;
     height: 36px;
-    border-radius: 10px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid #e2e8f0;
-    background: white;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: #366480;
     cursor: pointer;
+    transition: all 0.2s;
 }
+
+.button-icon:hover {
+    background: rgba(255, 255, 255, 0.85);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(74, 144, 226, 0.12);
+}
+
+.button-icon.edit { color: #4A90E2; }
+.button-icon.delete { color: #d97766; }
+.button-icon.close { color: #8aa0a8; }
 
 .loading-text { font-weight: 900; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.2em; animation: pulse 2s infinite; }
 @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }

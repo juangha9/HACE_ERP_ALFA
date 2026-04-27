@@ -178,6 +178,61 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
         return roots;
     }, [roles]);
 
+    // Pre-calculate which area labels should be visible to avoid mutation issues during render
+    const allowedAreaLabels = useMemo(() => {
+        const allowed = new Set<string>();
+        const levelAreaSeen = new Map<number, Set<string>>();
+
+        const traverse = (nodes: any[], parentLevel: number) => {
+            nodes.forEach(node => {
+                const nodeJ = Number(node.jerarquia) || (parentLevel + 1);
+                
+                if (node.children?.length > 0) {
+                    const sortedChildren = [...node.children].sort((a, b) => (Number(a.jerarquia) || 0) - (Number(b.jerarquia) || 0));
+                    const areasFound: string[] = [];
+                    let currentArea = '';
+                    sortedChildren.forEach((child: any) => {
+                        const normArea = (child.area || 'Sin área').trim();
+                        if (normArea !== currentArea) {
+                            areasFound.push(normArea);
+                            currentArea = normArea;
+                        }
+                    });
+
+                    areasFound.forEach(areaName => {
+                        const cleanArea = areaName.trim();
+                        const isGerencia = cleanArea.toUpperCase() === 'GERENCIA' || cleanArea.toUpperCase() === 'GERENCIA GENERAL';
+                        if (isGerencia || cleanArea === '' || cleanArea === 'Sin área') return;
+
+                        // NEW LOGIC: Only show if NONE of the children in this area group have children of their own IN THE SAME AREA
+                        // This pushes the label to the bottom-most level of the area branch
+                        const childrenInThisArea = sortedChildren.filter(c => (c.area || 'Sin área').trim() === cleanArea);
+                        const hasSubAreaChildren = childrenInThisArea.some(c => 
+                            c.children?.some((gc: any) => (gc.area || 'Sin área').trim() === cleanArea)
+                        );
+
+                        if (hasSubAreaChildren) return;
+
+                        // Estimate child level
+                        const firstChildInArea = childrenInThisArea[0];
+                        const childLevel = Number(firstChildInArea?.jerarquia) || (nodeJ + 1);
+
+                        if (!levelAreaSeen.has(childLevel)) levelAreaSeen.set(childLevel, new Set());
+                        if (!levelAreaSeen.get(childLevel)!.has(cleanArea)) {
+                            levelAreaSeen.get(childLevel)!.add(cleanArea);
+                            allowed.add(`${node.id}-${cleanArea}-${childLevel}`);
+                        }
+                    });
+
+                    traverse(node.children, nodeJ);
+                }
+            });
+        };
+
+        traverse(roleTree, 0);
+        return allowed;
+    }, [roleTree]);
+
     const handleNodeSelect = React.useCallback((node: Role) => {
         // Find parents
         const path: string[] = [];
@@ -266,6 +321,8 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
                                 onSelect={handleNodeSelect}
                                 onOpenDetails={handleNodeOpenDetails}
                                 level={0}
+                                parentJerarquia={0}
+                                allowedAreaLabels={allowedAreaLabels}
                             />
                         ))}
                     </div>
@@ -433,7 +490,7 @@ function NotificationPopup({ type, message, onClose }: { type: 'success' | 'erro
 
 // --- Subcomponents ---
 
-const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePath, level }: { node: any, viewMode: ViewMode, onSelect: (role: Role) => void, onOpenDetails: (role: Role) => void, activePath: string[], level: number }) => {
+const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePath, level, parentJerarquia, allowedAreaLabels }: { node: any, viewMode: ViewMode, onSelect: (role: Role) => void, onOpenDetails: (role: Role) => void, activePath: string[], level: number, parentJerarquia: number, allowedAreaLabels: Set<string> }) => {
     const isActive = activePath.includes(node.id);
     const isSelected = activePath[0] === node.id;
     const activeChildId = node.children?.find((c: any) => activePath.includes(c.id))?.id;
@@ -494,10 +551,21 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
         return () => clearTimeout(timer);
     }, [childCount, activePath, viewMode]);
     
+    const nodeJerarquia = Number(node.jerarquia) || (level + 1);
+    const jerarquiaGap = Math.max(1, nodeJerarquia - parentJerarquia);
+    const LEVEL_STEP = 245; // Refined for exact alignment
+    const extraPadding = (jerarquiaGap - 1) * LEVEL_STEP;
+
     return (
-        <div className={`tree-node-container ${isActive ? 'active-branch' : ''}`}>
+        <div 
+            className={`tree-node-container ${isActive ? 'active-branch' : ''}`}
+            style={{ paddingTop: `${32 + extraPadding}px` }}
+        >
             {/* Vertical connector to parent/sibling-bar */}
-            <div className={`tree-node-center-line ${isActive ? 'active' : ''}`}>
+            <div 
+                className={`tree-node-center-line ${isActive ? 'active' : ''}`}
+                style={{ height: `${32 + extraPadding}px` }}
+            >
                 {isActive && activePath[activePath.length - 1] !== node.id && (
                     <div className="pulse-light-v" style={{ animationDelay: `${animDelay}s` }}></div>
                 )}
@@ -603,8 +671,14 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                                         const thisGroupStartIdx = areaInfo.startIdx;
                                         
                                         // Center calculation for THIS area group
-                                        const nextAreaStartIdx = aIdx + 1 < areas.length ? areas[aIdx + 1].startIdx : node.children.length;
+                                        const nextAreaStartIdx = aIdx + 1 < areas.length ? areas[aIdx + 1].startIdx : sortedChildren.length;
                                         const groupEndIdx = nextAreaStartIdx - 1;
+                                        
+                                        const childJerarquia = Number(sortedChildren[areaInfo.startIdx].jerarquia) || (nodeJerarquia + 1);
+                                        const cleanAreaName = (areaInfo.name || '').trim();
+                                        
+                                        const shouldShowLabel = allowedAreaLabels.has(`${node.id}-${cleanAreaName}-${childJerarquia}`);
+
                                         const startC = linePositions.centers[thisGroupStartIdx];
                                         const endC = linePositions.centers[groupEndIdx];
                                         
@@ -623,10 +697,14 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                                                         }}
                                                     />
                                                 )}
-                                                {areaInfo.name !== 'Sin área' && (
+                                                {shouldShowLabel && (
                                                     <div 
                                                         className="flat-area-label" 
-                                                        style={{ left: `${labelCenterX}px`, top: `${linePositions.cardBottom}px`, transform: 'translateX(-50%)' }}
+                                                        style={{ 
+                                                            left: `${labelCenterX}px`, 
+                                                            top: `${linePositions.cardBottom + 40}px`, 
+                                                            transform: 'translateX(-50%)' 
+                                                        }}
                                                     >{areaInfo.name}</div>
                                                 )}
                                             </React.Fragment>
@@ -644,6 +722,8 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                                             onOpenDetails={onOpenDetails}
                                             activePath={activePath} 
                                             level={level + 1}
+                                            parentJerarquia={nodeJerarquia}
+                                            allowedAreaLabels={allowedAreaLabels}
                                         />
                                     </div>
                                 );
@@ -660,65 +740,77 @@ function RoleDetailsView({ role, roles, onEdit, onDelete, onClose }: { role: Rol
     const subordinates = roles.filter(r => r.parent_id === role.id && role.id);
 
     return (
-        <div className="p-6">
-            <div className="flex justify-between items-start mb-6">
-                <div>
-                    <h2 className="text-2xl font-black">{role.nombre_cargo}</h2>
-                    <p className="text-slate-500 uppercase text-xs font-bold tracking-widest">{role.area}</p>
-                </div>
-                <div className="flex gap-2">
-                    <button className="button-icon edit" title="Editar Puesto" onClick={onEdit}><Icon name="edit" /></button>
-                    <button 
-                        className={`button-icon delete ${subordinates.length > 0 ? 'opacity-30 cursor-not-allowed bg-slate-100 hover:bg-slate-100' : ''}`} 
-                        title={subordinates.length > 0 ? "Estructura Protegida: Reasigne dependientes antes de poder eliminar" : "Eliminar Puesto"} 
-                        onClick={onDelete}
-                        disabled={subordinates.length > 0}
-                    >
-                        <Icon name="delete" />
-                    </button>
-                    <button className="button-icon close" onClick={onClose}><Icon name="close" /></button>
+        <>
+            {/* Sticky header — always visible while scrolling so el rol queda identificado */}
+            <div className="role-details-header">
+                <div className="flex justify-between items-start gap-4">
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: 'rgba(74, 144, 226, 0.12)', color: '#4A90E2' }}>
+                                <Icon name={getRoleIcon(role.nombre_cargo)} className="!text-lg" />
+                            </div>
+                            <p className="uppercase text-[10px] font-black tracking-[0.18em]" style={{ color: '#366480' }}>{role.area || 'Sin área'}</p>
+                        </div>
+                        <h2 className="text-2xl font-black leading-tight" style={{ color: '#2c3434' }}>{role.nombre_cargo}</h2>
+                        {role.nombres && <p className="text-sm font-semibold mt-1" style={{ color: '#366480' }}>{role.nombres}</p>}
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                        <button className="button-icon edit" title="Editar Puesto" onClick={onEdit}><Icon name="edit" /></button>
+                        <button
+                            className={`button-icon delete ${subordinates.length > 0 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            title={subordinates.length > 0 ? "Estructura Protegida: Reasigne dependientes antes de poder eliminar" : "Eliminar Puesto"}
+                            onClick={onDelete}
+                            disabled={subordinates.length > 0}
+                        >
+                            <Icon name="delete" />
+                        </button>
+                        <button className="button-icon close" onClick={onClose}><Icon name="close" /></button>
+                    </div>
                 </div>
             </div>
 
-            <div className="space-y-6">
-                <section>
-                    <h4 className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase mb-2"><Icon name="target" className="!text-sm" /> Propósito</h4>
-                    <p className="text-sm bg-slate-50 p-3 rounded-lg border border-slate-100">{role.proposito || 'Sin propósito definido.'}</p>
-                </section>
+            {/* Scrollable body */}
+            <div className="role-details-body custom-scrollbar">
+                <div className="space-y-5">
+                    <section>
+                        <h4 className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wider mb-2" style={{ color: '#4A90E2' }}><Icon name="target" className="!text-sm" /> Propósito</h4>
+                        <p className="text-sm leading-relaxed p-3.5 rounded-xl" style={{ background: 'rgba(255, 255, 255, 0.55)', backdropFilter: 'blur(10px)', border: '1px solid rgba(196, 208, 210, 0.35)', color: '#2c3434' }}>{role.proposito || 'Sin propósito definido.'}</p>
+                    </section>
 
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Reporta a:</span>
-                        <p className="text-sm font-semibold">{role.reporta_a || 'Gerente General (Máximo Cargo)'}</p>
-                    </div>
-                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Supervisa a ({subordinates.length}):</span>
-                        <div className="flex flex-wrap gap-1 mt-1 max-h-[80px] overflow-y-auto custom-scrollbar pr-1">
-                            {subordinates.length > 0 ? subordinates.map(s => (
-                                <span key={s.id} className="text-[9px] font-black uppercase px-2 py-0.5 bg-white border border-slate-200 rounded-full text-slate-600">
-                                    {s.nombre_cargo}
-                                </span>
-                            )) : (
-                                <p className="text-sm font-semibold">Nadie directamente</p>
-                            )}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 rounded-xl" style={{ background: 'rgba(255, 255, 255, 0.55)', backdropFilter: 'blur(10px)', border: '1px solid rgba(196, 208, 210, 0.35)' }}>
+                            <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#8aa0a8' }}>Reporta a:</span>
+                            <p className="text-sm font-semibold mt-1" style={{ color: '#2c3434' }}>{role.reporta_a || 'Gerente General (Máximo Cargo)'}</p>
+                        </div>
+                        <div className="p-3 rounded-xl" style={{ background: 'rgba(255, 255, 255, 0.55)', backdropFilter: 'blur(10px)', border: '1px solid rgba(196, 208, 210, 0.35)' }}>
+                            <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: '#8aa0a8' }}>Supervisa a ({subordinates.length}):</span>
+                            <div className="flex flex-wrap gap-1 mt-1 max-h-[80px] overflow-y-auto custom-scrollbar pr-1">
+                                {subordinates.length > 0 ? subordinates.map(s => (
+                                    <span key={s.id} className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full" style={{ background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(196, 208, 210, 0.5)', color: '#366480' }}>
+                                        {s.nombre_cargo}
+                                    </span>
+                                )) : (
+                                    <p className="text-sm font-semibold" style={{ color: '#2c3434' }}>Nadie directamente</p>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                {CATEGORIES.map(cat => {
-                    const items = role.detalles_rol?.filter(d => d.categoria === cat.id) || [];
-                    if (items.length === 0) return null;
-                    return (
-                        <section key={cat.id}>
-                            <h4 className="text-xs font-bold text-indigo-600 uppercase mb-2">{cat.label}</h4>
-                            <ul className="list-disc pl-5 text-sm space-y-1">
-                                {items.map((item, i) => <li key={i}>{item.descripcion}</li>)}
-                            </ul>
-                        </section>
-                    );
-                })}
+                    {CATEGORIES.map(cat => {
+                        const items = role.detalles_rol?.filter(d => d.categoria === cat.id) || [];
+                        if (items.length === 0) return null;
+                        return (
+                            <section key={cat.id}>
+                                <h4 className="text-[11px] font-black uppercase tracking-wider mb-2 pb-1.5" style={{ color: '#4A90E2', borderBottom: '1.5px solid rgba(74, 144, 226, 0.18)' }}>{cat.label}</h4>
+                                <ul className="list-disc pl-5 text-sm space-y-1.5" style={{ color: '#2c3434' }}>
+                                    {items.map((item, i) => <li key={i}>{item.descripcion}</li>)}
+                                </ul>
+                            </section>
+                        );
+                    })}
+                </div>
             </div>
-        </div>
+        </>
     );
 }
 
@@ -734,6 +826,14 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
 }) {
     const subordinates = roles.filter(r => r.parent_id === role.id && role.id);
     const parentRole = roles.find(r => r.id === role.parent_id);
+    
+    // Calculate initial offset based on current jerarquia and parent jerarquia
+    const [offset, setOffset] = useState(() => {
+        const currentJ = Number(role.jerarquia) || 1;
+        const parentJ = Number(parentRole?.jerarquia) || 0;
+        return Math.max(1, currentJ - parentJ);
+    });
+
     const [blockToDelete, setBlockToDelete] = useState<string | null>(null);
 
     const confirmDeleteBlock = () => {
@@ -873,11 +973,12 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
                                 onChange={e => {
                                     const pId = e.target.value;
                                     const parent = roles.find(r => r.id === pId);
+                                    const parentJ = parent ? (Number(parent.jerarquia) || 1) : 0;
                                     setRole({ 
                                         ...role, 
                                         parent_id: pId || null,
                                         reporta_a: parent ? parent.nombre_cargo : 'Gerente General',
-                                        jerarquia: parent ? (Number(parent.jerarquia) || 1) + 1 : 1
+                                        jerarquia: parentJ + offset
                                     });
                                 }}
                             >
@@ -890,23 +991,47 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
 
                         <div className="grid grid-cols-2 gap-4">
                             <div className="form-group">
-                                <label>Jerarquía (Nivel)</label>
-                                <input 
-                                    type="number"
-                                    min="1"
-                                    value={role.jerarquia || ''} 
-                                    onChange={e => setRole({ ...role, jerarquia: parseInt(e.target.value) })}
-                                />
+                                <label title="Niveles de separación con el superior">Incremento Nivel</label>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="number"
+                                        min="1"
+                                        className="!py-2 !px-3"
+                                        value={offset} 
+                                        onChange={e => {
+                                            const val = Math.max(1, parseInt(e.target.value) || 1);
+                                            setOffset(val);
+                                            const parentJ = parentRole ? (Number(parentRole.jerarquia) || 1) : 0;
+                                            setRole({ ...role, jerarquia: parentJ + val });
+                                        }}
+                                    />
+                                    <span className="text-[10px] font-bold text-slate-400">NIVELES</span>
+                                </div>
                             </div>
                             <div className="form-group">
-                                <label>Dotación (Puestos)</label>
+                                <label>Jerarquía Absoluta</label>
                                 <input 
                                     type="number"
                                     min="1"
-                                    value={role.dotacion || 1} 
-                                    onChange={e => setRole({ ...role, dotacion: parseInt(e.target.value) || 1 })}
+                                    className="!py-2 !px-3 bg-indigo-50/50 border-indigo-100 font-bold text-indigo-700"
+                                    value={role.jerarquia || ''} 
+                                    onChange={e => {
+                                        const newJ = parseInt(e.target.value) || 1;
+                                        setRole({ ...role, jerarquia: newJ });
+                                        const parentJ = parentRole ? (Number(parentRole.jerarquia) || 1) : 0;
+                                        setOffset(Math.max(1, newJ - parentJ));
+                                    }}
                                 />
                             </div>
+                        </div>
+                        <div className="form-group mt-2">
+                            <label>Dotación (Puestos)</label>
+                            <input 
+                                type="number"
+                                min="1"
+                                value={role.dotacion || 1} 
+                                onChange={e => setRole({ ...role, dotacion: parseInt(e.target.value) || 1 })}
+                            />
                         </div>
                     </section>
 
@@ -1195,15 +1320,41 @@ function BulkPasteModal({ category, onConfirm, onCancel }: {
 
 // --- HTML Export Generator ---
 function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
-    const title = `Organigrama Dinámico - Modo ${mode}`;
+    const title = `Organigrama - Modo ${mode}`;
     const date = new Date().toLocaleDateString();
 
-    const renderTreeNodes = (nodes: any[], level: number): string => {
-        return nodes.map(node => `
-            <div class="tree-node-container">
-                ${level > 0 ? '<div class="tree-node-center-line"></div>' : ''}
-                <div class="node-card" onclick="showDetails('${node.id}')">
-                    <div class="node-icon"><span class="material-symbols-outlined">person</span></div>
+    const LEVEL_STEP = 245;
+    const getLevelColor = (lvl: number) => lvl === 0 ? '#B68D40' : lvl === 1 ? '#001B36' : '#00162B';
+
+    const renderTreeNodes = (nodes: any[], level: number, parentJerarquia: number): string => {
+        const sorted = [...nodes].sort((a: any, b: any) => {
+            const aArea = (a.area || 'Sin área').trim().toLowerCase();
+            const bArea = (b.area || 'Sin área').trim().toLowerCase();
+            if (aArea !== bArea) return aArea.localeCompare(bArea, 'es');
+            return (Number(a.jerarquia) || 0) - (Number(b.jerarquia) || 0);
+        });
+
+        return sorted.map(node => {
+            const hasChildren = node.children && node.children.length > 0;
+            const childArea = (node.area || 'Sin área').trim();
+            const isAreaLabelable = childArea !== '' && childArea.toLowerCase() !== 'sin área' && childArea.toUpperCase() !== 'GERENCIA' && childArea.toUpperCase() !== 'GERENCIA GENERAL';
+
+            // Replicar la lógica de la app: paddingTop y altura de la línea según
+            // la diferencia de jerarquía con el padre. Si jerarquía=5 y padre=3, gap=2 → +245px×1.
+            const nodeJ = Number(node.jerarquia) || (level + 1);
+            const gap = Math.max(1, nodeJ - parentJerarquia);
+            const extraPadding = (gap - 1) * LEVEL_STEP;
+            const containerPadTop = level === 0 ? 0 : (32 + extraPadding);
+            const lineHeight = 32 + extraPadding;
+
+            const levelColor = getLevelColor(level);
+            const cardBorder = `${levelColor}1A`; // ~10% opacity
+
+            return `
+            <div class="tree-node-container" data-node-id="${node.id}" data-jerarquia="${nodeJ}" data-parent-id="${node.parent_id || ''}" data-area="${childArea}" data-area-labelable="${isAreaLabelable ? '1' : '0'}" style="padding-top: ${containerPadTop}px;">
+                ${level > 0 ? `<div class="tree-node-center-line" style="height: ${lineHeight}px;"></div>` : ''}
+                <div class="node-card" data-node-id="${node.id}" data-level-color="${levelColor}" data-level="${level}" style="border-color: ${cardBorder};" onclick="selectNode(event, '${node.id}')" ondblclick="showDetails('${node.id}')">
+                    <div class="node-icon"><span class="material-symbols-outlined">${getRoleIcon(node.nombre_cargo || '')}</span></div>
                     <div class="node-info">
                         <h3 class="role-title">${node.nombre_cargo}</h3>
                         ${mode === 'CORPORATIVO' && node.rango_salarial ? `<p class="salary-range">(${node.rango_salarial})</p>` : ''}
@@ -1216,16 +1367,17 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
                         ${node.dotacion > 1 ? `<span class="dotacion-badge">x${node.dotacion}</span>` : ''}
                     </div>
                 </div>
-                ${node.children && node.children.length > 0 ? `
-                    <div class="children-container">
+                ${hasChildren ? `
+                    <div class="children-container" data-parent-id="${node.id}">
                         <div class="children-container-line"></div>
                         <div class="children-row">
-                            ${renderTreeNodes(node.children, level + 1)}
+                            ${renderTreeNodes(node.children, level + 1, nodeJ)}
                         </div>
                     </div>
                 ` : ''}
             </div>
-        `).join('');
+        `;
+        }).join('');
     };
 
     // Safe roles injection: escape backticks and dollar signs to avoid breaking the outer template literal
@@ -1236,53 +1388,290 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
 <head>
     <meta charset="UTF-8">
     <title>${title}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
     <style>
-        :root { --primary: #6366f1; --slate-800: #1e293b; --slate-500: #64748b; --slate-400: #94a3b8; }
-        body { font-family: 'Inter', sans-serif; background: #f8fafc; margin: 0; padding: 40px; color: var(--slate-800); }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 50px; }
-        h1 { margin: 0; font-weight: 900; text-transform: uppercase; letter-spacing: -0.02em; }
-        .date { color: var(--slate-500); font-size: 14px; font-weight: 700; }
-        
+        :root {
+            --primary: #4A90E2;
+            --deep-azure: #366480;
+            --slate-text: #2c3434;
+            --muted: #8aa0a8;
+            --line: #c4d0d2;
+            --pastel-mint: rgba(214, 226, 222, 0.35);
+            --pastel-lavender: rgba(214, 207, 224, 0.30);
+            --glass-bg: rgba(255, 255, 255, 0.78);
+            --glass-border: rgba(255, 255, 255, 0.55);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+            margin: 0;
+            padding: 40px;
+            color: var(--slate-text);
+            min-height: 100vh;
+            letter-spacing: -0.01em;
+            background:
+                radial-gradient(circle at 12% 8%, rgba(196, 213, 215, 0.45) 0%, transparent 45%),
+                radial-gradient(circle at 88% 92%, rgba(214, 207, 224, 0.40) 0%, transparent 50%),
+                linear-gradient(135deg, #f3f6f5 0%, #eef2f3 50%, #ecedef 100%);
+            background-attachment: fixed;
+        }
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 40px;
+            padding: 22px 28px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(18px) saturate(140%);
+            -webkit-backdrop-filter: blur(18px) saturate(140%);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 10px 40px rgba(44, 52, 52, 0.06);
+        }
+        h1 { margin: 0; font-weight: 900; text-transform: uppercase; letter-spacing: -0.02em; font-size: 22px; color: var(--slate-text); }
+        .date { color: var(--deep-azure); font-size: 13px; font-weight: 700; margin-top: 4px; }
+        .brand { font-weight: 900; color: var(--primary); letter-spacing: 0.18em; font-size: 12px; text-transform: uppercase; }
+
+        .canvas {
+            padding: 60px 32px 80px 32px;
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--glass-border);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 10px 40px rgba(44, 52, 52, 0.05);
+            overflow: auto;
+        }
+
         .tree-wrapper { display: flex; flex-direction: column; align-items: center; width: min-content; margin: 0 auto; }
         .tree-node-container { position: relative; padding: 32px 10px 0 10px; display: flex; flex-direction: column; align-items: center; }
-        
-        .tree-node-container::before, .tree-node-container::after {
-            content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 2px; background: #cbd5e1;
-        }
-        .tree-node-container::after { right: auto; left: 50%; }
-        .tree-node-container:only-child::before, .tree-node-container:only-child::after { display: none; }
-        .tree-node-container:first-child::before { display: none; }
-        .tree-node-container:last-child::after { display: none; }
+        .tree-wrapper > .tree-node-container { padding-top: 0 !important; }
+        .tree-wrapper > .tree-node-container > .tree-node-center-line { display: none !important; }
 
-        .tree-node-center-line { position: absolute; top: 0; left: 50%; width: 2px; height: 32px; background: #cbd5e1; transform: translateX(-50%); }
-        
-        .node-card { background: white; border: 2px solid #f1f5f9; border-radius: 16px; padding: 16px; width: 210px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; transition: all 0.3s; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); position: relative; z-index: 10; }
-        .node-card:hover { transform: translateY(-5px); box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.1); border-color: var(--primary); }
-        
-        .node-icon { width: 32px; height: 32px; background: #f1f5f9; color: var(--slate-500); border-radius: 8px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
-        .role-title { font-size: 10px; font-weight: 900; text-transform: uppercase; margin: 0 0 4px 0; }
+        .tree-node-center-line { position: absolute; top: 0; left: 50%; width: 2px; height: 32px; background: var(--line); transform: translateX(-50%); z-index: 5; }
+
+        /* Horizontal sibling bar (drawn by JS) */
+        .h-line-bar { position: absolute; top: 0; height: 2px; background: var(--line); z-index: 1; }
+        .h-line-bar.active { background: var(--primary); box-shadow: 0 0 12px rgba(74, 144, 226, 0.45); z-index: 5; }
+
+        /* Horizontal pulsing light segment */
+        .pulse-light-h { position: absolute; top: 0; height: 2px; z-index: 20; pointer-events: none; }
+        .pulse-light-h.full { left: 0; width: 100%; }
+        .pulse-light-h::after {
+            content: ''; position: absolute;
+            width: 12px; height: 6px; background: white; border-radius: 999px;
+            box-shadow: 0 0 10px #fff, 0 0 15px var(--primary);
+            top: -2px; opacity: 0;
+        }
+        .pulse-light-h.to-right::after { animation: travelHRight 1.2s infinite linear; }
+        .pulse-light-h.to-left::after  { animation: travelHLeft  1.2s infinite linear; }
+        @keyframes travelHRight { 0% { left: 0%; opacity: 0; } 30% { opacity: 1; } 70% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+        @keyframes travelHLeft  { 0% { left: 100%; opacity: 0; } 30% { opacity: 1; } 70% { opacity: 1; } 100% { left: 0%; opacity: 0; } }
+
+        .node-card {
+            background: rgba(255, 255, 255, 0.78);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1.5px solid rgba(255, 255, 255, 0.7);
+            border-radius: 18px;
+            padding: 16px;
+            width: 210px;
+            display: flex; flex-direction: column; align-items: center; text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 14px rgba(44, 52, 52, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            position: relative; z-index: 10;
+        }
+        .node-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 14px 28px -8px rgba(74, 144, 226, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        }
+
+        .node-icon { width: 32px; height: 32px; background: rgba(214, 226, 222, 0.55); color: var(--deep-azure); border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+        .role-title { font-size: 10px; font-weight: 900; text-transform: uppercase; margin: 0 0 4px 0; color: var(--slate-text); }
         .salary-range { font-size: 8px; font-weight: 600; color: var(--primary); margin: 0 0 4px 0; }
-        .occupant-name { font-size: 11px; font-weight: 700; color: #475569; border-top: 1px solid #f1f5f9; padding-top: 6px; margin-top: 4px; }
-        .salary-actual { font-size: 11px; font-weight: 900; color: #16a34a; margin: 4px 0 0 0; }
-        .node-schedule { font-size: 10px; color: var(--slate-400); margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 4px; }
-        .dotacion-badge { position: absolute; top: -8px; right: -8px; background: var(--slate-800); color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 999px; border: 2px solid white; }
-        
-        .children-container { position: relative; display: flex; flex-direction: column; align-items: center; width: 100%; }
-        .children-container-line { width: 2px; height: 32px; background: #cbd5e1; }
-        .children-row { display: flex; justify-content: center; position: relative; width: 100%; }
-        
-        #details-modal { position: fixed; top: 0; right: 0; width: 450px; height: 100%; background: white; box-shadow: -10px 0 30px rgba(0,0,0,0.1); z-index: 1000; transform: translateX(100%); transition: transform 0.3s ease-out; overflow-y: auto; padding: 40px; }
+        .occupant-name { font-size: 11px; font-weight: 700; color: var(--deep-azure); border-top: 1px solid rgba(196, 208, 210, 0.4); padding-top: 6px; margin-top: 4px; }
+        .salary-actual { font-size: 11px; font-weight: 900; color: #5b9b7a; margin: 4px 0 0 0; }
+        .node-schedule { font-size: 10px; color: var(--muted); margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 4px; }
+        .dotacion-badge { position: absolute; top: -8px; right: -8px; background: var(--slate-text); color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.9); box-shadow: 0 2px 8px rgba(44, 52, 52, 0.15); }
+
+        .children-container { position: relative; padding-top: 64px; display: flex; flex-direction: column; align-items: center; width: 100%; }
+        .children-container-line { position: absolute; top: 0; left: 50%; width: 2px; height: 64px; background: var(--line); transform: translateX(-50%); z-index: 5; transition: background 0.2s; }
+        .children-row { display: flex; justify-content: center; position: relative; padding-bottom: 60px; }
+
+        /* Active path highlighting */
+        .tree-node-container.active-branch > .tree-node-center-line,
+        .children-container.active-path > .children-container-line {
+            background: var(--primary) !important;
+            box-shadow: 0 0 12px rgba(74, 144, 226, 0.4);
+        }
+        .node-card.active-card {
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 0 25px rgba(44, 52, 52, 0.10);
+            transform: scale(1.05);
+        }
+        .node-card.active-path-card { background: rgba(255, 255, 255, 0.88); }
+        .node-card.active-card .node-icon,
+        .node-card.active-path-card .node-icon { background: var(--slate-text); color: white; }
+
+        /* Pulsing halo around the selected card — usa el color del nivel
+           (heredado del border-color inline del .node-card) */
+        .click-pulse-halo {
+            position: absolute; inset: -6px;
+            border-radius: 22px;
+            border: 2px solid currentColor;
+            border-color: inherit;
+            opacity: 0;
+            pointer-events: none;
+            animation: clickPulse 2s infinite;
+        }
+        @keyframes clickPulse {
+            0%   { transform: scale(0.95); opacity: 0; }
+            50%  { opacity: 0.5; }
+            100% { transform: scale(1.05); opacity: 0; }
+        }
+
+        /* Vertical pulsing light along the active connector */
+        .pulse-light-v {
+            position: absolute;
+            width: 6px; height: 12px;
+            background: white;
+            left: -2px;
+            border-radius: 999px;
+            box-shadow: 0 0 10px #fff, 0 0 15px var(--primary);
+            z-index: 15;
+            animation: travelV 2s infinite ease-in-out;
+            pointer-events: none;
+        }
+        @keyframes travelV {
+            0%   { top: 0%;  opacity: 0; }
+            25%  { opacity: 1; }
+            50%  { top: 100%; margin-top: -12px; opacity: 1; }
+            75%  { opacity: 1; }
+            100% { top: 0%;  opacity: 0; }
+        }
+
+        /* Area labels (pastel glass pill) */
+        .area-label {
+            position: absolute;
+            transform: translateX(-50%);
+            color: var(--deep-azure);
+            font-size: 11px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            white-space: nowrap;
+            opacity: 0.85;
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            padding: 4px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: 0 2px 8px rgba(44, 52, 52, 0.04);
+            pointer-events: none;
+            z-index: 50;
+        }
+        /* Dashed divider between area groups */
+        .area-divider {
+            position: absolute;
+            width: 0;
+            border-left: 2px dashed #a8b8d0;
+            opacity: 0.55;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Sidebar (sticky header + glassmorph) */
+        #details-modal {
+            position: fixed; top: 0; right: 0;
+            width: 580px; max-width: 92vw;
+            height: 100%;
+            background:
+                radial-gradient(circle at 20% 0%, rgba(214, 226, 222, 0.35) 0%, transparent 45%),
+                radial-gradient(circle at 90% 100%, rgba(214, 207, 224, 0.28) 0%, transparent 50%),
+                rgba(255, 255, 255, 0.78);
+            backdrop-filter: blur(28px) saturate(140%);
+            -webkit-backdrop-filter: blur(28px) saturate(140%);
+            border-left: 1px solid var(--glass-border);
+            box-shadow: -20px 0 60px rgba(44, 52, 52, 0.12);
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease-out;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
         #details-modal.open { transform: translateX(0); }
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); z-index: 999; display: none; }
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(44, 52, 52, 0.25);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 999;
+            display: none;
+        }
         .modal-overlay.open { display: block; }
-        .close-btn { position: absolute; top: 20px; right: 20px; cursor: pointer; background: #f1f5f9; border: none; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
-        
-        .section-title { font-size: 11px; font-weight: 900; color: var(--primary); text-transform: uppercase; margin: 24px 0 10px 0; border-bottom: 2px solid #f1f5f9; padding-bottom: 6px; letter-spacing: 0.05em; }
-        .detail-text { font-size: 13px; line-height: 1.6; color: #475569; background: #f8fafc; padding: 12px; border-radius: 12px; }
+
+        .details-header {
+            position: sticky; top: 0; z-index: 5;
+            flex-shrink: 0;
+            padding: 24px 28px 18px 28px;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(18px) saturate(140%);
+            -webkit-backdrop-filter: blur(18px) saturate(140%);
+            border-bottom: 1px solid rgba(196, 208, 210, 0.4);
+            box-shadow: 0 4px 18px -8px rgba(44, 52, 52, 0.08);
+        }
+        .details-header .row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+        .details-header .left { min-width: 0; flex: 1; }
+        .details-header .area-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .details-header .area-icon { width: 32px; height: 32px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(74, 144, 226, 0.12); color: var(--primary); }
+        .details-header .area { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.18em; color: var(--deep-azure); margin: 0; }
+        .details-header h2 { font-size: 22px; font-weight: 900; margin: 0; line-height: 1.15; color: var(--slate-text); letter-spacing: -0.01em; }
+        .details-header .occupant { font-size: 13px; font-weight: 600; color: var(--deep-azure); margin: 4px 0 0 0; }
+        .close-btn {
+            cursor: pointer; border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            width: 36px; height: 36px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            color: var(--muted);
+            transition: all 0.2s;
+        }
+        .close-btn:hover { background: rgba(255, 255, 255, 0.85); transform: translateY(-1px); }
+
+        .details-body {
+            flex: 1; overflow-y: auto;
+            padding: 22px 28px 32px 28px;
+        }
+        .details-body::-webkit-scrollbar { width: 6px; }
+        .details-body::-webkit-scrollbar-track { background: transparent; }
+        .details-body::-webkit-scrollbar-thumb { background: rgba(196, 208, 210, 0.6); border-radius: 10px; }
+
+        .section-title {
+            font-size: 11px; font-weight: 900; color: var(--primary);
+            text-transform: uppercase; margin: 22px 0 10px 0;
+            border-bottom: 1.5px solid rgba(74, 144, 226, 0.18);
+            padding-bottom: 6px; letter-spacing: 0.08em;
+        }
+        .detail-text {
+            font-size: 13px; line-height: 1.6; color: var(--slate-text);
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(196, 208, 210, 0.35);
+            padding: 14px; border-radius: 14px;
+        }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+        .info-card {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(196, 208, 210, 0.35);
+            padding: 14px; border-radius: 14px;
+        }
+        .info-card .label { font-size: 10px; font-weight: 900; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+        .info-card .value { font-weight: 700; font-size: 13px; color: var(--slate-text); margin-top: 4px; }
         ul { padding-left: 18px; margin: 0; }
-        li { margin-bottom: 6px; font-size: 13px; color: #475569; }
+        li { margin-bottom: 6px; font-size: 13px; color: var(--slate-text); line-height: 1.5; }
     </style>
 </head>
 <body>
@@ -1291,46 +1680,397 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             <h1>${title}</h1>
             <div class="date">Exportado el: ${date}</div>
         </div>
-        <div style="font-weight:900; color:var(--primary)">SISTEMA ERP</div>
+        <div class="brand">SISTEMA ERP · HACE</div>
     </div>
 
-    <div class="tree-wrapper">
-        ${renderTreeNodes(tree, 0)}
+    <div class="canvas" onclick="clearSelection()">
+        <div class="tree-wrapper">
+            ${renderTreeNodes(tree, 0, 0)}
+        </div>
     </div>
 
     <div id="modal-overlay" class="modal-overlay" onclick="closeModal()"></div>
     <div id="details-modal">
-        <button class="close-btn" onclick="closeModal()">
-            <span class="material-symbols-outlined">close</span>
-        </button>
-        <div id="modal-content"></div>
+        <div id="details-header" class="details-header"></div>
+        <div class="details-body">
+            <div id="modal-content"></div>
+        </div>
     </div>
 
     <script>
         // Inyectamos el JSON como una cadena de texto simple para evitar problemas con backticks en el compilador
         const rolesDataRaw = '${rolesJson.replace(/'/g, "\\'")}';
         const roles = JSON.parse(rolesDataRaw);
-        
+
+        // ============================================================
+        // Layout (líneas horizontales base + etiquetas de área)
+        // ============================================================
+        function layoutConnectors() {
+            // Bases horizontales por fila de hijos
+            document.querySelectorAll('.children-row').forEach(function(row) {
+                row.querySelectorAll(':scope > .h-line-bar:not(.active)').forEach(function(el) { el.remove(); });
+
+                const wrappers = Array.from(row.children).filter(function(c) {
+                    return c.classList && c.classList.contains('tree-node-container');
+                });
+                if (wrappers.length < 2) return;
+
+                const rowRect = row.getBoundingClientRect();
+                const firstCard = wrappers[0].querySelector(':scope > .node-card');
+                const lastCard  = wrappers[wrappers.length - 1].querySelector(':scope > .node-card');
+                if (!firstCard || !lastCard) return;
+                const fr = firstCard.getBoundingClientRect();
+                const lr = lastCard.getBoundingClientRect();
+                const firstCenter = (fr.left + fr.width / 2) - rowRect.left;
+                const lastCenter  = (lr.left + lr.width / 2) - rowRect.left;
+
+                const bar = document.createElement('div');
+                bar.className = 'h-line-bar';
+                bar.style.left  = firstCenter + 'px';
+                bar.style.width = (lastCenter - firstCenter) + 'px';
+                row.appendChild(bar);
+            });
+        }
+
+        // ----- Etiquetas de área (dedup global por nivel/jerarquía) -----
+        function renderAreaLabels() {
+            // Limpiar previas
+            document.querySelectorAll('.area-label, .area-divider').forEach(function(el) { el.remove(); });
+
+            // 1. Pre-calcular cuáles labels son válidos globalmente, replicando la
+            //    lógica del componente: por cada children-row, agrupar por área,
+            //    descartar grupos con descendientes en la misma área, y registrar
+            //    cada (level, area) una sola vez.
+            const allowed = {}; // key: parentId|area|level => true
+            const levelAreaSeen = {}; // level -> { area: true }
+
+            const rows = Array.from(document.querySelectorAll('.children-row'));
+            rows.forEach(function(row) {
+                const parentContainer = row.closest('.children-container').parentElement;
+                const parentId = parentContainer ? parentContainer.dataset.nodeId : '';
+
+                const wrappers = Array.from(row.children).filter(function(c) {
+                    return c.classList && c.classList.contains('tree-node-container');
+                });
+                if (wrappers.length === 0) return;
+
+                // Agrupar por área (consecutivos)
+                const groups = [];
+                let current = null;
+                wrappers.forEach(function(w) {
+                    const area = (w.dataset.area || 'Sin área').trim();
+                    if (!current || current.area !== area) {
+                        current = { area: area, wrappers: [w] };
+                        groups.push(current);
+                    } else {
+                        current.wrappers.push(w);
+                    }
+                });
+
+                groups.forEach(function(g) {
+                    const isLabelable = g.wrappers.every(function(w) { return w.dataset.areaLabelable === '1'; });
+                    if (!isLabelable) return;
+
+                    // Si algún hijo de este grupo tiene su propia subárea con el mismo nombre,
+                    // NO etiquetar aquí (la etiqueta se empuja al nivel inferior)
+                    const hasSubAreaChildren = g.wrappers.some(function(w) {
+                        const cc = w.querySelector(':scope > .children-container');
+                        if (!cc) return false;
+                        const grand = cc.querySelectorAll(':scope > .children-row > .tree-node-container');
+                        return Array.from(grand).some(function(cw) {
+                            return (cw.dataset.area || '').trim() === g.area;
+                        });
+                    });
+                    if (hasSubAreaChildren) return;
+
+                    // Determinar nivel (jerarquía del primer hijo del grupo)
+                    const firstW = g.wrappers[0];
+                    const level = firstW.dataset.jerarquia || ('depth-' + firstW.parentElement.closest('.children-container') ? 'd' : '');
+                    if (!levelAreaSeen[level]) levelAreaSeen[level] = {};
+                    if (!levelAreaSeen[level][g.area]) {
+                        levelAreaSeen[level][g.area] = true;
+                        allowed[parentId + '|' + g.area + '|' + level] = true;
+                    }
+                });
+            });
+
+            // 2. Render: divisores entre áreas + etiquetas permitidas
+            rows.forEach(function(row) {
+                const parentContainer = row.closest('.children-container').parentElement;
+                const parentId = parentContainer ? parentContainer.dataset.nodeId : '';
+
+                const wrappers = Array.from(row.children).filter(function(c) {
+                    return c.classList && c.classList.contains('tree-node-container');
+                });
+                if (wrappers.length === 0) return;
+
+                const rowRect = row.getBoundingClientRect();
+                const rowHeight = rowRect.height;
+
+                // máxima extensión inferior de las tarjetas (para situar etiqueta debajo)
+                let maxBottom = 0;
+                wrappers.forEach(function(w) {
+                    const card = w.querySelector(':scope > .node-card');
+                    if (!card) return;
+                    const cr = card.getBoundingClientRect();
+                    const b = cr.bottom - rowRect.top;
+                    if (b > maxBottom) maxBottom = b;
+                });
+                const labelTop = maxBottom + 22;
+
+                const groups = [];
+                let current = null;
+                wrappers.forEach(function(w, idx) {
+                    const area = (w.dataset.area || 'Sin área').trim();
+                    if (!current || current.area !== area) {
+                        current = { area: area, startIdx: idx, wrappers: [w] };
+                        groups.push(current);
+                    } else {
+                        current.wrappers.push(w);
+                    }
+                });
+
+                groups.forEach(function(g, gi) {
+                    if (gi > 0) {
+                        const prevW = wrappers[g.startIdx - 1];
+                        const prevR = prevW.getBoundingClientRect();
+                        const div = document.createElement('div');
+                        div.className = 'area-divider';
+                        div.style.left = (prevR.right - rowRect.left) + 'px';
+                        div.style.top = '0px';
+                        div.style.height = rowHeight + 'px';
+                        row.appendChild(div);
+                    }
+
+                    const firstW = g.wrappers[0];
+                    const level = firstW.dataset.jerarquia || '';
+                    const key = parentId + '|' + g.area + '|' + level;
+                    if (!allowed[key]) return;
+
+                    const firstCard = firstW.querySelector(':scope > .node-card');
+                    const lastCard = g.wrappers[g.wrappers.length - 1].querySelector(':scope > .node-card');
+                    if (!firstCard || !lastCard) return;
+                    const fr = firstCard.getBoundingClientRect();
+                    const lr = lastCard.getBoundingClientRect();
+                    const centerX = ((fr.left + fr.width / 2) + (lr.left + lr.width / 2)) / 2 - rowRect.left;
+
+                    const lbl = document.createElement('div');
+                    lbl.className = 'area-label';
+                    lbl.textContent = g.area;
+                    lbl.style.left = centerX + 'px';
+                    lbl.style.top = labelTop + 'px';
+                    row.appendChild(lbl);
+                });
+            });
+        }
+
+        // ============================================================
+        // Selección por clic + ruta activa con luz pulsante
+        // ============================================================
+        function clearSelection() {
+            document.querySelectorAll('.node-card.active-card, .node-card.active-path-card').forEach(function(el) {
+                el.classList.remove('active-card');
+                el.classList.remove('active-path-card');
+                const halo = el.querySelector('.click-pulse-halo');
+                if (halo) halo.remove();
+                // Restaurar borde a la versión 10% del color del nivel
+                const lc = el.dataset.levelColor;
+                if (lc) el.style.borderColor = lc + '1A';
+            });
+            document.querySelectorAll('.tree-node-container.active-branch').forEach(function(el) {
+                el.classList.remove('active-branch');
+            });
+            document.querySelectorAll('.children-container.active-path').forEach(function(el) {
+                el.classList.remove('active-path');
+            });
+            document.querySelectorAll('.pulse-light-v, .pulse-light-h').forEach(function(el) { el.remove(); });
+            document.querySelectorAll('.h-line-bar.active').forEach(function(el) { el.remove(); });
+        }
+
+        function paintActiveHBar(parentContainer, activeChildId, depth) {
+            // Dibujar el segmento horizontal activo desde el centro del hijo activo
+            // hasta el centro de la línea vertical del padre (drop X = centro de la fila)
+            const cc = parentContainer.querySelector(':scope > .children-container');
+            if (!cc) return;
+            const row = cc.querySelector(':scope > .children-row');
+            if (!row) return;
+            const rowRect = row.getBoundingClientRect();
+            if (rowRect.width < 2) return;
+
+            const wrappers = Array.from(row.children).filter(function(c) {
+                return c.classList && c.classList.contains('tree-node-container');
+            });
+            if (wrappers.length < 2) return; // si solo hay un hijo no hace falta barra horizontal
+
+            const activeIdx = wrappers.findIndex(function(w) { return w.dataset.nodeId === activeChildId; });
+            if (activeIdx < 0) return;
+
+            const activeCard = wrappers[activeIdx].querySelector(':scope > .node-card');
+            if (!activeCard) return;
+            const ar = activeCard.getBoundingClientRect();
+            const activeCenter = (ar.left + ar.width / 2) - rowRect.left;
+            const dropX = rowRect.width / 2; // children-container-line está centrada
+            const left  = Math.min(activeCenter, dropX);
+            const right = Math.max(activeCenter, dropX);
+            const width = right - left;
+            if (width < 1) return;
+
+            const bar = document.createElement('div');
+            bar.className = 'h-line-bar active';
+            bar.style.left  = left + 'px';
+            bar.style.width = width + 'px';
+            row.appendChild(bar);
+
+            const midIdx = (wrappers.length - 1) / 2;
+            const dir = activeIdx > midIdx ? 'to-right' : 'to-left';
+            const pulse = document.createElement('div');
+            pulse.className = 'pulse-light-h full ' + dir;
+            pulse.style.animationDelay = (depth * 0.3 + 0.1) + 's';
+            bar.appendChild(pulse);
+        }
+
+        function selectNode(event, roleId) {
+            event.stopPropagation();
+            clearSelection();
+
+            // Construir ruta de ancestros (selected → ... → root)
+            const path = [];
+            let cursor = roles.find(function(r) { return r.id === roleId; });
+            while (cursor) {
+                path.push(cursor.id);
+                cursor = cursor.parent_id ? roles.find(function(r) { return r.id === cursor.parent_id; }) : null;
+            }
+
+            path.forEach(function(id, idx) {
+                const container = document.querySelector('.tree-node-container[data-node-id="' + id + '"]');
+                if (!container) return;
+                container.classList.add('active-branch');
+
+                const card = container.querySelector(':scope > .node-card');
+                if (card) {
+                    if (idx === 0) {
+                        card.classList.add('active-card');
+                        // Borde al 100% del color del nivel (idéntico a la app)
+                        const lc = card.dataset.levelColor;
+                        if (lc) card.style.borderColor = lc;
+                        const halo = document.createElement('div');
+                        halo.className = 'click-pulse-halo';
+                        card.appendChild(halo);
+                    } else {
+                        card.classList.add('active-path-card');
+                    }
+                }
+
+                // Luz pulsante vertical sobre la línea hacia el padre (32px)
+                // (no se pinta sobre el último/raíz si no tiene padre)
+                if (idx < path.length - 1) {
+                    const line = container.querySelector(':scope > .tree-node-center-line');
+                    if (line) {
+                        const dot = document.createElement('div');
+                        dot.className = 'pulse-light-v';
+                        dot.style.animationDelay = ((path.length - 1 - idx) * 0.3) + 's';
+                        line.appendChild(dot);
+                    }
+                }
+
+                // Para padres en la ruta: marcar su children-container como activo,
+                // pintar su segmento horizontal, y la luz pulsante vertical en su línea descendente
+                if (idx > 0) {
+                    // 'container' es padre del nodo idx-1
+                    const cc = container.querySelector(':scope > .children-container');
+                    if (cc) {
+                        cc.classList.add('active-path');
+                        const ccLine = cc.querySelector(':scope > .children-container-line');
+                        if (ccLine) {
+                            const dot = document.createElement('div');
+                            dot.className = 'pulse-light-v';
+                            dot.style.animationDelay = ((path.length - 1 - idx) * 0.3 + 0.15) + 's';
+                            ccLine.appendChild(dot);
+                        }
+                    }
+                    // Pintar barra horizontal activa entre los hermanos del hijo en la ruta
+                    paintActiveHBar(container, path[idx - 1], path.length - 1 - idx);
+                }
+            });
+        }
+
+        function relayout() {
+            layoutConnectors();
+            renderAreaLabels();
+        }
+
+        window.addEventListener('load', function() {
+            if (document.fonts && document.fonts.ready) {
+                document.fonts.ready.then(relayout);
+            } else {
+                relayout();
+            }
+            // Doble pase por si las fuentes/material symbols cambian medidas tarde
+            setTimeout(relayout, 250);
+            setTimeout(relayout, 800);
+        });
+        window.addEventListener('resize', function() {
+            clearTimeout(window.__layoutTimer);
+            window.__layoutTimer = setTimeout(relayout, 120);
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                clearSelection();
+                closeModal();
+            }
+        });
+
+        function getRoleIcon(roleName) {
+            const name = (roleName || '').toLowerCase();
+            if (name.includes('gerente general')) return 'person';
+            if (name.includes('administrador')) return 'assessment';
+            if (name.includes('asistente') || name.includes('secretaria')) return 'article';
+            if (name.includes('ventas') || name.includes('comercial') || name.includes('tablero')) return 'shopping_bag';
+            if (name.includes('almacen') || name.includes('logistica') || name.includes('logística')) return 'inventory_2';
+            if (name.includes('metal')) return 'precision_manufacturing';
+            if (name.includes('melamina')) return 'layers';
+            if (name.includes('corte')) return 'content_cut';
+            if (name.includes('supervisor')) return 'visibility';
+            if (name.includes('obra')) return 'construction';
+            if (name.includes('planta') || name.includes('operario')) return 'factory';
+            if (name.includes('diseño') || name.includes('arquitecto')) return 'architecture';
+            return 'person_outline';
+        }
+
         function showDetails(roleId) {
             const role = roles.find(function(r) { return r.id === roleId; });
             if (!role) return;
-            
+
             const subordinates = roles.filter(function(r) { return r.parent_id === roleId; });
-            
-            let content = '<h2 style="font-size: 24px; font-weight: 900; margin: 0; line-height: 1.1;">' + role.nombre_cargo + '</h2>' +
-                '<p style="color: var(--slate-500); font-weight: 700; margin: 8px 0 24px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em;">' + (role.area || 'Sin Área') + '</p>' +
-                
+            const iconName = getRoleIcon(role.nombre_cargo);
+
+            const headerHtml =
+                '<div class="row">' +
+                    '<div class="left">' +
+                        '<div class="area-row">' +
+                            '<div class="area-icon"><span class="material-symbols-outlined" style="font-size:18px">' + iconName + '</span></div>' +
+                            '<p class="area">' + (role.area || 'Sin área') + '</p>' +
+                        '</div>' +
+                        '<h2>' + role.nombre_cargo + '</h2>' +
+                        (role.nombres ? '<p class="occupant">' + role.nombres + '</p>' : '') +
+                    '</div>' +
+                    '<button class="close-btn" onclick="closeModal()">' +
+                        '<span class="material-symbols-outlined">close</span>' +
+                    '</button>' +
+                '</div>';
+
+            let content =
                 '<div class="section-title">Propósito del Cargo</div>' +
                 '<div class="detail-text">' + (role.proposito || 'No definido') + '</div>' +
-                
-                '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px;">' +
-                    '<div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #f1f5f9;">' +
-                        '<div style="font-size: 10px; font-weight: 900; color: var(--slate-400); text-transform: uppercase;">Reporta a:</div>' +
-                        '<div style="font-weight: 700; font-size: 13px;">' + (role.reporta_a || 'Máximo Cargo') + '</div>' +
+                '<div class="info-grid">' +
+                    '<div class="info-card">' +
+                        '<div class="label">Reporta a:</div>' +
+                        '<div class="value">' + (role.reporta_a || 'Máximo Cargo') + '</div>' +
                     '</div>' +
-                    '<div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #f1f5f9;">' +
-                        '<div style="font-size: 10px; font-weight: 900; color: var(--slate-400); text-transform: uppercase;">Supervisa a:</div>' +
-                        '<div style="font-weight: 700; font-size: 13px;">' + subordinates.length + ' puestos</div>' +
+                    '<div class="info-card">' +
+                        '<div class="label">Supervisa a:</div>' +
+                        '<div class="value">' + subordinates.length + ' puesto' + (subordinates.length === 1 ? '' : 's') + '</div>' +
                     '</div>' +
                 '</div>';
 
@@ -1357,6 +2097,7 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
                 }
             });
 
+            document.getElementById('details-header').innerHTML = headerHtml;
             document.getElementById('modal-content').innerHTML = content;
             document.getElementById('details-modal').classList.add('open');
             document.getElementById('modal-overlay').classList.add('open');

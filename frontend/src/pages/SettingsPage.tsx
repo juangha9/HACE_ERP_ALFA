@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { BusinessSettingsCard } from '../components/BusinessSettingsCard';
 import { SuppliersModal } from '../components/settings/SuppliersModal';
@@ -9,13 +9,13 @@ export default function SettingsPage() {
     const [showSuppliers, setShowSuppliers] = useState(false);
     const [fontsLoaded, setFontsLoaded] = useState(false);
 
-    useState(() => {
+    useEffect(() => {
         if ('fonts' in document) {
             document.fonts.ready.then(() => setFontsLoaded(true));
         } else {
             setFontsLoaded(true);
         }
-    });
+    }, []);
 
     return (
         <>
