@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { api, type Role } from '../../services/api';
 import './Organigrama.css';
@@ -53,8 +53,6 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
     const [editingRole, setEditingRole] = useState<Partial<Role> | null>(null);
     const [showDetailsPanel, setShowDetailsPanel] = useState(false);
 
-    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-    const [bulkTargetCat, setBulkTargetCat] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null);
     const [deleteConfirmStep, setDeleteConfirmStep] = useState<0 | 1 | 2>(0);
@@ -62,6 +60,7 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
     const [activePath, setActivePath] = useState<string[]>([]);
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const treeWrapperRef = useRef<HTMLDivElement>(null);
 
     const fetchRoles = async () => {
         setLoading(true);
@@ -89,18 +88,16 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
         }
     };
 
-    const handleSaveRole = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        if (!editingRole || isSaving) return;
-        
+    const handleSaveRole = async (roleData: Partial<Role>) => {
+        if (isSaving) return;
+
         setIsSaving(true);
         try {
-            // Populate supervisa_a with current subordinates before saving
-            const subordinates = roles.filter(r => r.parent_id === editingRole.id && editingRole.id);
+            const subordinates = roles.filter(r => r.parent_id === roleData.id && roleData.id);
             const supervisaText = subordinates.map(s => s.nombre_cargo).join(', ');
-            
-            const roleToSave = { 
-                ...editingRole, 
+
+            const roleToSave = {
+                ...roleData,
                 supervisa_a: subordinates.length > 0 ? supervisaText : 'Nadie directamente'
             };
 
@@ -148,15 +145,6 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
         }
     };
 
-    const handleConfirmBulk = (text: string) => {
-        if (!bulkTargetCat || !editingRole) return;
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        const currentDetails = editingRole.detalles_rol || [];
-        const newDetails = lines.map(line => ({ categoria: bulkTargetCat as any, descripcion: line }));
-        setEditingRole({ ...editingRole, detalles_rol: [...currentDetails, ...newDetails] });
-        setIsBulkModalOpen(false);
-        setBulkTargetCat(null);
-    };
     // Helper to build tree structure
     const roleTree = useMemo(() => {
         const map = new Map<string, any>();
@@ -311,7 +299,8 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
                         <p className="loading-text">Cargando Estructura...</p>
                     </div>
                 ) : (
-                    <div className="tree-wrapper">
+                    <div className="tree-wrapper" ref={treeWrapperRef} style={{ position: 'relative' }}>
+                        <FunctionalLines roles={roles} wrapperRef={treeWrapperRef} />
                         {roleTree.map(root => (
                             <TreeNode 
                                 key={root.id} 
@@ -350,27 +339,16 @@ export default function Organigrama({ onBack }: OrganigramaProps) {
                 <div className="modal-overlay" style={{ paddingLeft: '80px' }}>
                     <div className="role-form-modal custom-scrollbar shadow-2xl">
                         <RoleForm
-                            role={editingRole || {}}
+                            initialRole={editingRole || {}}
                             roles={roles}
-                            setRole={setEditingRole}
                             onSave={handleSaveRole}
-                            onCancel={() => { setIsFormOpen(false); setEditingRole(null); }} 
-                            onOpenBulk={(cat) => { setBulkTargetCat(cat); setIsBulkModalOpen(true); }}
+                            onCancel={() => { setIsFormOpen(false); setEditingRole(null); }}
                             isSaving={isSaving}
                             personalStaff={personalStaff}
                         />
                     </div>
                 </div>,
                 document.body
-            )}
-
-            {/* Bulk Paste Modal */}
-            {isBulkModalOpen && (
-                <BulkPasteModal
-                    category={bulkTargetCat || ''}
-                    onConfirm={handleConfirmBulk}
-                    onCancel={() => { setIsBulkModalOpen(false); setBulkTargetCat(null); }}
-                />
             )}
 
             {/* Confirmation Modals */}
@@ -490,7 +468,7 @@ function NotificationPopup({ type, message, onClose }: { type: 'success' | 'erro
 
 // --- Subcomponents ---
 
-const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePath, level, parentJerarquia, allowedAreaLabels }: { node: any, viewMode: ViewMode, onSelect: (role: Role) => void, onOpenDetails: (role: Role) => void, activePath: string[], level: number, parentJerarquia: number, allowedAreaLabels: Set<string> }) => {
+const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePath, level, parentJerarquia, allowedAreaLabels, parentMeasuredLevelStep, isStaff }: { node: any, viewMode: ViewMode, onSelect: (role: Role) => void, onOpenDetails: (role: Role) => void, activePath: string[], level: number, parentJerarquia: number, allowedAreaLabels: Set<string>, parentMeasuredLevelStep?: number, isStaff?: boolean }) => {
     const isActive = activePath.includes(node.id);
     const isSelected = activePath[0] === node.id;
     const activeChildId = node.children?.find((c: any) => activePath.includes(c.id))?.id;
@@ -498,34 +476,62 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
 
     // Hierarchy Colors
     const borderColor = level === 0 ? '#B68D40' : level === 1 ? '#001B36' : '#00162B';
-    
+
     // Stagger delay based on distance from root in the active path
     const pathIndex = activePath.indexOf(node.id);
     const animDelay = pathIndex !== -1 ? (activePath.length - 1 - pathIndex) * 0.3 : 0;
-    
-    // ... rest of useLayoutEffect and logic remains the same ...
+
     const rowRef = React.useRef<HTMLDivElement>(null);
     const [linePositions, setLinePositions] = React.useState<{
         centers: number[], wrapperEdges: number[], dropX: number, rowHeight: number, cardBottom: number
     }>({ centers: [], wrapperEdges: [], dropX: 0, rowHeight: 0, cardBottom: 0 });
-    
+
     const childCount = node.children?.length || 0;
-    
+
+    // nodeJerarquia declared here so it's available inside the layout effect
+    const nodeJerarquia = Number(node.jerarquia) || (level + 1);
+
+    // Stable sorted children — needed both in the layout effect and in JSX
+    const sortedChildren = React.useMemo(() => {
+        if (!node.children || node.children.length === 0) return [] as any[];
+        return [...node.children].sort((a: any, b: any) => {
+            const aArea = (a.area || 'Sin área').trim().toLowerCase();
+            const bArea = (b.area || 'Sin área').trim().toLowerCase();
+            if (aArea !== bArea) return aArea.localeCompare(bArea, 'es');
+            return (Number(a.jerarquia) || 0) - (Number(b.jerarquia) || 0);
+        });
+    }, [node.children]);
+
+    // STAFF children branch horizontally next to this node; regular children hang below.
+    const staffChildren = React.useMemo(() =>
+        sortedChildren.filter((c: any) => c.tipo_relacion === 'STAFF'),
+        [sortedChildren]
+    );
+    const regularChildren = React.useMemo(() =>
+        sortedChildren.filter((c: any) => c.tipo_relacion !== 'STAFF'),
+        [sortedChildren]
+    );
+
+    // Measured level step: calibrated from actual rendered card heights of gap=1 children.
+    // When a child skips hierarchy levels (gap>1), this ensures it aligns with the deepest
+    // same-level nodes in sibling branches, regardless of the static card-height assumption.
+    const [measuredLevelStep, setMeasuredLevelStep] = React.useState<number | null>(null);
+
     React.useLayoutEffect(() => {
         const row = rowRef.current;
-        if (!row || childCount === 0) return;
-        
+        if (!row || regularChildren.length === 0) return;
+
         const updatePositions = () => {
-            const wrappers = row.querySelectorAll(':scope > .horizontal-connector-wrapper');
+            const wrappers = Array.from(row.querySelectorAll(':scope > .horizontal-connector-wrapper'));
             const rowRect = row.getBoundingClientRect();
             if (rowRect.width === 0) return;
 
             let cardB = 0;
             const wrapperEdges: number[] = [];
-            const centers = Array.from(wrappers).map((w) => {
+            const centers = wrappers.map((w) => {
                 const r = w.getBoundingClientRect();
                 wrapperEdges.push(r.right - rowRect.left);
-                
+
                 const card = w.querySelector('.node-card');
                 if (card) {
                     const cardRect = card.getBoundingClientRect();
@@ -544,25 +550,116 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
             }
             const h = rowRect.height > 10 ? rowRect.height : 200;
             setLinePositions({ centers, wrapperEdges, dropX, rowHeight: h, cardBottom: cardB });
+
+            // If any regular child skips a hierarchy level, measure the gap=1 siblings' card heights
+            // so the gap>1 children land at the same absolute Y as their cousins one level down.
+            const hasGapGt1 = regularChildren.some(
+                (c: any) => Math.max(1, (Number(c.jerarquia) || 0) - nodeJerarquia) > 1
+            );
+            if (hasGapGt1) {
+                const gap1Heights: number[] = [];
+                wrappers.forEach((w, i) => {
+                    if (i >= regularChildren.length) return;
+                    const child = regularChildren[i];
+                    const gap = Math.max(1, (Number(child.jerarquia) || 0) - nodeJerarquia);
+                    if (gap === 1) {
+                        const card = w.querySelector('.node-card');
+                        if (card) {
+                            const ch = card.getBoundingClientRect().height;
+                            if (ch > 10) gap1Heights.push(ch);
+                        }
+                    }
+                });
+                if (gap1Heights.length > 0) {
+                    const avg = gap1Heights.reduce((a, b) => a + b, 0) / gap1Heights.length;
+                    const newStep = Math.round(avg) + 96; // CARD_H + children-container(64) + base-node-padding(32)
+                    setMeasuredLevelStep(prev => (prev === null || Math.abs(prev - newStep) > 1) ? newStep : prev);
+                }
+            }
         };
 
         updatePositions();
         const timer = setTimeout(updatePositions, 200);
         return () => clearTimeout(timer);
-    }, [childCount, activePath, viewMode]);
-    
-    const nodeJerarquia = Number(node.jerarquia) || (level + 1);
+    }, [regularChildren, activePath, viewMode, nodeJerarquia]);
+
     const jerarquiaGap = Math.max(1, nodeJerarquia - parentJerarquia);
-    const LEVEL_STEP = 245; // Refined for exact alignment
-    const extraPadding = (jerarquiaGap - 1) * LEVEL_STEP;
+    const LEVEL_STEP = viewMode === 'CORPORATIVO' ? 245 : 222;
+    // Use the step measured by the parent (from its gap=1 children) when available;
+    // this makes gap>1 nodes align with their same-jerarquía cousins in other branches.
+    const effectiveLevelStep = parentMeasuredLevelStep ?? LEVEL_STEP;
+    const extraPadding = (jerarquiaGap - 1) * effectiveLevelStep;
+
+    // ── STAFF render ─────────────────────────────────────────────────────────
+    // When a node has tipo_relacion = 'STAFF' the parent renders it with isStaff=true.
+    // It appears to the right of its parent card connected by a horizontal solid line,
+    // without the vertical center-line used by normal hierarchy nodes.
+    if (isStaff) {
+        return (
+            <div className="staff-node-outer">
+                <div className="staff-h-connector" />
+                <div className="staff-node-inner">
+                    <div
+                        className={`node-card staff-card ${isSelected ? 'active-card' : isActive ? 'active-path-card' : ''}`}
+                        style={{ borderColor: isSelected ? borderColor : `${borderColor}1A` }}
+                        data-role-id={node.id}
+                        onClick={(e) => { e.stopPropagation(); onSelect(node); }}
+                        onDoubleClick={(e) => { e.stopPropagation(); onOpenDetails(node); }}
+                    >
+                        <div className="node-icon">
+                            <Icon name={getRoleIcon(node.nombre_cargo)} />
+                        </div>
+                        <div className="node-info">
+                            <h3 className="role-title">{node.nombre_cargo}</h3>
+                            {viewMode === 'CORPORATIVO' && node.rango_salarial && (
+                                <p className="salary-range">({node.rango_salarial})</p>
+                            )}
+                            <p className="occupant-name">{node.nombres || 'Puesto Vacante'}</p>
+                            {viewMode === 'CORPORATIVO' && node.sueldo && (
+                                <p className="salary-actual">S/ {node.sueldo}</p>
+                            )}
+                            <div className="node-schedule">
+                                <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                {node.horario || 'No definido'}
+                            </div>
+                            {node.dotacion > 1 && <span className="dotacion-badge">x{node.dotacion}</span>}
+                        </div>
+                        {isSelected && <div className="click-pulse-halo"></div>}
+                    </div>
+                    {/* Staff node's own regular children, if any */}
+                    {regularChildren.length > 0 && (
+                        <div className="children-container">
+                            <div className="children-container-line" />
+                            <div className="children-row" ref={rowRef}>
+                                {regularChildren.map((child: any) => (
+                                    <div key={child.id} className="horizontal-connector-wrapper">
+                                        <TreeNode
+                                            node={child}
+                                            viewMode={viewMode}
+                                            onSelect={onSelect}
+                                            onOpenDetails={onOpenDetails}
+                                            activePath={activePath}
+                                            level={level + 1}
+                                            parentJerarquia={nodeJerarquia}
+                                            allowedAreaLabels={allowedAreaLabels}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <div 
+        <div
             className={`tree-node-container ${isActive ? 'active-branch' : ''}`}
             style={{ paddingTop: `${32 + extraPadding}px` }}
         >
             {/* Vertical connector to parent/sibling-bar */}
-            <div 
+            <div
                 className={`tree-node-center-line ${isActive ? 'active' : ''}`}
                 style={{ height: `${32 + extraPadding}px` }}
             >
@@ -570,10 +667,13 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                     <div className="pulse-light-v" style={{ animationDelay: `${animDelay}s` }}></div>
                 )}
             </div>
-            
-            <div 
-                className={`node-card ${isSelected ? 'active-card' : isActive ? 'active-path-card' : ''}`} 
+
+            {/* Node card + staff siblings rendered side-by-side in a horizontal row */}
+            <div className="node-row">
+            <div
+                className={`node-card ${isSelected ? 'active-card' : isActive ? 'active-path-card' : ''}`}
                 style={{ borderColor: isSelected ? borderColor : `${borderColor}1A` }} // 1A is ~10% opacity in hex
+                data-role-id={node.id}
                 onClick={(e) => { e.stopPropagation(); onSelect(node); }}
                 onDoubleClick={(e) => { e.stopPropagation(); onOpenDetails(node); }}
             >
@@ -595,28 +695,41 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                     </div>
                     {node.dotacion > 1 && <span className="dotacion-badge">x{node.dotacion}</span>}
                 </div>
-                
+
                 {/* Visual indicator for single-click selection (pulsing halo) */}
                 {isSelected && <div className="click-pulse-halo"></div>}
             </div>
-            
-            {node.children && node.children.length > 0 && (() => {
-                // Sort children by area then by jerarquía so same-area nodes are always
-                // consecutive — prevents duplicate area labels when hierarchy ordering
-                // would otherwise interleave nodes from different areas.
-                const sortedChildren = [...node.children].sort((a: any, b: any) => {
-                    const aArea = (a.area || 'Sin área').trim().toLowerCase();
-                    const bArea = (b.area || 'Sin área').trim().toLowerCase();
-                    if (aArea !== bArea) return aArea.localeCompare(bArea, 'es');
-                    return (Number(a.jerarquia) || 0) - (Number(b.jerarquia) || 0);
-                });
 
-                const activeIdx = sortedChildren.findIndex((c: any) => activePath.includes(c.id));
-                const midIdx = (sortedChildren.length - 1) / 2;
+            {/* Staff children — rendered horizontally to the right of this card */}
+            {staffChildren.length > 0 && (
+                <div className="staff-col">
+                    {staffChildren.map((child: any) => (
+                        <TreeNode
+                            key={child.id}
+                            node={child}
+                            viewMode={viewMode}
+                            onSelect={onSelect}
+                            onOpenDetails={onOpenDetails}
+                            activePath={activePath}
+                            level={level + 1}
+                            parentJerarquia={nodeJerarquia}
+                            allowedAreaLabels={allowedAreaLabels}
+                            isStaff={true}
+                        />
+                    ))}
+                </div>
+            )}
+            </div>
+            
+            {regularChildren.length > 0 && (() => {
+                // Only regular (non-STAFF) children hang below in the tree row.
+
+                const activeIdx = regularChildren.findIndex((c: any) => activePath.includes(c.id));
+                const midIdx = (regularChildren.length - 1) / 2;
 
                 const areas: any[] = [];
                 let currentArea = '';
-                sortedChildren.forEach((child: any, idx: number) => {
+                regularChildren.forEach((child: any, idx: number) => {
                     const normArea = (child.area || 'Sin área').trim();
                     if (normArea !== currentArea) {
                         areas.push({ name: normArea, startIdx: idx });
@@ -649,14 +762,14 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                         </div>
                         <div className="children-row" ref={rowRef}>
                             {linePositions.centers.length > 1 && (
-                                <div 
-                                    className="h-line-bar" 
+                                <div
+                                    className="h-line-bar"
                                     style={{ left: `${firstCenter}px`, width: `${lastCenter - firstCenter}px` }}
                                 />
                             )}
                             {activeLine.show && (
-                                <div 
-                                    className="h-line-bar active" 
+                                <div
+                                    className="h-line-bar active"
                                     style={{ left: `${activeLine.left}px`, width: `${activeLine.width}px` }}
                                 >
                                     <div className={`pulse-light-h full ${travelDir}`} style={{ animationDelay: `${animDelay + 0.3}s` }}></div>
@@ -669,41 +782,41 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                                         const isFirst = aIdx === 0;
                                         const prevGroupEndIdx = areaInfo.startIdx - 1;
                                         const thisGroupStartIdx = areaInfo.startIdx;
-                                        
+
                                         // Center calculation for THIS area group
-                                        const nextAreaStartIdx = aIdx + 1 < areas.length ? areas[aIdx + 1].startIdx : sortedChildren.length;
+                                        const nextAreaStartIdx = aIdx + 1 < areas.length ? areas[aIdx + 1].startIdx : regularChildren.length;
                                         const groupEndIdx = nextAreaStartIdx - 1;
-                                        
-                                        const childJerarquia = Number(sortedChildren[areaInfo.startIdx].jerarquia) || (nodeJerarquia + 1);
+
+                                        const childJerarquia = Number(regularChildren[areaInfo.startIdx].jerarquia) || (nodeJerarquia + 1);
                                         const cleanAreaName = (areaInfo.name || '').trim();
-                                        
+
                                         const shouldShowLabel = allowedAreaLabels.has(`${node.id}-${cleanAreaName}-${childJerarquia}`);
 
                                         const startC = linePositions.centers[thisGroupStartIdx];
                                         const endC = linePositions.centers[groupEndIdx];
-                                        
+
                                         if (startC === undefined || endC === undefined) return null;
                                         const labelCenterX = (startC + endC) / 2;
 
                                         return (
                                             <React.Fragment key={`area-group-${aIdx}`}>
                                                 {!isFirst && (
-                                                    <div 
-                                                        className="area-divider" 
-                                                        style={{ 
-                                                            left: `${linePositions.wrapperEdges[prevGroupEndIdx]}px`, 
+                                                    <div
+                                                        className="area-divider"
+                                                        style={{
+                                                            left: `${linePositions.wrapperEdges[prevGroupEndIdx]}px`,
                                                             height: `${linePositions.rowHeight}px`,
                                                             top: 0
                                                         }}
                                                     />
                                                 )}
                                                 {shouldShowLabel && (
-                                                    <div 
-                                                        className="flat-area-label" 
-                                                        style={{ 
-                                                            left: `${labelCenterX}px`, 
-                                                            top: `${linePositions.cardBottom + 40}px`, 
-                                                            transform: 'translateX(-50%)' 
+                                                    <div
+                                                        className="flat-area-label"
+                                                        style={{
+                                                            left: `${labelCenterX}px`,
+                                                            top: `${linePositions.cardBottom + 40}px`,
+                                                            transform: 'translateX(-50%)'
                                                         }}
                                                     >{areaInfo.name}</div>
                                                 )}
@@ -712,18 +825,19 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                                     })}
                                 </>
                             )}
-                            {sortedChildren.map((child: any) => {
+                            {regularChildren.map((child: any) => {
                                 return (
                                     <div key={child.id} className="horizontal-connector-wrapper">
-                                        <TreeNode 
-                                            node={child} 
-                                            viewMode={viewMode} 
-                                            onSelect={onSelect} 
+                                        <TreeNode
+                                            node={child}
+                                            viewMode={viewMode}
+                                            onSelect={onSelect}
                                             onOpenDetails={onOpenDetails}
-                                            activePath={activePath} 
+                                            activePath={activePath}
                                             level={level + 1}
                                             parentJerarquia={nodeJerarquia}
                                             allowedAreaLabels={allowedAreaLabels}
+                                            parentMeasuredLevelStep={measuredLevelStep ?? undefined}
                                         />
                                     </div>
                                 );
@@ -814,33 +928,310 @@ function RoleDetailsView({ role, roles, onEdit, onDelete, onClose }: { role: Rol
     );
 }
 
-function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving, personalStaff }: { 
-    role: Partial<Role>, 
+function FunctionalLines({ roles, wrapperRef }: { roles: Role[], wrapperRef: React.RefObject<HTMLDivElement> }) {
+    const [paths, setPaths] = useState<string[]>([]);
+
+    const updateLines = () => {
+        if (!wrapperRef.current) return;
+        const wrapper = wrapperRef.current;
+        const wrapperRect = wrapper.getBoundingClientRect();
+        if (wrapperRect.width === 0) return;
+
+        const CLEARANCE = 20;
+
+        // Snapshot all card rects once (avoids repeated reflow calls)
+        const cardEls = Array.from(wrapper.querySelectorAll('[data-role-id]')) as HTMLElement[];
+        const cardBoxes = cardEls.map(el => {
+            const r = el.getBoundingClientRect();
+            return {
+                id:     el.dataset.roleId || '',
+                left:   r.left   - wrapperRect.left,
+                right:  r.right  - wrapperRect.left,
+                top:    r.top    - wrapperRect.top,
+                bottom: r.bottom - wrapperRect.top,
+            };
+        });
+
+        // True if a vertical segment at x=vx crossing [yLow,yHigh] intersects a card (excludes skipIds)
+        const isVBlocked = (vx: number, yLow: number, yHigh: number, skipIds: string[]): boolean =>
+            cardBoxes.some(b => {
+                if (skipIds.includes(b.id)) return false;
+                return (b.left - CLEARANCE) < vx &&
+                       vx < (b.right + CLEARANCE) &&
+                       (b.top  - CLEARANCE) < yHigh &&
+                       (b.bottom + CLEARANCE) > yLow;
+            });
+
+        const treeLeft  = cardBoxes.length ? Math.min(...cardBoxes.map(b => b.left))  - 60 : 0;
+        const treeRight = cardBoxes.length ? Math.max(...cardBoxes.map(b => b.right)) + 60 : 2000;
+
+        const newPaths: string[] = [];
+
+        roles.forEach(role => {
+            if (!role.relacion_funcional?.length) return;
+            const srcEl = wrapper.querySelector(`[data-role-id="${role.id}"]`) as HTMLElement | null;
+            if (!srcEl) return;
+            const src = srcEl.getBoundingClientRect();
+            const sx = {
+                left:  src.left  - wrapperRect.left,
+                right: src.right - wrapperRect.left,
+                midX:  (src.left  + src.right)  / 2 - wrapperRect.left,
+                midY:  (src.top   + src.bottom) / 2 - wrapperRect.top,
+            };
+
+            role.relacion_funcional.forEach(targetId => {
+                const tgtEl = wrapper.querySelector(`[data-role-id="${targetId}"]`) as HTMLElement | null;
+                if (!tgtEl) return;
+                const tgt = tgtEl.getBoundingClientRect();
+                const tx = {
+                    left:  tgt.left  - wrapperRect.left,
+                    right: tgt.right - wrapperRect.left,
+                    midX:  (tgt.left  + tgt.right)  / 2 - wrapperRect.left,
+                    midY:  (tgt.top   + tgt.bottom) / 2 - wrapperRect.top,
+                };
+
+                const skipIds = [role.id!, targetId];
+
+                // Smart side selection: exit/enter the side that faces the target
+                let x1: number, x2: number;
+                if (tx.midX >= sx.midX) {
+                    x1 = sx.right;  // source exits right
+                    x2 = tx.left;   // target entered from left
+                } else {
+                    x1 = sx.left;   // source exits left
+                    x2 = tx.right;  // target entered from right
+                }
+
+                const y1 = sx.midY;
+                const y2 = tx.midY;
+
+                if (Math.abs(y1 - y2) < 4) {
+                    // Same row: pure horizontal
+                    newPaths.push(`M ${x1} ${y1} H ${x2}`);
+                    return;
+                }
+
+                const yLow  = Math.min(y1, y2);
+                const yHigh = Math.max(y1, y2);
+                const ideal = (x1 + x2) / 2;
+
+                // Candidate midX positions: ideal + one step past each blocker's edge
+                const candidates: number[] = [ideal];
+                cardBoxes.forEach(b => {
+                    if (skipIds.includes(b.id)) return;
+                    if (b.top > yHigh + CLEARANCE || b.bottom < yLow - CLEARANCE) return;
+                    candidates.push(b.right + CLEARANCE);
+                    candidates.push(b.left  - CLEARANCE);
+                });
+                // Last-resort bypass lanes at the edges of the whole tree
+                candidates.push(treeLeft, treeRight);
+                // Prefer candidates closest to ideal to keep the connector short
+                candidates.sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal));
+
+                let midX = ideal;
+                for (const c of candidates) {
+                    if (!isVBlocked(c, yLow, yHigh, skipIds)) {
+                        midX = c;
+                        break;
+                    }
+                }
+
+                // Orthogonal Z-path: horizontal → vertical → horizontal
+                newPaths.push(`M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`);
+            });
+        });
+
+        setPaths(newPaths);
+    };
+
+    useLayoutEffect(() => {
+        const t1 = setTimeout(updateLines, 800);
+        const t2 = setTimeout(updateLines, 1600);
+        const interval = setInterval(updateLines, 2000);
+        window.addEventListener('resize', updateLines);
+        return () => {
+            clearTimeout(t1);
+            clearTimeout(t2);
+            clearInterval(interval);
+            window.removeEventListener('resize', updateLines);
+        };
+    }, [roles]);
+
+    return (
+        <svg className="functional-lines-overlay" style={{ pointerEvents: 'none' }}>
+            <defs>
+                <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#4A90E2" />
+                </marker>
+            </defs>
+            {paths.map((d, i) => (
+                <path
+                    key={i}
+                    d={d}
+                    className="functional-line"
+                    markerEnd="url(#arrowhead)"
+                />
+            ))}
+        </svg>
+    );
+}
+
+function MultiSelectRoles({ selectedIds, roles, onChange }: { selectedIds: string[], roles: Role[], onChange: (ids: string[]) => void }) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const filteredRoles = roles.filter(r => 
+        r.nombre_cargo.toLowerCase().includes(search.toLowerCase()) || 
+        (r.area && r.area.toLowerCase().includes(search.toLowerCase()))
+    );
+
+    const toggleRole = (id: string) => {
+        const newIds = selectedIds.includes(id) 
+            ? selectedIds.filter(i => i !== id) 
+            : [...selectedIds, id];
+        onChange(newIds);
+    };
+
+    return (
+        <div className="multi-select-container" ref={containerRef}>
+            <div className="multi-select-trigger" onClick={() => setIsOpen(!isOpen)}>
+                <div className="flex flex-wrap gap-1">
+                    {selectedIds.length > 0 ? (
+                        selectedIds.map(id => {
+                            const r = roles.find(x => x.id === id);
+                            return (
+                                <span key={id} className="multi-select-badge">
+                                    {r?.nombre_cargo || 'Cargando...'}
+                                </span>
+                            );
+                        })
+                    ) : (
+                        <span className="text-slate-400 italic">Ninguna relación funcional</span>
+                    )}
+                </div>
+                <Icon name={isOpen ? "expand_less" : "expand_more"} />
+            </div>
+
+            {isOpen && (
+                <div className="multi-select-dropdown custom-scrollbar shadow-2xl border-indigo-100">
+                    <div className="multi-select-search">
+                        <input 
+                            autoFocus
+                            placeholder="Buscar puesto o área..." 
+                            value={search} 
+                            onChange={e => setSearch(e.target.value)}
+                            onClick={e => e.stopPropagation()}
+                        />
+                    </div>
+                    {filteredRoles.map(r => {
+                        const isSel = selectedIds.includes(r.id!);
+                        return (
+                            <div 
+                                key={r.id} 
+                                className={`multi-select-option ${isSel ? 'selected' : ''}`}
+                                onClick={() => toggleRole(r.id!)}
+                            >
+                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSel ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300'}`}>
+                                    {isSel && <Icon name="check" className="!text-[10px] text-white" />}
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="font-bold truncate">{r.nombre_cargo}</p>
+                                    <p className="text-[10px] uppercase opacity-60 truncate">{r.area}</p>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {filteredRoles.length === 0 && <p className="p-4 text-center text-xs text-slate-400">No se encontraron puestos</p>}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function RoleForm({ initialRole, roles, onSave, onCancel, isSaving, personalStaff }: {
+    initialRole: Partial<Role>,
     roles: Role[],
-    setRole: (r: any) => void, 
-    onSave: (e: React.FormEvent<HTMLFormElement>) => void, 
+    onSave: (roleData: Partial<Role>) => Promise<void>,
     onCancel: () => void,
-    onOpenBulk: (catId: string) => void,
     isSaving: boolean,
     personalStaff: any[]
 }) {
+    // Local state — keystrokes stay inside this component and don't re-render the tree
+    const [role, setRole] = useState<Partial<Role>>(initialRole);
+    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+    const [bulkTargetCat, setBulkTargetCat] = useState<string | null>(null);
+
+    // Salary fields get their own local state so typing doesn't re-render the full form.
+    // They sync to `role` on blur and are merged into the final payload on submit.
+    const [rangeMin, setRangeMin] = useState(() => {
+        const parts = (initialRole.rango_salarial || '').split('-');
+        return parts[0]?.trim() || '';
+    });
+    const [rangeMax, setRangeMax] = useState(() => {
+        const parts = (initialRole.rango_salarial || '').split('-');
+        return parts[1]?.trim() || '';
+    });
+    const [sueldoStr, setSueldoStr] = useState(() =>
+        initialRole.sueldo != null && initialRole.sueldo !== 0 ? String(initialRole.sueldo) : ''
+    );
+
     const subordinates = roles.filter(r => r.parent_id === role.id && role.id);
     const parentRole = roles.find(r => r.id === role.parent_id);
-    
+
     // Calculate initial offset based on current jerarquia and parent jerarquia
     const [offset, setOffset] = useState(() => {
-        const currentJ = Number(role.jerarquia) || 1;
-        const parentJ = Number(parentRole?.jerarquia) || 0;
+        const initParent = roles.find(r => r.id === initialRole.parent_id);
+        const currentJ = Number(initialRole.jerarquia) || 1;
+        const parentJ = Number(initParent?.jerarquia) || 0;
         return Math.max(1, currentJ - parentJ);
     });
 
     const [blockToDelete, setBlockToDelete] = useState<string | null>(null);
+
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        const finalRole: Partial<Role> = {
+            ...role,
+            rango_salarial: `${rangeMin} - ${rangeMax}`,
+            sueldo: parseFloat(sueldoStr) || 0,
+        };
+        await onSave(finalRole);
+    };
+
+    const flushSalaryToRole = () => {
+        setRole(prev => ({
+            ...prev,
+            rango_salarial: `${rangeMin} - ${rangeMax}`,
+            sueldo: parseFloat(sueldoStr) || 0,
+        }));
+    };
 
     const confirmDeleteBlock = () => {
         if (!blockToDelete) return;
         const details = (role.detalles_rol || []).filter(d => d.categoria !== blockToDelete);
         setRole({ ...role, detalles_rol: details });
         setBlockToDelete(null);
+    };
+
+    const handleConfirmBulk = (text: string) => {
+        if (!bulkTargetCat) return;
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        const currentDetails = role.detalles_rol || [];
+        const newDetails = lines.map(line => ({ categoria: bulkTargetCat as any, descripcion: line }));
+        setRole({ ...role, detalles_rol: [...currentDetails, ...newDetails] });
+        setIsBulkModalOpen(false);
+        setBulkTargetCat(null);
     };
 
     const handleAddDetail = (catId: string) => {
@@ -862,7 +1253,8 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
     };
 
     const handleBulkPaste = (catId: string) => {
-        onOpenBulk(catId);
+        setBulkTargetCat(catId);
+        setIsBulkModalOpen(true);
     };
 
     const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -879,11 +1271,6 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
 
     const handleNoSignNumber = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (['e', 'E', '+', '-', ','].includes(e.key)) e.preventDefault();
-    };
-
-    // Helper to update range
-    const updateRange = (min: string, max: string) => {
-        setRole({ ...role, rango_salarial: `${min} - ${max}` });
     };
 
     // Helper to update schedule
@@ -908,19 +1295,14 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
     const t1 = tRange[0] || '08:00';
     const t2 = tRange[1] || '18:00';
 
-    // Parse existing range for display
-    const currentRange = role.rango_salarial || '0 - 0';
-    const rParts = currentRange.split('-').map(p => p.trim());
-    const r1 = rParts[0] || '0';
-    const r2 = rParts[1] || '0';
-
-    const minSal = parseFloat(r1) || 0;
-    const maxSal = parseFloat(r2) || 0;
-    const currentSal = role.sueldo || 0;
-    const isOutOfRange = (minSal > 0 || maxSal > 0) && (currentSal < minSal || currentSal > maxSal);
+    // isOutOfRange derived from local salary state — updates in real-time without triggering a full re-render
+    const minSal = parseFloat(rangeMin) || 0;
+    const maxSal = parseFloat(rangeMax) || 0;
+    const currentSal = parseFloat(sueldoStr) || 0;
+    const isOutOfRange = (currentSal > 0) && (minSal > 0 || maxSal > 0) && (currentSal < minSal || currentSal > maxSal);
 
     return (
-        <form onSubmit={onSave} className="p-8">
+        <form onSubmit={handleSubmit} className="p-8">
             <div className="flex justify-between items-center mb-8 sticky top-0 bg-white z-10 py-2 border-b border-slate-100">
                 <div>
                     <h2 className="text-2xl font-black uppercase tracking-tight">{role.id ? 'Actualizar Información del Puesto' : 'Crear Nuevo Rol'}</h2>
@@ -989,6 +1371,49 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
                             </select>
                         </div>
 
+                        <div className="form-group">
+                            <label>Tipo de Relación con Superior</label>
+                            <div className="flex gap-4 mt-1 p-3 bg-white rounded-2xl border border-slate-200">
+                                <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                    <input
+                                        type="radio"
+                                        name="tipo_relacion"
+                                        value="JERARQUICA"
+                                        checked={role.tipo_relacion !== 'STAFF'}
+                                        onChange={() => setRole({ ...role, tipo_relacion: 'JERARQUICA' })}
+                                        className="accent-indigo-600"
+                                    />
+                                    <div>
+                                        <p className="text-xs font-black text-slate-700">Jerárquica</p>
+                                        <p className="text-[10px] text-slate-400">Posición vertical en el árbol</p>
+                                    </div>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                    <input
+                                        type="radio"
+                                        name="tipo_relacion"
+                                        value="STAFF"
+                                        checked={role.tipo_relacion === 'STAFF'}
+                                        onChange={() => setRole({ ...role, tipo_relacion: 'STAFF' })}
+                                        className="accent-amber-500"
+                                    />
+                                    <div>
+                                        <p className="text-xs font-black text-slate-700">Staff / Apoyo</p>
+                                        <p className="text-[10px] text-slate-400">Rama horizontal al lado del superior</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Relaciones Funcionales (Línea Punteada)</label>
+                            <MultiSelectRoles
+                                selectedIds={role.relacion_funcional || []}
+                                roles={roles.filter(r => r.id !== role.id)}
+                                onChange={ids => setRole({ ...role, relacion_funcional: ids })}
+                            />
+                        </div>
+
                         <div className="grid grid-cols-2 gap-4">
                             <div className="form-group">
                                 <label title="Niveles de separación con el superior">Incremento Nivel</label>
@@ -1043,20 +1468,22 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
                         <div className="grid grid-cols-2 gap-4">
                             <div className="form-group">
                                 <label>Rango Min.</label>
-                                <input 
+                                <input
                                     type="number"
                                     onKeyDown={handleNoSignNumber}
-                                    value={r1} 
-                                    onChange={e => updateRange(e.target.value, r2)}
+                                    value={rangeMin}
+                                    onChange={e => setRangeMin(e.target.value)}
+                                    onBlur={flushSalaryToRole}
                                 />
                             </div>
                             <div className="form-group">
                                 <label>Rango Max.</label>
-                                <input 
+                                <input
                                     type="number"
                                     onKeyDown={handleNoSignNumber}
-                                    value={r2} 
-                                    onChange={e => updateRange(r1, e.target.value)}
+                                    value={rangeMax}
+                                    onChange={e => setRangeMax(e.target.value)}
+                                    onBlur={flushSalaryToRole}
                                 />
                             </div>
                         </div>
@@ -1065,13 +1492,14 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
                             <label>Sueldo Actual Asignado</label>
                             <div className="relative">
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">S/</span>
-                                <input 
+                                <input
                                     type="number"
                                     step="0.01"
                                     className={`!pl-10 ${isOutOfRange ? 'border-rose-500 bg-rose-50' : ''}`}
                                     onKeyDown={handleNoSignNumber}
-                                    value={role.sueldo || ''} 
-                                    onChange={e => setRole({ ...role, sueldo: parseFloat(e.target.value) || 0 })}
+                                    value={sueldoStr}
+                                    onChange={e => setSueldoStr(e.target.value)}
+                                    onBlur={flushSalaryToRole}
                                 />
                             </div>
                             {isOutOfRange && (
@@ -1242,6 +1670,14 @@ function RoleForm({ role, roles, setRole, onSave, onCancel, onOpenBulk, isSaving
                     onCancel={() => setBlockToDelete(null)}
                 />
             )}
+
+            {isBulkModalOpen && (
+                <BulkPasteModal
+                    category={bulkTargetCat || ''}
+                    onConfirm={handleConfirmBulk}
+                    onCancel={() => { setIsBulkModalOpen(false); setBulkTargetCat(null); }}
+                />
+            )}
         </form>
     );
 }
@@ -1323,7 +1759,7 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
     const title = `Organigrama - Modo ${mode}`;
     const date = new Date().toLocaleDateString();
 
-    const LEVEL_STEP = 245;
+    const LEVEL_STEP = mode === 'CORPORATIVO' ? 245 : 222;
     const getLevelColor = (lvl: number) => lvl === 0 ? '#B68D40' : lvl === 1 ? '#001B36' : '#00162B';
 
     const renderTreeNodes = (nodes: any[], level: number, parentJerarquia: number): string => {
@@ -1340,7 +1776,7 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             const isAreaLabelable = childArea !== '' && childArea.toLowerCase() !== 'sin área' && childArea.toUpperCase() !== 'GERENCIA' && childArea.toUpperCase() !== 'GERENCIA GENERAL';
 
             // Replicar la lógica de la app: paddingTop y altura de la línea según
-            // la diferencia de jerarquía con el padre. Si jerarquía=5 y padre=3, gap=2 → +245px×1.
+            // la diferencia de jerarquía con el padre. Si jerarquía=5 y padre=3, gap=2 → +LEVEL_STEP×1.
             const nodeJ = Number(node.jerarquia) || (level + 1);
             const gap = Math.max(1, nodeJ - parentJerarquia);
             const extraPadding = (gap - 1) * LEVEL_STEP;
@@ -1351,7 +1787,7 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             const cardBorder = `${levelColor}1A`; // ~10% opacity
 
             return `
-            <div class="tree-node-container" data-node-id="${node.id}" data-jerarquia="${nodeJ}" data-parent-id="${node.parent_id || ''}" data-area="${childArea}" data-area-labelable="${isAreaLabelable ? '1' : '0'}" style="padding-top: ${containerPadTop}px;">
+            <div class="tree-node-container" data-node-id="${node.id}" data-jerarquia="${nodeJ}" data-parent-jerarquia="${parentJerarquia}" data-parent-id="${node.parent_id || ''}" data-area="${childArea}" data-area-labelable="${isAreaLabelable ? '1' : '0'}" style="padding-top: ${containerPadTop}px;">
                 ${level > 0 ? `<div class="tree-node-center-line" style="height: ${lineHeight}px;"></div>` : ''}
                 <div class="node-card" data-node-id="${node.id}" data-level-color="${levelColor}" data-level="${level}" style="border-color: ${cardBorder};" onclick="selectNode(event, '${node.id}')" ondblclick="showDetails('${node.id}')">
                     <div class="node-icon"><span class="material-symbols-outlined">${getRoleIcon(node.nombre_cargo || '')}</span></div>
@@ -1994,7 +2430,61 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             });
         }
 
+        // ============================================================
+        // Alineación dinámica de nodos que saltan niveles jerárquicos
+        // Replica la lógica de useLayoutEffect del componente React:
+        // mide la altura real de las tarjetas de hijos con gap=1 y ajusta
+        // el paddingTop de los hijos con gap>1 para que queden a la misma altura.
+        // ============================================================
+        function alignGapNodes() {
+            document.querySelectorAll('.children-row').forEach(function(row) {
+                var wrappers = Array.from(row.children).filter(function(c) {
+                    return c.classList && c.classList.contains('tree-node-container');
+                });
+                if (wrappers.length === 0) return;
+
+                // Check if any child has jerarquía gap > 1
+                var hasGapGt1 = wrappers.some(function(w) {
+                    var j = parseInt(w.dataset.jerarquia || '0');
+                    var pj = parseInt(w.dataset.parentJerarquia || '0');
+                    return (j - pj) > 1;
+                });
+                if (!hasGapGt1) return;
+
+                // Measure gap=1 children card heights
+                var gap1Heights = [];
+                wrappers.forEach(function(w) {
+                    var j = parseInt(w.dataset.jerarquia || '0');
+                    var pj = parseInt(w.dataset.parentJerarquia || '0');
+                    if ((j - pj) === 1) {
+                        var card = w.querySelector(':scope > .node-card');
+                        if (card) {
+                            var h = card.getBoundingClientRect().height;
+                            if (h > 10) gap1Heights.push(h);
+                        }
+                    }
+                });
+                if (gap1Heights.length === 0) return;
+
+                var avg = gap1Heights.reduce(function(a, b) { return a + b; }, 0) / gap1Heights.length;
+                var measuredStep = Math.round(avg) + 96; // CARD_H + children-container(64) + base-node-padding(32)
+
+                // Apply corrected padding to gap>1 nodes
+                wrappers.forEach(function(w) {
+                    var j = parseInt(w.dataset.jerarquia || '0');
+                    var pj = parseInt(w.dataset.parentJerarquia || '0');
+                    var gap = Math.max(1, j - pj);
+                    if (gap <= 1) return;
+                    var newPadding = 32 + (gap - 1) * measuredStep;
+                    w.style.paddingTop = newPadding + 'px';
+                    var line = w.querySelector(':scope > .tree-node-center-line');
+                    if (line) line.style.height = newPadding + 'px';
+                });
+            });
+        }
+
         function relayout() {
+            alignGapNodes();
             layoutConnectors();
             renderAreaLabels();
         }

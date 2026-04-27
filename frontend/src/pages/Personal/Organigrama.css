@@ -538,3 +538,159 @@
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+
+/* MultiSelect Styles */
+.multi-select-container {
+    position: relative;
+    width: 100%;
+}
+
+.multi-select-trigger {
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: #2c3434;
+}
+
+.multi-select-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-top: 4px;
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    padding: 8px;
+}
+
+.multi-select-search {
+    padding: 8px;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 8px;
+}
+
+.multi-select-search input {
+    width: 100%;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    border: 1px solid #e2e8f0 !important;
+    font-size: 13px !important;
+    background: white !important;
+}
+
+.multi-select-option {
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    transition: background 0.2s;
+}
+
+.multi-select-option:hover {
+    background: #f8fafc;
+}
+
+.multi-select-option.selected {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.multi-select-badge {
+    background: #4A90E2;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* ── Staff / Apoyo Layout ────────────────────────────────────────────────── */
+
+/* Flex row that holds the main node card + any STAFF siblings to its right */
+.node-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;   /* vertically center staff group with the parent card */
+}
+
+/* Column stacking multiple STAFF items vertically on the right of the parent */
+.staff-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    /* no extra padding — align-items:center on .node-row does the vertical alignment */
+}
+
+/* Wrapper for a single STAFF-rendered TreeNode (isStaff=true) */
+.staff-node-outer {
+    display: flex;
+    flex-direction: row;
+    align-items: center;   /* connector aligns with the centre of the staff card */
+}
+
+/* Solid horizontal line connecting parent card → staff card */
+.staff-h-connector {
+    width: 40px;
+    height: 2px;
+    background: #001B36;
+    flex-shrink: 0;
+}
+
+/* Vertical wrapper for the staff card + its own optional children */
+.staff-node-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Staff cards get a left-border accent to distinguish them at a glance */
+.staff-card {
+    border-left-width: 3px !important;
+    border-left-style: solid !important;
+    border-left-color: #B68D40 !important;  /* gold accent */
+}
+
+/* Functional Lines Styles */
+.functional-lines-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5; /* Behind node cards (z-index: 10) so lines don't visually cross over them */
+    overflow: visible;
+}
+
+.functional-line {
+    fill: none;
+    stroke: #4A90E2;
+    stroke-width: 2;
+    stroke-dasharray: 8, 5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    opacity: 0.7;
+    transition: all 0.3s ease;
+    filter: drop-shadow(0 2px 4px rgba(74, 144, 226, 0.2));
+}
+
+.functional-line:hover {
+    opacity: 1;
+    stroke-width: 3;
+}
+
+

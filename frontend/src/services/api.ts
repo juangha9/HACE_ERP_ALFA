@@ -60,6 +60,8 @@ export interface Role {
     parent_id?: string | null;
     jerarquia?: number;
     detalles_rol?: RoleDetail[];
+    relacion_funcional?: string[];
+    tipo_relacion?: 'JERARQUICA' | 'STAFF';
 }
 
 export const api = {

@@ -545,7 +545,7 @@ export default {
           const body = await request.json();
           // Extract known columns to prevent DB errors from extra fields
           const { id, detalles_rol } = body;
-          const allowedFields = ['nombre_cargo', 'area', 'reporta_a', 'supervisa_a', 'proposito', 'nombres', 'horario', 'rango_salarial', 'sueldo', 'dotacion', 'parent_id', 'dni', 'jerarquia'];
+          const allowedFields = ['nombre_cargo', 'area', 'reporta_a', 'supervisa_a', 'proposito', 'nombres', 'horario', 'rango_salarial', 'sueldo', 'dotacion', 'parent_id', 'dni', 'jerarquia', 'relacion_funcional'];
           
           const roleData: any = {};
           allowedFields.forEach(field => {

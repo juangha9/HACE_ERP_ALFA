@@ -28,7 +28,7 @@ export const OptimizationLayout = () => {
     const [config, setConfig] = useState<OptimizationConfig>({
         sawKerf: 3,
         trimming: { top: 10, bottom: 10, left: 10, right: 10 },
-        strategy: 'MAX_SAVINGS',
+        strategy: 'SIMPLE_CUTS',
         cutDirection: 'OPTIMAL',
         boardWidth: 2440,
         boardHeight: 1830,
@@ -302,9 +302,14 @@ export const OptimizationLayout = () => {
 
     const handleOptimize = () => {
         setIsOptimizing(true);
-        
-        // Use startTransition to keep the UI responsive while optimizing
-        startTransition(() => {
+        // Clear previous boards immediately so the CuttingMap always transitions
+        // empty → new result, regardless of whether board count changes between strategies.
+        setBoards([]);
+
+        // Defer computation to next tick so isOptimizing=true renders first (button grays out).
+        // Avoids startTransition which can be interrupted by concurrent-mode urgent updates,
+        // causing boards to appear briefly then disappear on the first run.
+        setTimeout(() => {
             const activePieces = pieces.filter(p => p.enabled !== false);
 
             // Group pieces by their material number (MAT. column)
@@ -331,9 +336,12 @@ export const OptimizationLayout = () => {
                 allBoards.push(...resultBoards);
             });
 
+            // Signal that this is a controlled board update so the geometry-tracking
+            // effect does not immediately clear the boards it just received.
+            isManualAdjustingRef.current = true;
             setBoards(allBoards);
             setIsOptimizing(false);
-        });
+        }, 0);
     };
 
     const stats = React.useMemo(() => {

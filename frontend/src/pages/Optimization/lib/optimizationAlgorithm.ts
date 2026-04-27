@@ -37,9 +37,135 @@ interface Rect {
     h: number;
 }
 
+type ItemToPlace = {
+    template: Piece;
+    w: number;     // width including sawKerf
+    h: number;     // height including sawKerf
+    cutW: number;  // visual cut width (no kerf)
+    cutH: number;  // visual cut height (no kerf)
+    index: number;
+};
+
 /**
- * A Guillotine-style 2D Bin Packing Algorithm.
- * Fits given pieces into boards of given dimensions.
+ * Strip-based packing for SIMPLE_CUTS strategy.
+ *
+ * Produces the minimum number of straight, full-width guillotine cuts:
+ *   1. One horizontal cut per strip boundary (spans entire board width)
+ *   2. Sequential vertical cuts within each strip to separate individual pieces
+ *
+ * Pieces of equal height are grouped into the same strip. The saw operator
+ * makes one rip cut per strip, then crosscuts each piece in sequence.
+ */
+function runStripPacking(
+    items: ItemToPlace[],
+    boardWidth: number,
+    boardHeight: number,
+    config: OptimizationConfig
+): Board[] {
+    // Horizontal strips: strips run across the board width, stacked top→bottom.
+    // Vertical strips:   strips run down the board height, stacked left→right.
+    const useHorizontalStrips = config.cutDirection !== 'VERTICAL';
+
+    // Usable board dimensions (trimming removed, +sawKerf compensates for last piece not needing kerf on outer edge)
+    const usableAcross = (useHorizontalStrips
+        ? boardWidth  - config.trimming.left - config.trimming.right
+        : boardHeight - config.trimming.top  - config.trimming.bottom
+    ) + config.sawKerf;
+
+    const usableAlong = (useHorizontalStrips
+        ? boardHeight - config.trimming.top  - config.trimming.bottom
+        : boardWidth  - config.trimming.left - config.trimming.right
+    ) + config.sawKerf;
+
+    const activeBoards: Board[] = [];
+    let curBoard: Board | null = null;
+
+    // Strip tracking (offsets are relative to the trimming edge, not the board origin)
+    let stripOffset  = 0;  // along-axis start of current strip (y for H, x for V)
+    let stripSize    = 0;  // along-axis size of current strip including sawKerf
+    let cursorAcross = 0;  // across-axis cursor within current strip
+
+    const createNewBoard = () => {
+        curBoard = {
+            id: `board-${activeBoards.length + 1}`,
+            width: boardWidth,
+            height: boardHeight,
+            placedPieces: [],
+            usedArea: 0,
+        };
+        activeBoards.push(curBoard);
+        stripOffset  = 0;
+        stripSize    = 0;
+        cursorAcross = 0;
+    };
+
+    for (const item of items) {
+        // "along"  = the strip's fixed dimension (height for H strips, width for V strips)
+        // "across" = the piece's variable dimension within the strip (width for H, height for V)
+        const dimAlong  = useHorizontalStrips ? item.h : item.w;
+        const dimAcross = useHorizontalStrips ? item.w : item.h;
+        const cutAlong  = useHorizontalStrips ? item.cutH : item.cutW;
+        const cutAcross = useHorizontalStrips ? item.cutW : item.cutH;
+
+        if (!curBoard) {
+            createNewBoard();
+            stripSize = dimAlong;
+        }
+
+        // A new strip is needed when: piece height differs from current strip, or strip is full across.
+        const differentStrip = Math.abs(dimAlong - stripSize) > 0.5;
+        const stripFull      = cursorAcross + dimAcross > usableAcross;
+
+        if (differentStrip || stripFull) {
+            const nextOffset = stripOffset + stripSize;
+            if (nextOffset + dimAlong > usableAlong) {
+                // New strip won't fit on this board → open a new board
+                createNewBoard();
+            } else {
+                // Advance to next strip on the same board
+                stripOffset  = nextOffset;
+                cursorAcross = 0;
+            }
+            stripSize = dimAlong;
+        }
+
+        // Compute absolute x,y position on board
+        const x = useHorizontalStrips
+            ? config.trimming.left + cursorAcross
+            : config.trimming.left + stripOffset;
+        const y = useHorizontalStrips
+            ? config.trimming.top  + stripOffset
+            : config.trimming.top  + cursorAcross;
+
+        // No rotation in strip mode — rotating would change the strip dimension and break grouping.
+        const pieceVisualW = useHorizontalStrips ? cutAcross : cutAlong;
+        const pieceVisualH = useHorizontalStrips ? cutAlong  : cutAcross;
+
+        curBoard!.placedPieces.push({
+            id: `${item.template.id}-${curBoard!.placedPieces.length}`,
+            pieceTemplateId: item.template.id,
+            x,
+            y,
+            width:       pieceVisualW,
+            height:      pieceVisualH,
+            finalWidth:  item.template.width,
+            finalHeight: item.template.height,
+            rotated:     false,
+            code:        item.template.code,
+            description: item.template.description,
+            edgeBanding: item.template.edgeBanding,
+        });
+
+        curBoard!.usedArea += item.cutW * item.cutH;
+        cursorAcross += dimAcross;
+    }
+
+    return activeBoards;
+}
+
+/**
+ * Guillotine 2D Bin Packing — used by MAX_SAVINGS strategy.
+ * Scores placements by leftover area (Best Area Fit) to maximise material utilisation.
  */
 export function optimizeCuttingMap(
     pieces: Piece[],
@@ -48,18 +174,14 @@ export function optimizeCuttingMap(
     config: OptimizationConfig
 ): Board[] {
 
-    // First, unroll the pieces by quantity
-    const itemsToPlace: { template: Piece, w: number, h: number, cutW: number, cutH: number, index: number }[] = [];
+    // Unroll pieces by quantity
+    const itemsToPlace: ItemToPlace[] = [];
     pieces.forEach((p, idx) => {
-        // Cut dimensions = Final dimensions - Edge Banding
-        const cutW = Math.max(0, p.width - p.edgeBanding.left - p.edgeBanding.right);
-        const cutH = Math.max(0, p.height - p.edgeBanding.top - p.edgeBanding.bottom);
+        const cutW = Math.max(0, p.width  - p.edgeBanding.left - p.edgeBanding.right);
+        const cutH = Math.max(0, p.height - p.edgeBanding.top  - p.edgeBanding.bottom);
 
-        // Global Grain Direction adjustment for locked pieces
-        // If board grain is vertical, and piece is grain-locked, we must ensure its principal dimension
-        // aligns with the boards's vertical axis.
         const shouldSwapForGrain = p.matchGrain && config.grainDirection === 'VERTICAL';
-        
+
         const finalW = shouldSwapForGrain ? cutH : cutW;
         const finalH = shouldSwapForGrain ? cutW : cutH;
 
@@ -70,269 +192,217 @@ export function optimizeCuttingMap(
                 h: finalH + config.sawKerf,
                 cutW: finalW,
                 cutH: finalH,
-                index: idx
+                index: idx,
             });
         }
     });
 
-    // Sort items by Area descending, but give preference based on Cut Direction
+    // Sort order depends on strategy
     itemsToPlace.sort((a, b) => {
-        // If strategy is SIMPLE_CUTS, we prioritize the original order (index) 
-        // to make the packing more predictable for the user.
-        if (config.strategy !== 'MAX_SAVINGS') {
-            if (a.index !== b.index) return a.index - b.index;
-        }
-
         const areaA = a.w * a.h;
         const areaB = b.w * b.h;
-        const maxA = Math.max(a.w, a.h);
-        const maxB = Math.max(b.w, b.h);
+        const maxA  = Math.max(a.w, a.h);
+        const maxB  = Math.max(b.w, b.h);
+
+        if (config.strategy === 'SIMPLE_CUTS') {
+            // Group pieces by their strip dimension so each full-width cut spans a uniform strip.
+            // Horizontal strips → sort by height desc; vertical strips → sort by width desc.
+            const stripA = config.cutDirection === 'VERTICAL' ? a.w : a.h;
+            const stripB = config.cutDirection === 'VERTICAL' ? b.w : b.h;
+            if (Math.abs(stripB - stripA) > 0.5) return stripB - stripA;
+            // Within the same strip height: wider pieces first to minimise strip fragmentation
+            const acrossA = config.cutDirection === 'VERTICAL' ? a.h : a.w;
+            const acrossB = config.cutDirection === 'VERTICAL' ? b.h : b.w;
+            return acrossB - acrossA;
+        }
 
         if (config.cutDirection === 'HORIZONTAL') {
-            // For horizontal cuts, sorting by longest edge first helps create uniform strips
             if (maxB !== maxA) return maxB - maxA;
             return areaB - areaA;
         } else if (config.cutDirection === 'VERTICAL') {
-            // For vertical cuts, sorting by longest edge first is also good
             if (maxB !== maxA) return maxB - maxA;
             return areaB - areaA;
         } else {
-            // Area desc
             if (areaB !== areaA) return areaB - areaA;
             return maxB - maxA;
         }
     });
 
+    // Route to the correct algorithm
+    if (config.strategy === 'SIMPLE_CUTS') {
+        return runStripPacking(itemsToPlace, boardWidth, boardHeight, config);
+    }
+
+    // ── MAX_SAVINGS: guillotine bin-packing ─────────────────────────────────
+
     const activeBoards: Board[] = [];
 
-    // Helper to create a new empty board
     const createBoard = (): Board => ({
         id: `board-${activeBoards.length + 1}`,
         width: boardWidth,
         height: boardHeight,
         placedPieces: [],
-        usedArea: 0
+        usedArea: 0,
     });
 
-    // Helper to find free space in a specific board.
-    const placeInBoard = (freeRects: Rect[], itemW: number, itemH: number, matchGrain: boolean): { rect: Rect, newFreeRects: Rect[] } | null => {
+    const placeInBoard = (
+        freeRects: Rect[],
+        itemW: number,
+        itemH: number,
+        matchGrain: boolean,
+    ): { rect: Rect; newFreeRects: Rect[] } | null => {
         let bestRectIndex = -1;
-        let bestRotated = false;
-        let bestScore1 = Infinity; // Primary score (e.g. min area or min dimension)
-        let bestScore2 = Infinity; // Secondary score
+        let bestRotated   = false;
+        let bestScore1    = Infinity;
+        let bestScore2    = Infinity;
 
         for (let i = 0; i < freeRects.length; i++) {
             const r = freeRects[i];
 
-            // Helper to evaluate a fit
             const evaluate = (w: number, h: number, isRotated: boolean) => {
                 if (w <= r.w && h <= r.h) {
-                    let score1 = 0;
-                    let score2 = 0;
+                    // Best Area Fit: minimises leftover area so pieces pack tightly into gaps.
+                    const score1 = (r.w * r.h) - (w * h);
+                    let   score2 = Math.min(r.w - w, r.h - h);
 
-                    if (config.strategy === 'MAX_SAVINGS') {
-                        // Best Area Fit (BAF): minimizes leftover area directly.
-                        // This is excellent for ensuring small pieces pack tightly into existing gaps and corners.
-                        score1 = (r.w * r.h) - (w * h);
-                        score2 = Math.min(r.w - w, r.h - h);
-                    } else {
-                        // Best Area Fit (BAF) for SIMPLE_CUTS: minimizes leftover area
-                        score1 = (r.w * r.h) - (w * h);
-                        score2 = Math.min(r.w - w, r.h - h);
-                    }
-
-                    // Tie breaker: alignment with cut direction
-                    // If Horizontal cuts are forced, we prefer placing items such that their longest side is horizontal (w >= h)
-                    let alignmentPenalty = 0;
-                    if (config.cutDirection === 'HORIZONTAL') {
-                        if (w < h) alignmentPenalty = 1000000;
-                    } else if (config.cutDirection === 'VERTICAL') {
-                        if (h < w) alignmentPenalty = 1000000;
-                    }
-
-                    score2 += alignmentPenalty;
+                    // Alignment penalty enforces cut-direction preference
+                    if (config.cutDirection === 'HORIZONTAL' && w < h) score2 += 1_000_000;
+                    if (config.cutDirection === 'VERTICAL'   && h < w) score2 += 1_000_000;
 
                     if (score1 < bestScore1 || (score1 === bestScore1 && score2 < bestScore2)) {
-                        bestScore1 = score1;
-                        bestScore2 = score2 + (isRotated ? 0.01 : 0); // Add tiny stabilization penalty for rotation
+                        bestScore1    = score1;
+                        bestScore2    = score2 + (isRotated ? 0.01 : 0);
                         bestRectIndex = i;
-                        bestRotated = isRotated;
+                        bestRotated   = isRotated;
                     }
                 }
             };
 
-            // Check normal
             evaluate(itemW, itemH, false);
-            // Check rotated
             if (!matchGrain && itemW !== itemH) {
                 evaluate(itemH, itemW, true);
             }
         }
 
         if (bestRectIndex !== -1) {
-            const r = freeRects[bestRectIndex];
+            const r      = freeRects[bestRectIndex];
             const finalW = bestRotated ? itemH : itemW;
             const finalH = bestRotated ? itemW : itemH;
             return performGuillotineCut(freeRects, bestRectIndex, r, finalW, finalH);
         }
 
-        return null; // Doesn't fit in this board
+        return null;
     };
 
-    const performGuillotineCut = (freeRects: Rect[], index: number, r: Rect, w: number, h: number) => {
-        // Remove the chosen rect
+    const performGuillotineCut = (
+        freeRects: Rect[],
+        index: number,
+        r: Rect,
+        w: number,
+        h: number,
+    ) => {
         const newFreeRects = [...freeRects];
         newFreeRects.splice(index, 1);
 
-        // We do a guillotine cut, splitting the remaining space into two rectangles.
-        // We choose the split axis that minimizes the shortest leftover dimension (MAXIMAL RECTANGLES approach variation)
-        const rightW = r.w - w;
-        const rightH = h;
+        // Horizontal split: right strip same height as piece, bottom strip full width
+        const rightRect:  Rect = { x: r.x + w, y: r.y,     w: r.w - w, h };
+        const bottomRect: Rect = { x: r.x,     y: r.y + h, w: r.w,     h: r.h - h };
 
-        const bottomW = r.w;
-        const bottomH = r.h - h;
+        // Vertical split: right strip full height, bottom strip same width as piece
+        const vRightRect:  Rect = { x: r.x + w, y: r.y,     w: r.w - w, h: r.h     };
+        const vBottomRect: Rect = { x: r.x,     y: r.y + h, w,          h: r.h - h };
 
-        const rightRect: Rect = { x: r.x + w, y: r.y, w: rightW, h: rightH };
-        const bottomRect: Rect = { x: r.x, y: r.y + h, w: bottomW, h: bottomH };
-
-        // Or vertical split first
-        const vRightW = r.w - w;
-        const vRightH = r.h;
-        const vBottomW = w;
-        const vBottomH = r.h - h;
-
-        const vRightRect: Rect = { x: r.x + w, y: r.y, w: vRightW, h: vRightH };
-        const vBottomRect: Rect = { x: r.x, y: r.y + h, w: vBottomW, h: vBottomH };
-
-        // Choose which split is better based on strategy
-        let chooseHorizontal = false;
-
-        const maxHArea = Math.max(rightW * rightH, bottomW * bottomH);
-        const maxVArea = Math.max(vRightW * vRightH, vBottomW * vBottomH);
-
+        let chooseHorizontal: boolean;
         if (config.cutDirection === 'HORIZONTAL') {
             chooseHorizontal = true;
         } else if (config.cutDirection === 'VERTICAL') {
             chooseHorizontal = false;
         } else {
-            // OPTIMAL: Choose based on strategy
-            if (config.strategy === 'MAX_SAVINGS') {
-                // For maximum savings, we usually want the split that leaves the largest possible remaining rectangle
-                // so we compare the area of the resulting "main" free rectangle
-                chooseHorizontal = maxHArea >= maxVArea;
-            } else {
-                // SIMPLE_CUTS: Preference for horizontal strips to simplify saw operations
-                chooseHorizontal = true;
-            }
+            // OPTIMAL / MAX_SAVINGS: choose split that leaves the largest remaining rect
+            const maxHArea = Math.max(rightRect.w * rightRect.h, bottomRect.w * bottomRect.h);
+            const maxVArea = Math.max(vRightRect.w * vRightRect.h, vBottomRect.w * vBottomRect.h);
+            chooseHorizontal = maxHArea >= maxVArea;
         }
 
         if (chooseHorizontal) {
-            if (rightW > 0 && rightH > 0) newFreeRects.push(rightRect);
-            if (bottomW > 0 && bottomH > 0) newFreeRects.push(bottomRect);
+            if (rightRect.w  > 0 && rightRect.h  > 0) newFreeRects.push(rightRect);
+            if (bottomRect.w > 0 && bottomRect.h > 0) newFreeRects.push(bottomRect);
         } else {
-            if (vRightW > 0 && vRightH > 0) newFreeRects.push(vRightRect);
-            if (vBottomW > 0 && vBottomH > 0) newFreeRects.push(vBottomRect);
+            if (vRightRect.w  > 0 && vRightRect.h  > 0) newFreeRects.push(vRightRect);
+            if (vBottomRect.w > 0 && vBottomRect.h > 0) newFreeRects.push(vBottomRect);
         }
 
-        return {
-            rect: { x: r.x, y: r.y, w, h },
-            newFreeRects
-        };
+        return { rect: { x: r.x, y: r.y, w, h }, newFreeRects };
     };
 
-    // State to track free space per board
     const boardsFreeSpace: Map<string, Rect[]> = new Map();
+
+    const placePiece = (
+        board: Board,
+        result: { rect: Rect; newFreeRects: Rect[] },
+        item: ItemToPlace,
+    ) => {
+        const isRotated    = result.rect.w === item.h && item.w !== item.h;
+        const finalCutW    = isRotated ? item.cutH : item.cutW;
+        const finalCutH    = isRotated ? item.cutW : item.cutH;
+        const finalTemplW  = isRotated ? item.template.height : item.template.width;
+        const finalTemplH  = isRotated ? item.template.width  : item.template.height;
+
+        board.placedPieces.push({
+            id:             `${item.template.id}-${board.placedPieces.length}`,
+            pieceTemplateId: item.template.id,
+            x:              result.rect.x,
+            y:              result.rect.y,
+            width:          finalCutW,
+            height:         finalCutH,
+            finalWidth:     finalTemplW,
+            finalHeight:    finalTemplH,
+            rotated:        isRotated,
+            code:           item.template.code,
+            description:    item.template.description,
+            edgeBanding:    isRotated ? {
+                top:    item.template.edgeBanding.left,
+                bottom: item.template.edgeBanding.right,
+                left:   item.template.edgeBanding.bottom,
+                right:  item.template.edgeBanding.top,
+            } : item.template.edgeBanding,
+        });
+
+        board.usedArea += item.cutW * item.cutH;
+    };
 
     for (const item of itemsToPlace) {
         let placed = false;
 
-        // Try to place in existing boards
         for (const board of activeBoards) {
-            let freeRects = boardsFreeSpace.get(board.id) || [];
-            const result = placeInBoard(freeRects, item.w, item.h, item.template.matchGrain);
+            const freeRects = boardsFreeSpace.get(board.id) || [];
+            const result    = placeInBoard(freeRects, item.w, item.h, item.template.matchGrain);
 
             if (result) {
-                // Determine if it was rotated
-                const isRotated = result.rect.w === item.h && item.w !== item.h;
-                const finalCutW = isRotated ? item.cutH : item.cutW;
-                const finalCutH = isRotated ? item.cutW : item.cutH;
-                const finalTemplateW = isRotated ? item.template.height : item.template.width;
-                const finalTemplateH = isRotated ? item.template.width : item.template.height;
-
-                board.placedPieces.push({
-                    id: `${item.template.id}-${board.placedPieces.length}`,
-                    pieceTemplateId: item.template.id,
-                    x: result.rect.x,
-                    y: result.rect.y,
-                    width: finalCutW,
-                    height: finalCutH,
-                    finalWidth: finalTemplateW,
-                    finalHeight: finalTemplateH,
-                    rotated: isRotated,
-                    code: item.template.code,
-                    description: item.template.description,
-                    edgeBanding: isRotated ? {
-                        top: item.template.edgeBanding.left,
-                        bottom: item.template.edgeBanding.right,
-                        left: item.template.edgeBanding.bottom,
-                        right: item.template.edgeBanding.top
-                    } : item.template.edgeBanding
-                });
-
-                board.usedArea += (item.cutW * item.cutH);
+                placePiece(board, result, item);
                 boardsFreeSpace.set(board.id, result.newFreeRects);
                 placed = true;
                 break;
             }
         }
 
-        // Create new board if not placed
         if (!placed) {
             const newBoard = createBoard();
             activeBoards.push(newBoard);
 
-            // Available space in new board accounts for trimming
-            // We mathematically add sawKerf to the usable area to compensate for the fact that every piece requires 'sawKerf' space. 
-            // The last piece touching the edge doesn't actually need kerf on its outside edge.
-            const usableWidth = boardWidth - config.trimming.left - config.trimming.right + config.sawKerf;
-            const usableHeight = boardHeight - config.trimming.top - config.trimming.bottom + config.sawKerf;
+            const usableWidth  = boardWidth  - config.trimming.left - config.trimming.right  + config.sawKerf;
+            const usableHeight = boardHeight - config.trimming.top  - config.trimming.bottom + config.sawKerf;
 
             const initialFree: Rect[] = [{
                 x: config.trimming.left,
                 y: config.trimming.top,
                 w: usableWidth,
-                h: usableHeight
+                h: usableHeight,
             }];
 
             const result = placeInBoard(initialFree, item.w, item.h, item.template.matchGrain);
             if (result) {
-                const isRotated = result.rect.w === item.h && item.w !== item.h;
-                const finalCutW = isRotated ? item.cutH : item.cutW;
-                const finalCutH = isRotated ? item.cutW : item.cutH;
-                const finalTemplateW = isRotated ? item.template.height : item.template.width;
-                const finalTemplateH = isRotated ? item.template.width : item.template.height;
-
-                newBoard.placedPieces.push({
-                    id: `${item.template.id}-${newBoard.placedPieces.length}`,
-                    pieceTemplateId: item.template.id,
-                    x: result.rect.x,
-                    y: result.rect.y,
-                    width: finalCutW,
-                    height: finalCutH,
-                    finalWidth: finalTemplateW,
-                    finalHeight: finalTemplateH,
-                    rotated: isRotated,
-                    code: item.template.code,
-                    description: item.template.description,
-                    edgeBanding: isRotated ? {
-                        top: item.template.edgeBanding.left,
-                        bottom: item.template.edgeBanding.right,
-                        left: item.template.edgeBanding.bottom,
-                        right: item.template.edgeBanding.top
-                    } : item.template.edgeBanding
-                });
-
-                newBoard.usedArea += (item.cutW * item.cutH);
+                placePiece(newBoard, result, item);
                 boardsFreeSpace.set(newBoard.id, result.newFreeRects);
             }
         }
