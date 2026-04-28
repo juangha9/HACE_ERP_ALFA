@@ -357,6 +357,19 @@
     100% { top: 0%; opacity: 0; }
 }
 
+/* Upward pulse — used on staff-branch-vline to show the path going toward the parent */
+@keyframes travelVUp {
+    0%   { top: 100%; margin-top: -12px; opacity: 0; }
+    25%  { opacity: 1; }
+    50%  { top: 0%;   margin-top: 0;     opacity: 1; }
+    75%  { opacity: 1; }
+    100% { top: 100%; margin-top: -12px; opacity: 0; }
+}
+
+.pulse-light-v.up {
+    animation: travelVUp 2s infinite ease-in-out;
+}
+
 .area-group-label {
     position: absolute;
     bottom: -20px;
@@ -620,19 +633,54 @@
 
 /* ── Staff / Apoyo Layout ────────────────────────────────────────────────── */
 
-/* Flex row that holds the main node card + any STAFF siblings to its right */
-.node-row {
+/*
+ * Zone between the parent card and its regular children where STAFF nodes branch off.
+ * The vertical spine continues through this zone (staff-branch-vline), and STAFF cards
+ * connect horizontally from the spine via their own staff-h-connector.
+ *
+ * Layout:
+ *   [parent card]  ← centered normally
+ *   [staff-branch-zone]
+ *     |── (vline, centered, spans full zone height)
+ *     └── [staff-branch-items]  ← starts at center, extends right
+ *           [staff-node-outer: h-connector + staff card]
+ *   [children-container]  ← regular children below, spine continues
+ */
+.staff-branch-zone {
+    position: relative;
+    width: 100%;
     display: flex;
-    flex-direction: row;
-    align-items: center;   /* vertically center staff group with the parent card */
+    /* Push items to start at center (where the vline is) */
+    padding-left: 50%;
+    padding-top: 14px;
+    padding-bottom: 14px;
+    box-sizing: border-box;
 }
 
-/* Column stacking multiple STAFF items vertically on the right of the parent */
-.staff-col {
+/* Vertical spine segment that runs through the STAFF branch zone */
+.staff-branch-vline {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #c4d0d2;
+    transform: translateX(-50%);
+    z-index: 5;
+    overflow: visible;
+}
+
+.staff-branch-vline.active {
+    background: #4A90E2;
+    box-shadow: 0 0 12px rgba(74, 144, 226, 0.4);
+}
+
+/* Column of STAFF items starting at the spine and going right */
+.staff-branch-items {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 12px;
-    /* no extra padding — align-items:center on .node-row does the vertical alignment */
 }
 
 /* Wrapper for a single STAFF-rendered TreeNode (isStaff=true) */
@@ -646,8 +694,15 @@
 .staff-h-connector {
     width: 40px;
     height: 2px;
-    background: #001B36;
+    background: #c4d0d2;
     flex-shrink: 0;
+    position: relative;
+    overflow: visible;
+}
+
+.staff-h-connector.active {
+    background: #4A90E2;
+    box-shadow: 0 0 12px rgba(74, 144, 226, 0.4);
 }
 
 /* Vertical wrapper for the staff card + its own optional children */
@@ -657,12 +712,6 @@
     align-items: center;
 }
 
-/* Staff cards get a left-border accent to distinguish them at a glance */
-.staff-card {
-    border-left-width: 3px !important;
-    border-left-style: solid !important;
-    border-left-color: #B68D40 !important;  /* gold accent */
-}
 
 /* Functional Lines Styles */
 .functional-lines-overlay {
@@ -678,14 +727,14 @@
 
 .functional-line {
     fill: none;
-    stroke: #4A90E2;
+    stroke: #b6dbf2;
     stroke-width: 2;
     stroke-dasharray: 8, 5;
     stroke-linejoin: round;
     stroke-linecap: round;
-    opacity: 0.7;
+    opacity: 0.85;
     transition: all 0.3s ease;
-    filter: drop-shadow(0 2px 4px rgba(74, 144, 226, 0.2));
+    filter: drop-shadow(0 2px 4px rgba(74, 144, 226, 0.15));
 }
 
 .functional-line:hover {

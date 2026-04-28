@@ -38,13 +38,19 @@ interface RepositoryItem {
     piece: PlacedPiece;
     count: number;
     color: string;
+    // El boardId al que pertenece este repo (el repo es privado por tablero).
+    ownerBoardId: string;
     sourceMaterialKey: string;
     // Posiciones de origen (todas las instancias acumuladas) — la primera entrada
     // que coincida con el tablero destino se usa para "snap a origen" al devolver.
     origins: { boardId: string; x: number; y: number; pieceId: string }[];
 }
 
-// Repository compartido por tipo de tablero: materialKey → pieceCode → RepositoryItem
+// Repository PRIVADO por tablero: boardId → pieceCode → RepositoryItem.
+// Antes era compartido por material (un repo para todos los tableros del mismo
+// material), lo que causaba que las piezas aparecieran "duplicadas" en otros
+// tableros del mismo tipo (e incluso entre tableros sin materialNumber, que
+// caían todos en la clave "default").
 type Repository = Record<string, Record<string, RepositoryItem>>;
 
 interface DragCtx {
@@ -67,6 +73,10 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
 
     // Drag visual feedback — only for UI; actual drag data lives in dragCtxRef
     const [draggingMaterialKey, setDraggingMaterialKey] = useState<string | null>(null);
+    // boardId del que partió el arrastre (BOARD o REPO). Solo el repo de ese
+    // tablero debe iluminarse al arrastrar — los demás repos del mismo material
+    // no aceptan la pieza porque cada repo es privado al tablero.
+    const [draggingSourceBoardId, setDraggingSourceBoardId] = useState<string | null>(null);
     const [dragSourceType, setDragSourceType] = useState<'BOARD' | 'REPO' | null>(null);
     const [draggingPieceIds, setDraggingPieceIds] = useState<Set<string>>(new Set());
     const [localError, setLocalError] = useState<string | null>(null);
@@ -97,21 +107,31 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
             .join('|');
     }, [boards]);
 
-    // Mientras el usuario está en modo manual, BLOQUEAR cualquier sincronización
-    // desde el prop boards. Aunque el padre re-renderice (auto-save, edits, etc.),
-    // localBoards permanece intacto. Solo se vuelve a sincronizar al salir de manual
-    // o cuando el fingerprint cambia genuinamente Y no estamos en manual.
+    // El fingerprint solo cambia si los IDs reales del prop boards cambian
+    // (re-optimización, carga de historial, reset por cambio de geometría).
+    // Cualquier re-render del padre (auto-save, edits que no afectan boards,
+    // anotaciones de printCode) deja el fingerprint intacto y el localBoards
+    // del usuario en modo manual no se toca.
+    //
+    // Importante: NO bloqueamos la sincronización por isManual. Antes lo
+    // hacíamos, pero eso causaba que al pulsar "Optimizar" estando en manual,
+    // el padre actualizara `boards` con nuevos IDs y este efecto los ignorara
+    // — el usuario veía los tableros viejos sin error en consola. Cuando
+    // detectamos un fingerprint nuevo asumimos que es una re-optimización
+    // legítima: salimos del modo manual y limpiamos todo el estado local.
     const lastSyncedFingerprintRef = useRef<string>('');
     useEffect(() => {
-        if (isManual) return;
         if (lastSyncedFingerprintRef.current === boardsFingerprint) return;
         const cloned = JSON.parse(JSON.stringify(boards));
         setLocalBoards(cloned);
         latestBoardsRef.current = cloned;
         setRepository({});
+        setSelectedIds(new Set());
+        setSelectionBoardId(null);
+        if (isManual) setIsManual(false);
         lastSyncedFingerprintRef.current = boardsFingerprint;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [boardsFingerprint, isManual]);
+    }, [boardsFingerprint]);
 
     useEffect(() => {
         latestBoardsRef.current = localBoards;
@@ -139,6 +159,7 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
     const clearDrag = () => {
         dragCtxRef.current = null;
         setDraggingMaterialKey(null);
+        setDraggingSourceBoardId(null);
         setDragSourceType(null);
         setDraggingPieceIds(new Set());
     };
@@ -216,11 +237,15 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
             grabOffset: { x: offsetX, y: offsetY }
         };
         setDraggingMaterialKey(matKey);
+        setDraggingSourceBoardId(board.id);
         setDragSourceType('BOARD');
         setDraggingPieceIds(new Set(dragPieces.map(p => p.id)));
     };
 
-    const handleDragStartFromRepo = (e: React.DragEvent, item: RepositoryItem) => {
+    // El repo es privado por tablero, así que el drag desde repo necesita saber
+    // a qué tablero pertenece para que el drop solo se acepte de vuelta a ese
+    // mismo tablero (no a otro del mismo material).
+    const handleDragStartFromRepo = (e: React.DragEvent, item: RepositoryItem, ownerBoard: Board) => {
         const rect = (e.target as HTMLElement).getBoundingClientRect();
         const offsetX = e.clientX - rect.left;
         const offsetY = e.clientY - rect.top;
@@ -230,7 +255,7 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
         dragCtxRef.current = {
             sourceType: 'REPO',
             sourceMaterialKey: item.sourceMaterialKey,
-            sourceBoardId: '',
+            sourceBoardId: ownerBoard.id,
             pieces: [item.piece],
             pieceCodes: [item.code],
             anchorIndex: 0,
@@ -238,23 +263,26 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
             grabOffset: { x: offsetX, y: offsetY }
         };
         setDraggingMaterialKey(item.sourceMaterialKey);
+        setDraggingSourceBoardId(ownerBoard.id);
         setDragSourceType('REPO');
         setDraggingPieceIds(new Set());
     };
 
-    // Repositorio acepta piezas arrastradas desde cualquier tablero del mismo tipo.
-    // Soporta drop multi-pieza si hay selección.
+    // Cada tablero tiene su propio repositorio privado.
+    // El drop solo se acepta si las piezas vienen DEL MISMO tablero al que se
+    // le está soltando: cada repo es exclusivo de su tablero, no se comparte
+    // con otros tableros del mismo material.
     // Descuenta `quantity` en la tabla del padre vía onPiecesAdjust(pieceTemplateId, -1).
     const handleDropOnRepo = (e: React.DragEvent, targetBoard: Board) => {
         e.preventDefault();
         e.stopPropagation();
         const ctx = dragCtxRef.current;
         if (!ctx || ctx.sourceType !== 'BOARD') return clearDrag();
-        const targetMatKey = matKeyOf(targetBoard);
-        if (ctx.sourceMaterialKey !== targetMatKey) {
-            showError("Solo puedes soltar piezas en el repositorio de su mismo material.");
+        if (ctx.sourceBoardId !== targetBoard.id) {
+            showError("El repositorio solo recibe piezas de su propio tablero.");
             return clearDrag();
         }
+        const targetMatKey = matKeyOf(targetBoard);
 
         const { sourceBoardId, pieces: piecesToMove } = ctx;
 
@@ -287,20 +315,21 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
         });
 
         setRepository(prev => {
-            const matRepo = { ...(prev[targetMatKey] || {}) };
+            const boardRepo = { ...(prev[targetBoard.id] || {}) };
             for (const piece of actuallyPresent) {
-                const existing = matRepo[piece.code];
+                const existing = boardRepo[piece.code];
                 const origin = { boardId: sourceBoardId, x: piece.x, y: piece.y, pieceId: piece.id };
-                matRepo[piece.code] = {
+                boardRepo[piece.code] = {
                     code: piece.code,
                     piece: JSON.parse(JSON.stringify(piece)),
                     count: (existing?.count ?? 0) + 1,
                     color: getCodeColor(piece.code),
+                    ownerBoardId: targetBoard.id,
                     sourceMaterialKey: targetMatKey,
                     origins: existing ? [...existing.origins, origin] : [origin]
                 };
             }
-            return { ...prev, [targetMatKey]: matRepo };
+            return { ...prev, [targetBoard.id]: boardRepo };
         });
 
         // Descontar de la tabla de medidas (1 por pieza) usando pieceTemplateId.
@@ -427,9 +456,15 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
         }
 
         if (ctx.sourceType === 'REPO') {
+            // El repo es privado al tablero — la pieza solo puede regresar a
+            // su tablero de origen, no a otro del mismo material.
+            if (ctx.sourceBoardId !== targetBoard.id) {
+                showError("La pieza del repositorio solo puede volver a su tablero de origen.");
+                return clearDrag();
+            }
             const code = ctx.pieceCodes[0];
-            const matRepo = repository[targetMatKey];
-            const repoItem = matRepo?.[code];
+            const boardRepo = repository[targetBoard.id];
+            const repoItem = boardRepo?.[code];
             if (!repoItem) return clearDrag();
 
             // SNAP A ORIGEN: si una de las instancias guardadas en `origins` proviene del
@@ -494,22 +529,22 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
             }
 
             setRepository(prev => {
-                const matRepoPrev = prev[targetMatKey] || {};
-                const existing = matRepoPrev[code];
+                const boardRepoPrev = prev[targetBoard.id] || {};
+                const existing = boardRepoPrev[code];
                 if (!existing) return prev;
                 // Consumir el origin que coincida (si hubo snap) o el primero disponible.
                 const remainingOrigins = consumedOriginPieceId
                     ? existing.origins.filter(o => o.pieceId !== consumedOriginPieceId)
                     : existing.origins.slice(1);
                 if (existing.count <= 1) {
-                    const nextMat = { ...matRepoPrev };
-                    delete nextMat[code];
-                    return { ...prev, [targetMatKey]: nextMat };
+                    const nextRepo = { ...boardRepoPrev };
+                    delete nextRepo[code];
+                    return { ...prev, [targetBoard.id]: nextRepo };
                 }
                 return {
                     ...prev,
-                    [targetMatKey]: {
-                        ...matRepoPrev,
+                    [targetBoard.id]: {
+                        ...boardRepoPrev,
                         [code]: { ...existing, count: existing.count - 1, origins: remainingOrigins }
                     }
                 };
@@ -600,6 +635,87 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
         clearDrag();
     };
 
+    // Rotación de la selección activa (modo manual). Tecla 'R'/'r'.
+    // Cada pieza intercambia ancho/alto manteniendo su esquina superior-izquierda;
+    // se valida bordes del tablero y colisiones contra el resto, considerando
+    // las nuevas dimensiones de las otras piezas seleccionadas (rotación grupal).
+    const rotateSelection = () => {
+        if (!selectionBoardId || selectedIds.size === 0) return;
+        const fresh = latestBoardsRef.current;
+        const board = fresh.find(b => b.id === selectionBoardId);
+        if (!board) return;
+        const bw = board.width || fallbackW;
+        const bh = board.height || fallbackH;
+
+        const selectedPieces = board.placedPieces.filter(p => selectedIds.has(p.id));
+        if (selectedPieces.length === 0) return;
+
+        // Mapa id → nuevas dimensiones tras rotar.
+        const rotatedDims = new Map(selectedPieces.map(p => [p.id, { w: p.height, h: p.width }]));
+
+        // Bordes: el bbox rotado debe caber dentro del tablero.
+        for (const p of selectedPieces) {
+            const nd = rotatedDims.get(p.id)!;
+            if (p.x < 0 || p.y < 0 || p.x + nd.w > bw || p.y + nd.h > bh) {
+                showError(`"${p.code}" no cabe rotada en el tablero.`);
+                return;
+            }
+        }
+
+        // Colisiones: cada pieza seleccionada (con sus nuevas dims) vs todas las
+        // demás (las no seleccionadas mantienen sus dims originales; las
+        // seleccionadas usan sus dims rotadas).
+        for (const p of selectedPieces) {
+            const nd = rotatedDims.get(p.id)!;
+            for (const other of board.placedPieces) {
+                if (other.id === p.id) continue;
+                const otherDims = rotatedDims.get(other.id);
+                const ow = otherDims ? otherDims.w : other.width;
+                const oh = otherDims ? otherDims.h : other.height;
+                const overlapX = p.x < other.x + ow && p.x + nd.w > other.x;
+                const overlapY = p.y < other.y + oh && p.y + nd.h > other.y;
+                if (overlapX && overlapY) {
+                    showError(`"${p.code}" rotada chocaría con "${other.code}".`);
+                    return;
+                }
+            }
+        }
+
+        setLocalBoards(prev => {
+            const next = prev.map(b => {
+                if (b.id !== selectionBoardId) return b;
+                return {
+                    ...b,
+                    placedPieces: b.placedPieces.map(p => {
+                        if (!selectedIds.has(p.id)) return p;
+                        return { ...p, width: p.height, height: p.width, rotated: !p.rotated };
+                    })
+                };
+            });
+            latestBoardsRef.current = next;
+            return next;
+        });
+    };
+
+    // Listener global de teclado: 'R' rota la selección estando en modo manual.
+    // Se ignora si el foco está en un input/textarea para no interferir con
+    // la edición de campos en el resto de la página.
+    useEffect(() => {
+        if (!isManual) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'r' && e.key !== 'R') return;
+            const target = e.target as HTMLElement | null;
+            const tag = target?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+            if (!selectionBoardId || selectedIds.size === 0) return;
+            e.preventDefault();
+            rotateSelection();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isManual, selectionBoardId, selectedIds]);
+
     return (
         <div className="flex flex-col h-full bg-[#edf0f5]">
             {/* Header */}
@@ -615,6 +731,14 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                 </div>
 
                 <div className="flex items-center gap-4">
+                    {isManual && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#4A90E2]/5 border border-[#4A90E2]/20 text-[10px] font-black uppercase tracking-wider text-[#1c3547]/60">
+                            <span className="material-icons-round text-[14px] text-[#4A90E2]/70">rotate_right</span>
+                            <span>Selecciona una pieza y pulsa</span>
+                            <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#cbd5e1] text-[#1c3547] font-mono text-[10px] shadow-sm">R</kbd>
+                            <span>para rotar</span>
+                        </div>
+                    )}
                     <button
                         onClick={() => setIsManual(!isManual)}
                         className={`flex items-center gap-2 px-6 py-2.5 rounded-2xl transition-all duration-300 font-black text-[11px] uppercase tracking-widest ${
@@ -668,11 +792,15 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                                     const localIdx = globalBoardIndex++;
                                     const usePct = ((board.usedArea / (bw * bh)) * 100).toFixed(1);
                                     const matKey = matKeyOf(board);
-                                    const matRepo = repository[matKey] || {};
-                                    const repoItems = Object.values(matRepo);
+                                    const boardRepo = repository[board.id] || {};
+                                    const repoItems = Object.values(boardRepo);
                                     const repoCount = repoItems.reduce((acc, i) => acc + i.count, 0);
-                                    // Cualquier tablero del mismo tipo se ilumina al arrastrar
+                                    // La superficie del tablero se ilumina con cualquier arrastre
+                                    // del mismo material (permite movimientos cross-board).
                                     const isPair = draggingMaterialKey === matKey;
+                                    // El repo solo se ilumina si la pieza viene de ESTE mismo
+                                    // tablero — los demás repos no aceptan la pieza.
+                                    const isOwnRepoTarget = draggingSourceBoardId === board.id;
 
                                     return (
                                         <div key={board.id} className={`w-full max-w-7xl flex gap-12 shrink-0 transition-all duration-500 ${isManual ? 'items-start justify-start pl-20' : 'items-center justify-center'}`}>
@@ -789,7 +917,7 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                                                     <div
                                                         onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
                                                         onDrop={e => handleDropOnRepo(e, board)}
-                                                        className={`relative w-full aspect-square bg-white/40 border-2 border-dashed rounded-[40px] flex flex-wrap content-start p-8 gap-6 transition-all duration-300 overflow-auto custom-scrollbar ${isManual && isPair && dragSourceType === 'BOARD' ? 'border-[#4A90E2] bg-[#4A90E2]/5 shadow-inner' : 'border-[#cbd5e1] hover:border-[#1c3547]/20'}`}
+                                                        className={`relative w-full aspect-square bg-white/40 border-2 border-dashed rounded-[40px] flex flex-wrap content-start p-8 gap-6 transition-all duration-300 overflow-auto custom-scrollbar ${isManual && isOwnRepoTarget && dragSourceType === 'BOARD' ? 'border-[#4A90E2] bg-[#4A90E2]/5 shadow-inner' : 'border-[#cbd5e1] hover:border-[#1c3547]/20'}`}
                                                     >
                                                         {repoItems.length === 0 ? (
                                                             <div className="absolute inset-0 flex flex-col items-center justify-center text-[#1c3547]/20 pointer-events-none select-none">
@@ -814,7 +942,7 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                                                                     <div
                                                                         key={item.code}
                                                                         draggable
-                                                                        onDragStart={e => handleDragStartFromRepo(e, item)}
+                                                                        onDragStart={e => handleDragStartFromRepo(e, item, board)}
                                                                         onDragEnd={clearDrag}
                                                                         onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
                                                                         onDrop={e => { e.stopPropagation(); handleDropOnRepo(e, board); }}

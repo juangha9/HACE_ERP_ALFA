@@ -512,6 +512,10 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
         [sortedChildren]
     );
 
+    // Separate active-child detection so STAFF children don't pollute the regular-children pulse logic
+    const hasActiveRegularChild = regularChildren.some((c: any) => activePath.includes(c.id));
+    const hasActiveStaffChild   = staffChildren.some((c: any) => activePath.includes(c.id));
+
     // Measured level step: calibrated from actual rendered card heights of gap=1 children.
     // When a child skips hierarchy levels (gap>1), this ensures it aligns with the deepest
     // same-level nodes in sibling branches, regardless of the static card-height assumption.
@@ -597,7 +601,9 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
     if (isStaff) {
         return (
             <div className="staff-node-outer">
-                <div className="staff-h-connector" />
+                <div className={`staff-h-connector ${isActive ? 'active' : ''}`}>
+                    {isActive && <div className="pulse-light-h full to-left" style={{ animationDelay: `${animDelay}s` }} />}
+                </div>
                 <div className="staff-node-inner">
                     <div
                         className={`node-card staff-card ${isSelected ? 'active-card' : isActive ? 'active-path-card' : ''}`}
@@ -668,11 +674,10 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                 )}
             </div>
 
-            {/* Node card + staff siblings rendered side-by-side in a horizontal row */}
-            <div className="node-row">
+            {/* Node card — centered alone in the column, not displaced by staff siblings */}
             <div
                 className={`node-card ${isSelected ? 'active-card' : isActive ? 'active-path-card' : ''}`}
-                style={{ borderColor: isSelected ? borderColor : `${borderColor}1A` }} // 1A is ~10% opacity in hex
+                style={{ borderColor: isSelected ? borderColor : `${borderColor}1A` }}
                 data-role-id={node.id}
                 onClick={(e) => { e.stopPropagation(); onSelect(node); }}
                 onDoubleClick={(e) => { e.stopPropagation(); onOpenDetails(node); }}
@@ -695,31 +700,38 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                     </div>
                     {node.dotacion > 1 && <span className="dotacion-badge">x{node.dotacion}</span>}
                 </div>
-
-                {/* Visual indicator for single-click selection (pulsing halo) */}
                 {isSelected && <div className="click-pulse-halo"></div>}
             </div>
 
-            {/* Staff children — rendered horizontally to the right of this card */}
+            {/* STAFF children branch off from the vertical spine below the card */}
             {staffChildren.length > 0 && (
-                <div className="staff-col">
-                    {staffChildren.map((child: any) => (
-                        <TreeNode
-                            key={child.id}
-                            node={child}
-                            viewMode={viewMode}
-                            onSelect={onSelect}
-                            onOpenDetails={onOpenDetails}
-                            activePath={activePath}
-                            level={level + 1}
-                            parentJerarquia={nodeJerarquia}
-                            allowedAreaLabels={allowedAreaLabels}
-                            isStaff={true}
-                        />
-                    ))}
+                <div className="staff-branch-zone">
+                    <div className={`staff-branch-vline ${hasActiveRegularChild ? 'active' : ''}`}>
+                        {hasActiveStaffChild && (
+                            <div className="pulse-light-v up" style={{ animationDelay: `${animDelay}s` }} />
+                        )}
+                        {hasActiveRegularChild && (
+                            <div className="pulse-light-v" style={{ animationDelay: `${animDelay + 0.1}s` }} />
+                        )}
+                    </div>
+                    <div className="staff-branch-items">
+                        {staffChildren.map((child: any) => (
+                            <TreeNode
+                                key={child.id}
+                                node={child}
+                                viewMode={viewMode}
+                                onSelect={onSelect}
+                                onOpenDetails={onOpenDetails}
+                                activePath={activePath}
+                                level={level + 1}
+                                parentJerarquia={nodeJerarquia}
+                                allowedAreaLabels={allowedAreaLabels}
+                                isStaff={true}
+                            />
+                        ))}
+                    </div>
                 </div>
             )}
-            </div>
             
             {regularChildren.length > 0 && (() => {
                 // Only regular (non-STAFF) children hang below in the tree row.
@@ -745,7 +757,7 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
 
                 // Active (blue) segment: from active child center to parent's REAL drop X
                 let activeLine = { left: 0, width: 0, show: false };
-                if (hasActiveChild && activeIdx >= 0 && linePositions.centers.length > 0) {
+                if (hasActiveRegularChild && activeIdx >= 0 && linePositions.centers.length > 0) {
                     const activeCenter = linePositions.centers[activeIdx];
                     const dropCenter = linePositions.dropX; // Real vertical drop position
                     if (activeCenter !== undefined && dropCenter !== undefined) {
@@ -756,9 +768,9 @@ const TreeNode = React.memo(({ node, viewMode, onSelect, onOpenDetails, activePa
                 }
 
                 return (
-                    <div className={`children-container ${hasActiveChild ? 'active-path' : ''}`}>
+                    <div className={`children-container ${hasActiveRegularChild ? 'active-path' : ''}`}>
                         <div className="children-container-line">
-                            {hasActiveChild && <div className="pulse-light-v" style={{ animationDelay: `${animDelay + 0.2}s` }}></div>}
+                            {hasActiveRegularChild && <div className="pulse-light-v" style={{ animationDelay: `${animDelay + 0.2}s` }}></div>}
                         </div>
                         <div className="children-row" ref={rowRef}>
                             {linePositions.centers.length > 1 && (
@@ -973,10 +985,11 @@ function FunctionalLines({ roles, wrapperRef }: { roles: Role[], wrapperRef: Rea
             if (!srcEl) return;
             const src = srcEl.getBoundingClientRect();
             const sx = {
-                left:  src.left  - wrapperRect.left,
-                right: src.right - wrapperRect.left,
-                midX:  (src.left  + src.right)  / 2 - wrapperRect.left,
-                midY:  (src.top   + src.bottom) / 2 - wrapperRect.top,
+                left:   src.left   - wrapperRect.left,
+                right:  src.right  - wrapperRect.left,
+                bottom: src.bottom - wrapperRect.top,
+                midX:  (src.left   + src.right)  / 2 - wrapperRect.left,
+                midY:  (src.top    + src.bottom) / 2 - wrapperRect.top,
             };
 
             role.relacion_funcional.forEach(targetId => {
@@ -992,52 +1005,25 @@ function FunctionalLines({ roles, wrapperRef }: { roles: Role[], wrapperRef: Rea
 
                 const skipIds = [role.id!, targetId];
 
-                // Smart side selection: exit/enter the side that faces the target
-                let x1: number, x2: number;
-                if (tx.midX >= sx.midX) {
-                    x1 = sx.right;  // source exits right
-                    x2 = tx.left;   // target entered from left
-                } else {
-                    x1 = sx.left;   // source exits left
-                    x2 = tx.right;  // target entered from right
-                }
+                // Exit point depends on where the hierarchy connector enters the source card:
+                //   STAFF nodes  → hierarchy enters from LEFT (staff-h-connector) → exit from RIGHT
+                //   Regular nodes → hierarchy enters from TOP (center-line)       → exit from BOTTOM
+                const isStaffSrc = role.tipo_relacion === 'STAFF';
+                const x1 = isStaffSrc ? sx.right  : sx.midX;
+                const y1 = isStaffSrc ? sx.midY   : sx.bottom;
 
-                const y1 = sx.midY;
+                // Target always entered from LEFT or RIGHT side at mid-height (never from below)
+                const x2 = tx.midX >= sx.midX ? tx.left : tx.right;
                 const y2 = tx.midY;
 
-                if (Math.abs(y1 - y2) < 4) {
-                    // Same row: pure horizontal
-                    newPaths.push(`M ${x1} ${y1} H ${x2}`);
-                    return;
+                if (isStaffSrc) {
+                    // Z-path: exit right → small rightward gap → vertical to target level → horizontal to target side
+                    const pivot = x1 + 40;
+                    newPaths.push(`M ${x1} ${y1} H ${pivot} V ${y2} H ${x2}`);
+                } else {
+                    // L-path: exit bottom → vertical to target level → horizontal to target side
+                    newPaths.push(`M ${x1} ${y1} V ${y2} H ${x2}`);
                 }
-
-                const yLow  = Math.min(y1, y2);
-                const yHigh = Math.max(y1, y2);
-                const ideal = (x1 + x2) / 2;
-
-                // Candidate midX positions: ideal + one step past each blocker's edge
-                const candidates: number[] = [ideal];
-                cardBoxes.forEach(b => {
-                    if (skipIds.includes(b.id)) return;
-                    if (b.top > yHigh + CLEARANCE || b.bottom < yLow - CLEARANCE) return;
-                    candidates.push(b.right + CLEARANCE);
-                    candidates.push(b.left  - CLEARANCE);
-                });
-                // Last-resort bypass lanes at the edges of the whole tree
-                candidates.push(treeLeft, treeRight);
-                // Prefer candidates closest to ideal to keep the connector short
-                candidates.sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal));
-
-                let midX = ideal;
-                for (const c of candidates) {
-                    if (!isVBlocked(c, yLow, yHigh, skipIds)) {
-                        midX = c;
-                        break;
-                    }
-                }
-
-                // Orthogonal Z-path: horizontal → vertical → horizontal
-                newPaths.push(`M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`);
             });
         });
 
@@ -1061,7 +1047,7 @@ function FunctionalLines({ roles, wrapperRef }: { roles: Role[], wrapperRef: Rea
         <svg className="functional-lines-overlay" style={{ pointerEvents: 'none' }}>
             <defs>
                 <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                    <polygon points="0 0, 10 3.5, 0 7" fill="#4A90E2" />
+                    <polygon points="0 0, 10 3.5, 0 7" fill="#b6dbf2" />
                 </marker>
             </defs>
             {paths.map((d, i) => (
@@ -1762,7 +1748,39 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
     const LEVEL_STEP = mode === 'CORPORATIVO' ? 245 : 222;
     const getLevelColor = (lvl: number) => lvl === 0 ? '#B68D40' : lvl === 1 ? '#001B36' : '#00162B';
 
-    const renderTreeNodes = (nodes: any[], level: number, parentJerarquia: number): string => {
+    // Mutually recursive: renderStaffNode calls renderTreeNodes for staff children's subtrees
+    let renderStaffNode: (node: any, level: number, parentJ: number) => string;
+    let renderTreeNodes: (nodes: any[], level: number, parentJerarquia: number) => string;
+
+    renderStaffNode = (node: any, level: number, parentJ: number): string => {
+        const nodeJ = Number(node.jerarquia) || level;
+        const levelColor = getLevelColor(level);
+        const childRegular = (node.children || []).filter((c: any) => c.tipo_relacion !== 'STAFF');
+        return `
+        <div class="staff-node-outer" data-node-id="${node.id}" data-tipo-relacion="STAFF">
+            <div class="staff-h-connector"></div>
+            <div class="staff-node-inner">
+                <div class="node-card staff-card" data-node-id="${node.id}" data-level-color="${levelColor}" data-level="${level}" style="border-color: ${levelColor}1A;" onclick="selectNode(event,'${node.id}')" ondblclick="showDetails('${node.id}')">
+                    <div class="node-icon"><span class="material-symbols-outlined">${getRoleIcon(node.nombre_cargo || '')}</span></div>
+                    <div class="node-info">
+                        <h3 class="role-title">${node.nombre_cargo}</h3>
+                        ${mode === 'CORPORATIVO' && node.rango_salarial ? `<p class="salary-range">(${node.rango_salarial})</p>` : ''}
+                        <p class="occupant-name">${node.nombres || 'Puesto Vacante'}</p>
+                        ${mode === 'CORPORATIVO' && node.sueldo ? `<p class="salary-actual">S/ ${node.sueldo}</p>` : ''}
+                        <div class="node-schedule"><span class="material-symbols-outlined" style="font-size:12px">schedule</span>${node.horario || 'No definido'}</div>
+                        ${node.dotacion > 1 ? `<span class="dotacion-badge">x${node.dotacion}</span>` : ''}
+                    </div>
+                </div>
+                ${childRegular.length > 0 ? `
+                <div class="children-container" data-parent-id="${node.id}">
+                    <div class="children-container-line"></div>
+                    <div class="children-row">${renderTreeNodes(childRegular, level + 1, nodeJ)}</div>
+                </div>` : ''}
+            </div>
+        </div>`;
+    };
+
+    renderTreeNodes = (nodes: any[], level: number, parentJerarquia: number): string => {
         const sorted = [...nodes].sort((a: any, b: any) => {
             const aArea = (a.area || 'Sin área').trim().toLowerCase();
             const bArea = (b.area || 'Sin área').trim().toLowerCase();
@@ -1771,25 +1789,38 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
         });
 
         return sorted.map(node => {
-            const hasChildren = node.children && node.children.length > 0;
-            const childArea = (node.area || 'Sin área').trim();
-            const isAreaLabelable = childArea !== '' && childArea.toLowerCase() !== 'sin área' && childArea.toUpperCase() !== 'GERENCIA' && childArea.toUpperCase() !== 'GERENCIA GENERAL';
-
-            // Replicar la lógica de la app: paddingTop y altura de la línea según
-            // la diferencia de jerarquía con el padre. Si jerarquía=5 y padre=3, gap=2 → +LEVEL_STEP×1.
             const nodeJ = Number(node.jerarquia) || (level + 1);
             const gap = Math.max(1, nodeJ - parentJerarquia);
             const extraPadding = (gap - 1) * LEVEL_STEP;
             const containerPadTop = level === 0 ? 0 : (32 + extraPadding);
             const lineHeight = 32 + extraPadding;
-
             const levelColor = getLevelColor(level);
-            const cardBorder = `${levelColor}1A`; // ~10% opacity
+            const childArea = (node.area || 'Sin área').trim();
+            const isAreaLabelable = childArea !== '' && childArea.toLowerCase() !== 'sin área' && childArea.toUpperCase() !== 'GERENCIA' && childArea.toUpperCase() !== 'GERENCIA GENERAL';
+
+            const staffChildren = (node.children || []).filter((c: any) => c.tipo_relacion === 'STAFF');
+            const regularChildren = (node.children || []).filter((c: any) => c.tipo_relacion !== 'STAFF');
+
+            const staffZoneHtml = staffChildren.length > 0 ? `
+            <div class="staff-branch-zone">
+                <div class="staff-branch-vline"></div>
+                <div class="staff-branch-items">
+                    ${staffChildren.map((c: any) => renderStaffNode(c, level + 1, nodeJ)).join('')}
+                </div>
+            </div>` : '';
+
+            const regularChildrenHtml = regularChildren.length > 0 ? `
+            <div class="children-container" data-parent-id="${node.id}">
+                <div class="children-container-line"></div>
+                <div class="children-row">
+                    ${renderTreeNodes(regularChildren, level + 1, nodeJ)}
+                </div>
+            </div>` : '';
 
             return `
-            <div class="tree-node-container" data-node-id="${node.id}" data-jerarquia="${nodeJ}" data-parent-jerarquia="${parentJerarquia}" data-parent-id="${node.parent_id || ''}" data-area="${childArea}" data-area-labelable="${isAreaLabelable ? '1' : '0'}" style="padding-top: ${containerPadTop}px;">
+            <div class="tree-node-container" data-node-id="${node.id}" data-jerarquia="${nodeJ}" data-parent-jerarquia="${parentJerarquia}" data-parent-id="${node.parent_id || ''}" data-area="${childArea}" data-area-labelable="${isAreaLabelable ? '1' : '0'}" data-tipo-relacion="${node.tipo_relacion || 'JERARQUICA'}" style="padding-top: ${containerPadTop}px;">
                 ${level > 0 ? `<div class="tree-node-center-line" style="height: ${lineHeight}px;"></div>` : ''}
-                <div class="node-card" data-node-id="${node.id}" data-level-color="${levelColor}" data-level="${level}" style="border-color: ${cardBorder};" onclick="selectNode(event, '${node.id}')" ondblclick="showDetails('${node.id}')">
+                <div class="node-card" data-node-id="${node.id}" data-level-color="${levelColor}" data-level="${level}" style="border-color: ${levelColor}1A;" onclick="selectNode(event, '${node.id}')" ondblclick="showDetails('${node.id}')">
                     <div class="node-icon"><span class="material-symbols-outlined">${getRoleIcon(node.nombre_cargo || '')}</span></div>
                     <div class="node-info">
                         <h3 class="role-title">${node.nombre_cargo}</h3>
@@ -1803,16 +1834,9 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
                         ${node.dotacion > 1 ? `<span class="dotacion-badge">x${node.dotacion}</span>` : ''}
                     </div>
                 </div>
-                ${hasChildren ? `
-                    <div class="children-container" data-parent-id="${node.id}">
-                        <div class="children-container-line"></div>
-                        <div class="children-row">
-                            ${renderTreeNodes(node.children, level + 1, nodeJ)}
-                        </div>
-                    </div>
-                ` : ''}
-            </div>
-        `;
+                ${staffZoneHtml}
+                ${regularChildrenHtml}
+            </div>`;
         }).join('');
     };
 
@@ -1878,7 +1902,7 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             overflow: auto;
         }
 
-        .tree-wrapper { display: flex; flex-direction: column; align-items: center; width: min-content; margin: 0 auto; }
+        .tree-wrapper { display: flex; flex-direction: column; align-items: center; width: min-content; margin: 0 auto; position: relative; }
         .tree-node-container { position: relative; padding: 32px 10px 0 10px; display: flex; flex-direction: column; align-items: center; }
         .tree-wrapper > .tree-node-container { padding-top: 0 !important; }
         .tree-wrapper > .tree-node-container > .tree-node-center-line { display: none !important; }
@@ -2018,6 +2042,30 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             pointer-events: none;
         }
 
+        /* ── Staff / Apoyo Layout ─────────────────────────────── */
+        .staff-branch-zone { position: relative; width: 100%; display: flex; padding-left: 50%; padding-top: 14px; padding-bottom: 14px; box-sizing: border-box; }
+        .staff-branch-vline { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: var(--line); transform: translateX(-50%); z-index: 5; overflow: visible; }
+        .staff-branch-vline.active { background: var(--primary); box-shadow: 0 0 12px rgba(74,144,226,0.4); }
+        .staff-branch-items { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+        .staff-node-outer { display: flex; flex-direction: row; align-items: center; }
+        .staff-h-connector { width: 40px; height: 2px; background: var(--line); flex-shrink: 0; position: relative; overflow: visible; }
+        .staff-h-connector.active { background: var(--primary); box-shadow: 0 0 12px rgba(74,144,226,0.4); }
+        .staff-node-inner { display: flex; flex-direction: column; align-items: center; }
+
+        /* Upward pulse — STAFF → parent */
+        @keyframes travelVUp {
+            0%   { top: 100%; margin-top: -12px; opacity: 0; }
+            25%  { opacity: 1; }
+            50%  { top: 0%;   margin-top: 0;     opacity: 1; }
+            75%  { opacity: 1; }
+            100% { top: 100%; margin-top: -12px; opacity: 0; }
+        }
+        .pulse-light-v.up { animation: travelVUp 2s infinite ease-in-out; }
+
+        /* ── Functional (dashed) Lines SVG overlay ──────────── */
+        .functional-lines-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
+        .functional-line { fill: none; stroke: #b6dbf2; stroke-width: 2; stroke-dasharray: 8,5; stroke-linejoin: round; stroke-linecap: round; opacity: 0.85; filter: drop-shadow(0 2px 4px rgba(74,144,226,0.15)); }
+
         /* Sidebar (sticky header + glassmorph) */
         #details-modal {
             position: fixed; top: 0; right: 0;
@@ -2122,6 +2170,13 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
     <div class="canvas" onclick="clearSelection()">
         <div class="tree-wrapper">
             ${renderTreeNodes(tree, 0, 0)}
+            <svg id="functional-lines-svg" class="functional-lines-overlay">
+                <defs>
+                    <marker id="fl-arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+                        <polygon points="0 0, 10 3.5, 0 7" fill="#b6dbf2"/>
+                    </marker>
+                </defs>
+            </svg>
         </div>
     </div>
 
@@ -2307,10 +2362,9 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             document.querySelectorAll('.node-card.active-card, .node-card.active-path-card').forEach(function(el) {
                 el.classList.remove('active-card');
                 el.classList.remove('active-path-card');
-                const halo = el.querySelector('.click-pulse-halo');
+                var halo = el.querySelector('.click-pulse-halo');
                 if (halo) halo.remove();
-                // Restaurar borde a la versión 10% del color del nivel
-                const lc = el.dataset.levelColor;
+                var lc = el.dataset.levelColor;
                 if (lc) el.style.borderColor = lc + '1A';
             });
             document.querySelectorAll('.tree-node-container.active-branch').forEach(function(el) {
@@ -2318,6 +2372,12 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             });
             document.querySelectorAll('.children-container.active-path').forEach(function(el) {
                 el.classList.remove('active-path');
+            });
+            document.querySelectorAll('.staff-h-connector.active').forEach(function(el) {
+                el.classList.remove('active');
+            });
+            document.querySelectorAll('.staff-branch-vline.active').forEach(function(el) {
+                el.classList.remove('active');
             });
             document.querySelectorAll('.pulse-light-v, .pulse-light-h').forEach(function(el) { el.remove(); });
             document.querySelectorAll('.h-line-bar.active').forEach(function(el) { el.remove(); });
@@ -2369,27 +2429,33 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             event.stopPropagation();
             clearSelection();
 
-            // Construir ruta de ancestros (selected → ... → root)
-            const path = [];
-            let cursor = roles.find(function(r) { return r.id === roleId; });
+            var path = [];
+            var cursor = roles.find(function(r) { return r.id === roleId; });
             while (cursor) {
                 path.push(cursor.id);
                 cursor = cursor.parent_id ? roles.find(function(r) { return r.id === cursor.parent_id; }) : null;
             }
 
             path.forEach(function(id, idx) {
-                const container = document.querySelector('.tree-node-container[data-node-id="' + id + '"]');
+                // STAFF nodes render as staff-node-outer, regular nodes as tree-node-container
+                var container = document.querySelector('.tree-node-container[data-node-id="' + id + '"]');
+                var isStaffNode = false;
+                if (!container) {
+                    container = document.querySelector('.staff-node-outer[data-node-id="' + id + '"]');
+                    isStaffNode = true;
+                }
                 if (!container) return;
-                container.classList.add('active-branch');
+                if (!isStaffNode) container.classList.add('active-branch');
 
-                const card = container.querySelector(':scope > .node-card');
+                var card = isStaffNode
+                    ? container.querySelector(':scope > .staff-node-inner > .node-card')
+                    : container.querySelector(':scope > .node-card');
                 if (card) {
                     if (idx === 0) {
                         card.classList.add('active-card');
-                        // Borde al 100% del color del nivel (idéntico a la app)
-                        const lc = card.dataset.levelColor;
+                        var lc = card.dataset.levelColor;
                         if (lc) card.style.borderColor = lc;
-                        const halo = document.createElement('div');
+                        var halo = document.createElement('div');
                         halo.className = 'click-pulse-halo';
                         card.appendChild(halo);
                     } else {
@@ -2397,35 +2463,68 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
                     }
                 }
 
-                // Luz pulsante vertical sobre la línea hacia el padre (32px)
-                // (no se pinta sobre el último/raíz si no tiene padre)
+                // Pulse on connector between this node and its parent
                 if (idx < path.length - 1) {
-                    const line = container.querySelector(':scope > .tree-node-center-line');
-                    if (line) {
-                        const dot = document.createElement('div');
-                        dot.className = 'pulse-light-v';
-                        dot.style.animationDelay = ((path.length - 1 - idx) * 0.3) + 's';
-                        line.appendChild(dot);
+                    if (isStaffNode) {
+                        // STAFF: leftward pulse on staff-h-connector
+                        var hc = container.querySelector(':scope > .staff-h-connector');
+                        if (hc) {
+                            hc.classList.add('active');
+                            var hp = document.createElement('div');
+                            hp.className = 'pulse-light-h full to-left';
+                            hp.style.animationDelay = ((path.length - 1 - idx) * 0.3) + 's';
+                            hc.appendChild(hp);
+                        }
+                    } else {
+                        var line = container.querySelector(':scope > .tree-node-center-line');
+                        if (line) {
+                            var dot = document.createElement('div');
+                            dot.className = 'pulse-light-v';
+                            dot.style.animationDelay = ((path.length - 1 - idx) * 0.3) + 's';
+                            line.appendChild(dot);
+                        }
                     }
                 }
 
-                // Para padres en la ruta: marcar su children-container como activo,
-                // pintar su segmento horizontal, y la luz pulsante vertical en su línea descendente
+                // Parent-level processing
                 if (idx > 0) {
-                    // 'container' es padre del nodo idx-1
-                    const cc = container.querySelector(':scope > .children-container');
-                    if (cc) {
-                        cc.classList.add('active-path');
-                        const ccLine = cc.querySelector(':scope > .children-container-line');
-                        if (ccLine) {
-                            const dot = document.createElement('div');
-                            dot.className = 'pulse-light-v';
-                            dot.style.animationDelay = ((path.length - 1 - idx) * 0.3 + 0.15) + 's';
-                            ccLine.appendChild(dot);
+                    var childId = path[idx - 1];
+                    var childRole = roles.find(function(r) { return r.id === childId; });
+                    var childIsStaff = childRole && childRole.tipo_relacion === 'STAFF';
+
+                    if (childIsStaff) {
+                        // Active path goes through a STAFF child: pulse upward on staff-branch-vline
+                        var vline = container.querySelector(':scope > .staff-branch-zone > .staff-branch-vline');
+                        if (vline) {
+                            var upd = document.createElement('div');
+                            upd.className = 'pulse-light-v up';
+                            upd.style.animationDelay = ((path.length - 1 - idx) * 0.3) + 's';
+                            vline.appendChild(upd);
                         }
+                    } else {
+                        // Active path goes through a regular child
+                        var cc = container.querySelector(':scope > .children-container');
+                        if (cc) {
+                            cc.classList.add('active-path');
+                            var ccLine = cc.querySelector(':scope > .children-container-line');
+                            if (ccLine) {
+                                var dot2 = document.createElement('div');
+                                dot2.className = 'pulse-light-v';
+                                dot2.style.animationDelay = ((path.length - 1 - idx) * 0.3 + 0.15) + 's';
+                                ccLine.appendChild(dot2);
+                            }
+                        }
+                        // If this parent also has a staff-branch-zone, pulse downward on its vline
+                        var vlineDown = container.querySelector(':scope > .staff-branch-zone > .staff-branch-vline');
+                        if (vlineDown) {
+                            vlineDown.classList.add('active');
+                            var dvd = document.createElement('div');
+                            dvd.className = 'pulse-light-v';
+                            dvd.style.animationDelay = ((path.length - 1 - idx) * 0.3 + 0.1) + 's';
+                            vlineDown.appendChild(dvd);
+                        }
+                        paintActiveHBar(container, childId, path.length - 1 - idx);
                     }
-                    // Pintar barra horizontal activa entre los hermanos del hijo en la ruta
-                    paintActiveHBar(container, path[idx - 1], path.length - 1 - idx);
                 }
             });
         }
@@ -2483,10 +2582,68 @@ function generateStaticHTML(tree: any[], mode: ViewMode, allRoles: Role[]) {
             });
         }
 
+        function renderFunctionalLines() {
+            var svg = document.getElementById('functional-lines-svg');
+            var treeWrapper = document.querySelector('.tree-wrapper');
+            if (!svg || !treeWrapper) return;
+
+            // Size SVG to cover the full tree content
+            var tw = treeWrapper.scrollWidth;
+            var th = treeWrapper.scrollHeight;
+            svg.setAttribute('width', tw);
+            svg.setAttribute('height', th);
+            svg.setAttribute('viewBox', '0 0 ' + tw + ' ' + th);
+
+            // Remove previous paths (keep defs)
+            Array.from(svg.querySelectorAll('path')).forEach(function(p) { p.remove(); });
+
+            var wrapperRect = treeWrapper.getBoundingClientRect();
+
+            roles.forEach(function(role) {
+                if (!role.relacion_funcional || role.relacion_funcional.length === 0) return;
+                var srcCard = document.querySelector('.node-card[data-node-id="' + role.id + '"]');
+                if (!srcCard) return;
+                var sr = srcCard.getBoundingClientRect();
+                var sx = {
+                    left:   sr.left   - wrapperRect.left,
+                    right:  sr.right  - wrapperRect.left,
+                    bottom: sr.bottom - wrapperRect.top,
+                    midX:  (sr.left   + sr.right)  / 2 - wrapperRect.left,
+                    midY:  (sr.top    + sr.bottom) / 2 - wrapperRect.top
+                };
+                var isStaffSrc = role.tipo_relacion === 'STAFF';
+                var x1 = isStaffSrc ? sx.right  : sx.midX;
+                var y1 = isStaffSrc ? sx.midY   : sx.bottom;
+
+                role.relacion_funcional.forEach(function(targetId) {
+                    var tgtCard = document.querySelector('.node-card[data-node-id="' + targetId + '"]');
+                    if (!tgtCard) return;
+                    var tr2 = tgtCard.getBoundingClientRect();
+                    var tx = {
+                        left:  tr2.left  - wrapperRect.left,
+                        right: tr2.right - wrapperRect.left,
+                        midX:  (tr2.left  + tr2.right)  / 2 - wrapperRect.left,
+                        midY:  (tr2.top   + tr2.bottom) / 2 - wrapperRect.top
+                    };
+                    var x2 = tx.midX >= sx.midX ? tx.left : tx.right;
+                    var y2 = tx.midY;
+                    var d = isStaffSrc
+                        ? 'M ' + x1 + ' ' + y1 + ' H ' + (x1 + 40) + ' V ' + y2 + ' H ' + x2
+                        : 'M ' + x1 + ' ' + y1 + ' V ' + y2 + ' H ' + x2;
+                    var pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    pathEl.setAttribute('d', d);
+                    pathEl.setAttribute('class', 'functional-line');
+                    pathEl.setAttribute('marker-end', 'url(#fl-arrow)');
+                    svg.appendChild(pathEl);
+                });
+            });
+        }
+
         function relayout() {
             alignGapNodes();
             layoutConnectors();
             renderAreaLabels();
+            renderFunctionalLines();
         }
 
         window.addEventListener('load', function() {
