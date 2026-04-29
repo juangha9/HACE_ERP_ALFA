@@ -6,72 +6,67 @@ export const generateQuotePDF = (exportData: any, filename: string) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    // 1. Header & Company Info
-    doc.setFillColor(30, 41, 59); // Slate-800
+    // 1. Header — banda pastel clara (sin contraste oscuro). Nombre de la
+    // empresa centrado y "COTIZACIÓN <número>" sin prefijo SKU (COT-/OPT-/VTA-).
+    const companyName = businessInfo?.company_name || 'HACE SAC';
+    const quoteNumber = String(code || '').replace(/^(COT|OPT|VTA)-/, '');
+
+    // Fondo pastel gris muy claro y borde inferior gris suave.
+    doc.setFillColor(245, 247, 250); // gris pastel claro
     doc.rect(0, 0, pageWidth, 40, 'F');
-    
-    doc.setTextColor(255, 255, 255);
+    doc.setDrawColor(220, 224, 230);
+    doc.setLineWidth(0.4);
+    doc.line(0, 40, pageWidth, 40);
+
+    doc.setTextColor(45, 55, 72); // gris oscuro suave
     doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
-    doc.text('COTIZACIÓN / PRESUPUESTO', pageWidth / 2, 20, { align: 'center' });
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    doc.text(code, pageWidth / 2, 30, { align: 'center' });
+    doc.text(companyName, pageWidth / 2, 20, { align: 'center' });
 
-    // Business Details
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text(businessInfo?.company_name || 'MI EMPRESA S.A.C.', 15, 50);
-    
-    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139); // slate-500
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 116, 139);
-    doc.text(`RUC: ${businessInfo?.ruc || '20000000000'}`, 15, 56);
-    doc.text(`Dirección: ${businessInfo?.address || 'Lima, Perú'}`, 15, 61);
+    doc.text(`COTIZACIÓN ${quoteNumber}`, pageWidth / 2, 30, { align: 'center' });
 
-    // Date
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'bold');
-    doc.text('FECHA:', pageWidth - 60, 50);
-    doc.setFont('helvetica', 'normal');
-    doc.text(new Date().toLocaleDateString(), pageWidth - 40, 50);
+    // 2. Bloque DATOS DEL CLIENTE — fondo pastel gris.
+    // Orden de campos: CLIENTE / RAZÓN SOCIAL (fusionado), DIRECCIÓN, DNI/RUC,
+    // FECHA DE EMISIÓN, FECHA DE ENTREGA.
+    const clientBoxTop = 50;
+    const clientBoxHeight = 50;
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.rect(15, clientBoxTop, pageWidth - 30, clientBoxHeight, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.rect(15, clientBoxTop, pageWidth - 30, clientBoxHeight, 'S');
 
-    // 2. Client Info Section
-    doc.setFillColor(241, 245, 249);
-    doc.rect(15, 70, pageWidth - 30, 35, 'F');
-    
+    doc.setTextColor(71, 85, 105); // slate-600
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('DATOS DEL CLIENTE', 20, 78);
-    
-    doc.setFontSize(9);
-    doc.text('CLIENTE:', 20, 86);
-    doc.setFont('helvetica', 'normal');
-    doc.text(clientData.name || '---', 40, 86);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('DOI / RUC:', 120, 86);
-    doc.setFont('helvetica', 'normal');
-    doc.text(clientData.doi || '---', 145, 86);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('DIRECCIÓN:', 20, 93);
-    doc.setFont('helvetica', 'normal');
-    doc.text(clientData.address || '---', 40, 93);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('FECHA ENTREGA:', 20, 100);
-    doc.setFont('helvetica', 'normal');
-    doc.text(clientData.deliveryDate || '---', 55, 100);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.text('TIPO DOC:', 120, 100);
-    doc.setFont('helvetica', 'normal');
-    doc.text(clientData.documentType, 145, 100);
+    doc.text('DATOS DEL CLIENTE', 20, clientBoxTop + 8);
 
-    // 3. Items Table
+    const labelX = 20;
+    const valueX = 70;
+    let rowY = clientBoxTop + 16;
+    const rowGap = 7;
+
+    const renderRow = (label: string, value: string) => {
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.text(label, labelX, rowY);
+        doc.setTextColor(30, 41, 59); // slate-800 para valores
+        doc.setFont('helvetica', 'normal');
+        doc.text(value || '---', valueX, rowY);
+        rowY += rowGap;
+    };
+
+    renderRow('CLIENTE / RAZÓN SOCIAL:', clientData.name);
+    renderRow('DIRECCIÓN:',              clientData.address);
+    renderRow('DNI/RUC:',                clientData.doi);
+    renderRow('FECHA DE EMISIÓN:',       new Date().toLocaleDateString());
+    renderRow('FECHA DE ENTREGA:',       clientData.deliveryDate);
+
+    // 3. Items Table — tabla de la optimización
     const tableData = items.map((item: any) => [
         item.quantity,
         item.unit,
@@ -82,16 +77,18 @@ export const generateQuotePDF = (exportData: any, filename: string) => {
     ]);
 
     autoTable(doc, {
-        startY: 115,
+        startY: clientBoxTop + clientBoxHeight + 8,
         head: [['CANT.', 'UNIDAD', 'TIPO', 'DESCRIPCIÓN', 'P. UNIT', 'TOTAL']],
         body: tableData,
         theme: 'striped',
-        headStyles: { 
-            fillColor: [15, 23, 42], 
-            textColor: [255, 255, 255],
+        headStyles: {
+            fillColor: [232, 236, 242],   // gris pastel claro
+            textColor: [71, 85, 105],     // slate-600
             fontSize: 9,
             fontStyle: 'bold',
-            halign: 'center'
+            halign: 'center',
+            lineColor: [203, 213, 225],
+            lineWidth: 0.2
         },
         columnStyles: {
             0: { halign: 'center', cellWidth: 20 },

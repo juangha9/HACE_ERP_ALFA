@@ -16,50 +16,48 @@ export const exportToExcel = async (exportData: any, filename: string) => {
         { width: 15 }  // TOTAL
     ];
 
-    // 1. Business Header
+    // 1. Encabezado: nombre de empresa centrado + COTIZACIÓN <número>
+    // (sin prefijo COT-/OPT-/VTA- — es el SKU interno).
+    const companyName = businessInfo?.company_name || 'HACE SAC';
+    const quoteNumber = String(code || '').replace(/^(COT|OPT|VTA)-/, '');
+
     worksheet.mergeCells('A1:F1');
     const titleCell = worksheet.getCell('A1');
-    titleCell.value = 'COTIZACIÓN / PRESUPUESTO';
+    titleCell.value = companyName;
     titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
     worksheet.getRow(1).height = 30;
 
-    worksheet.addRow([]); // Gap
-
-    // Business Info
-    worksheet.mergeCells('A3:C3');
-    worksheet.getCell('A3').value = businessInfo?.company_name || 'MI EMPRESA S.A.C.';
-    worksheet.getCell('A3').font = { bold: true, size: 12 };
-    
-    worksheet.mergeCells('A4:C4');
-    worksheet.getCell('A4').value = `RUC: ${businessInfo?.ruc || '20000000000'}`;
-    
-    worksheet.mergeCells('A5:C5');
-    worksheet.getCell('A5').value = `Dirección: ${businessInfo?.address || 'Lima, Perú'}`;
-
-    // Code & Date
-    worksheet.getCell('E3').value = 'COTIZACIÓN N°:';
-    worksheet.getCell('E3').font = { bold: true };
-    worksheet.getCell('F3').value = code;
-    worksheet.getCell('F3').font = { bold: true, color: { argb: 'FF4F46E5' } };
-
-    worksheet.getCell('E4').value = 'FECHA EMISIÓN:';
-    worksheet.getCell('F4').value = new Date().toLocaleDateString();
+    worksheet.mergeCells('A2:F2');
+    const subtitleCell = worksheet.getCell('A2');
+    subtitleCell.value = `COTIZACIÓN ${quoteNumber}`;
+    subtitleCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    subtitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    subtitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    worksheet.getRow(2).height = 22;
 
     worksheet.addRow([]); // Gap
 
-    // 2. Client Info Section Header
-    worksheet.mergeCells('A7:F7');
-    const clientHeader = worksheet.getCell('A7');
+    // 2. Bloque DATOS DEL CLIENTE
+    worksheet.mergeCells('A4:F4');
+    const clientHeader = worksheet.getCell('A4');
     clientHeader.value = 'DATOS DEL CLIENTE';
     clientHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
     clientHeader.font = { bold: true, color: { argb: 'FF334155' } };
     clientHeader.border = { bottom: { style: 'thin' } };
 
-    worksheet.addRow(['CLIENTE:', clientData.name || '---', '', '', 'DOI / RUC:', clientData.doi || '---']);
-    worksheet.addRow(['FECHA ENTREGA:', clientData.deliveryDate || '---', '', '', 'TIPO DOC:', clientData.documentType]);
-    worksheet.addRow(['DIRECCIÓN:', clientData.address || '---']);
+    const addClientRow = (label: string, value: string) => {
+        const row = worksheet.addRow([label, value || '---']);
+        row.getCell(1).font = { bold: true };
+        worksheet.mergeCells(`B${row.number}:F${row.number}`);
+    };
+
+    addClientRow('CLIENTE / RAZÓN SOCIAL:', clientData.name);
+    addClientRow('DIRECCIÓN:',              clientData.address);
+    addClientRow('DNI/RUC:',                clientData.doi);
+    addClientRow('FECHA DE EMISIÓN:',       new Date().toLocaleDateString());
+    addClientRow('FECHA DE ENTREGA:',       clientData.deliveryDate);
 
     worksheet.addRow([]); // Gap
 

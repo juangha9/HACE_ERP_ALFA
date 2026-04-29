@@ -33,12 +33,13 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
     const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
 
     useScrollLock(isOpen);
+    // Por defecto, FACTURA (con IGV). Se puede cambiar a BOLETA en el form.
     const [clientData, setClientData] = useState({
         name: optimizationData.clientName || '',
         doi: '',
         address: '',
         deliveryDate: '',
-        documentType: 'BOLETA' as 'BOLETA' | 'FACTURA'
+        documentType: 'FACTURA' as 'BOLETA' | 'FACTURA'
     });
 
     const [items, setItems] = useState<QuotationItem[]>([]);
@@ -182,33 +183,57 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
         try {
             setSaveStatus('saving');
             let finalCode = quotationCode;
-            let finalVersion = optimizationData.currentVersion || 1;
+            const finalVersion = optimizationData.currentVersion || 1;
 
-            // Maintain the code as is for quotes
+            // Mantener el código del SKU si la cotización proviene de una optimización.
             if (optimizationData.optimizationCode) {
                 finalCode = optimizationData.optimizationCode.replace('OPT-', 'COT-');
             }
 
+            // Sanitizar items: el backend exige JSONB válido, sin valores undefined.
+            // Antes pasábamos items con propiedades opcionales que en algunos casos
+            // (filas personalizadas recién agregadas) llegaban con NaN al guardado
+            // — eso devolvía "invalid input syntax for type numeric" sin estado.
+            const sanitizedItems = items.map(it => ({
+                quantity:    Number.isFinite(it.quantity)  ? Number(it.quantity)  : 0,
+                unit:        String(it.unit || ''),
+                type:        String(it.type || 'OTROS'),
+                description: String(it.description || ''),
+                unitPrice:   Number.isFinite(it.unitPrice) ? Number(it.unitPrice) : 0,
+                total:       Number.isFinite(it.total)     ? Number(it.total)     : 0,
+            }));
 
-            const quotation: any = {
+            const num = (v: number) => (Number.isFinite(v) ? Number(v) : 0);
+
+            // Construcción de payload. Campos opcionales que estén vacíos se omiten
+            // para que la BD aplique sus defaults (issue_date defaultea a CURRENT_DATE)
+            // y no se intente insertar una fecha vacía sobre una columna DATE.
+            const quotation: Record<string, any> = {
                 code: finalCode,
-                optimization_id: optimizationData?.optimizationId || null,
-                client_name: clientData.name || 'CLIENTE MOSTRADOR',
-                client_doi: clientData.doi || null,
-                client_address: clientData.address || null,
+                client_name: clientData.name?.trim() || 'CLIENTE MOSTRADOR',
                 document_type: clientData.documentType,
-                delivery_date: clientData.deliveryDate || null,
-                items: items,
-                subtotal: totals.subtotal,
-                discount: totals.discount,
-                igv: totals.igv,
-                total: totals.total,
-                advance: totals.advance,
-                balance: totals.balance
+                items: sanitizedItems,
+                subtotal: num(totals.subtotal),
+                discount: num(totals.discount),
+                igv:      num(totals.igv),
+                total:    num(totals.total),
+                advance:  num(totals.advance),
+                balance:  num(totals.balance),
+                // issue_date explícito: sin esto el upsert NO actualiza la fecha
+                // de emisión y la cotización guardada quedaba con la fecha del
+                // primer guardado aunque se editara después.
+                issue_date: new Date().toISOString().slice(0, 10),
             };
+            if (optimizationData?.optimizationId) {
+                quotation.optimization_id = optimizationData.optimizationId;
+            }
+            if (clientData.doi?.trim())     quotation.client_doi     = clientData.doi.trim();
+            if (clientData.address?.trim()) quotation.client_address = clientData.address.trim();
+            if (clientData.deliveryDate)    quotation.delivery_date  = clientData.deliveryDate;
+
             await api.saveQuotation(quotation);
             setSaveStatus('success');
-            
+
             if (onSaveSuccess) {
                 onSaveSuccess(finalVersion, finalCode.replace('COT-', 'OPT-'));
             }
@@ -217,8 +242,15 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                 setSaveStatus('idle');
                 onClose();
             }, 1500);
-        } catch (error) {
-            console.error("Error context:", error);
+        } catch (error: any) {
+            // Surface the underlying message — antes solo aparecía un overlay
+            // genérico y el detalle quedaba enterrado en console.error.
+            console.error("Error guardando cotización:", error);
+            const detail = error?.message || error?.details || error?.hint;
+            if (detail) {
+                // eslint-disable-next-line no-alert
+                alert(`No se pudo guardar la cotización:\n\n${detail}`);
+            }
             setSaveStatus('error');
             setTimeout(() => setSaveStatus('idle'), 3000);
         }
@@ -325,7 +357,7 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                         {/* Client Form */}
                         <div className="grid grid-cols-2 gap-4">
                             <div className="col-span-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Razón Social / Cliente</label>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
                                 <input 
                                     type="text" 
                                     value={clientData.name} 

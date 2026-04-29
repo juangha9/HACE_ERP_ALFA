@@ -619,37 +619,63 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
             const pw = repoItem.piece.width;
             const ph = repoItem.piece.height;
 
-            // Snap a origen tiene prioridad (pieza vuelve a su sitio exacto si
-            // el cursor está cerca). Si no aplica, busca posición válida más
-            // cercana con snap magnético respetando trim y kerf.
             const originOnTarget = repoItem.origins.find(o => o.boardId === targetBoard.id);
             let placeX: number | null = null;
             let placeY: number | null = null;
             let consumedOriginPieceId: string | null = null;
 
-            if (originOnTarget) {
-                const dx = cursorX - originOnTarget.x;
-                const dy = cursorY - originOnTarget.y;
-                const tolerance = Math.max(pw, ph) * 0.6;
-                if (Math.abs(dx) <= tolerance && Math.abs(dy) <= tolerance) {
+            // Validador del origen contra el estado fresco del tablero (bordes y kerf).
+            const isOriginFreeAndValid = (): boolean => {
+                if (!originOnTarget) return false;
+                const ox = originOnTarget.x, oy = originOnTarget.y;
+                if (!fitsInBounds(ox, oy, pw, ph, bw, bh)) return false;
+                for (const p of tgtFresh.placedPieces) {
+                    if (hitsWithKerf(ox, oy, pw, ph, p.x, p.y, p.width, p.height)) return false;
+                }
+                return true;
+            };
+
+            // Prioridad 1: snap a origen exacto si está libre.
+            // Antes la tolerancia era max(pw,ph) * 0.6 — demasiado estricta. En piezas
+            // pequeñas y pares de piezas extraídas (esquinas o medio del tablero), si
+            // el cursor caía fuera de ese radio el snap a origen no se activaba y se
+            // pasaba a magneticSnap, que con pocos vecinos suele aterrizar en la propia
+            // posición del cursor (no en el origen). Eso colocaba la pieza off-by-X mm
+            // pegada a la vecina y disparaba el chequeo de kerf, rechazando el drop.
+            // Con tolerancia 1.5x — y validación previa de que el origen está libre —
+            // la pieza vuelve a su sitio exacto siempre que el usuario suelte cerca.
+            if (originOnTarget && isOriginFreeAndValid()) {
+                const dxAbs = Math.abs(cursorX - originOnTarget.x);
+                const dyAbs = Math.abs(cursorY - originOnTarget.y);
+                const generous = Math.max(pw, ph) * 1.5;
+                if (dxAbs <= generous && dyAbs <= generous) {
                     placeX = originOnTarget.x;
                     placeY = originOnTarget.y;
                     consumedOriginPieceId = originOnTarget.pieceId;
                 }
             }
 
+            // Prioridad 2: snap magnético al hueco más cercano al cursor.
             if (placeX === null || placeY === null) {
-                const tolerance = Math.max(pw, ph) * 1.5;
+                const tolerance = Math.max(pw, ph) * 2;
                 const snapped = magneticSnap(cursorX, cursorY, pw, ph, tgtFresh, new Set(), tolerance);
-                if (!snapped) {
+                if (snapped) {
+                    placeX = snapped.x;
+                    placeY = snapped.y;
+                } else if (isOriginFreeAndValid()) {
+                    // Último recurso: cursor lejos pero el origen sigue libre.
+                    // El usuario claramente quiere devolverla; la mandamos al sitio original.
+                    placeX = originOnTarget!.x;
+                    placeY = originOnTarget!.y;
+                    consumedOriginPieceId = originOnTarget!.pieceId;
+                } else {
                     showError("No hay espacio válido cerca para colocar la pieza.");
                     return clearDrag();
                 }
-                placeX = snapped.x;
-                placeY = snapped.y;
             }
 
-            // Doble check (trim + kerf) — el snap puede devolver origen sin re-validar.
+            // Doble check defensivo (trim + kerf) — los pasos previos ya validan,
+            // este re-chequeo cubre cualquier discrepancia residual.
             if (!fitsInBounds(placeX, placeY, pw, ph, bw, bh)) {
                 showError("La pieza queda fuera del refilado del tablero.");
                 return clearDrag();
@@ -795,7 +821,15 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
     // Mueve la selección activa por (dx,dy) mm en el tablero. Validado contra
     // bordes (con refilado/trimming) y colisiones con el resto (respetando el
     // grosor de la sierra/kerf — las piezas no pueden quedar a menos de ese
-    // valor entre sí). Flechas = 1mm, Shift = 10mm, Ctrl = 50mm.
+    // valor entre sí). Flechas = 1mm, Shift = 10mm, Ctrl = 50mm; con
+    // aceleración por sostener pueden llegar a 25mm.
+    //
+    // Comportamiento "deslizar hasta el tope": si el paso solicitado choca
+    // con el refilado o con el kerf de otra pieza, en vez de abortar el
+    // movimiento se reduce el desplazamiento al máximo válido en esa
+    // dirección. Esto evita el escenario en el que con flechas aceleradas el
+    // primer pulso aborta sin moverse y el usuario tiene que volver a apretar
+    // la flecha varias veces hasta pegar la pieza al tope.
     const moveSelectionBy = (dx: number, dy: number) => {
         if (!selectionBoardId || selectedIds.size === 0) return;
         const fresh = latestBoardsRef.current;
@@ -807,34 +841,64 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
         const sel = board.placedPieces.filter(p => selectedIds.has(p.id));
         if (sel.length === 0) return;
         const selIds = selectedIds;
+        const others = board.placedPieces.filter(p => !selIds.has(p.id));
 
-        // Bordes con trimming
-        for (const p of sel) {
-            const nx = p.x + dx;
-            const ny = p.y + dy;
-            if (!fitsInBounds(nx, ny, p.width, p.height, bw, bh)) {
-                showError("La selección no puede invadir el refilado del tablero.");
-                return;
-            }
-        }
-        // Colisiones con kerf contra piezas no seleccionadas
-        for (const p of sel) {
-            const nx = p.x + dx;
-            const ny = p.y + dy;
-            for (const other of board.placedPieces) {
-                if (selIds.has(other.id)) continue;
-                if (hitsWithKerf(nx, ny, p.width, p.height, other.x, other.y, other.width, other.height)) {
-                    showError(`Quedaría a menos de ${kerf}mm de "${other.code}" (grosor sierra).`);
-                    return;
+        // ¿La selección entera sería válida con un offset (ox, oy)?
+        const offsetIsValid = (ox: number, oy: number): boolean => {
+            for (const p of sel) {
+                const nx = p.x + ox;
+                const ny = p.y + oy;
+                if (!fitsInBounds(nx, ny, p.width, p.height, bw, bh)) return false;
+                for (const other of others) {
+                    if (hitsWithKerf(nx, ny, p.width, p.height, other.x, other.y, other.width, other.height)) {
+                        return false;
+                    }
                 }
             }
+            return true;
+        };
+
+        // Si el paso completo es válido, aplicar directo.
+        let finalDx = dx;
+        let finalDy = dy;
+        if (!offsetIsValid(dx, dy)) {
+            // Búsqueda binaria del mayor desplazamiento válido en la dirección
+            // pedida. Mantenemos la dirección original y escalamos magnitud.
+            const sign = (n: number) => (n > 0 ? 1 : n < 0 ? -1 : 0);
+            const sx = sign(dx);
+            const sy = sign(dy);
+            const maxMag = Math.max(Math.abs(dx), Math.abs(dy));
+            // Si ni 1mm en esa dirección es válido, aviso y aborta.
+            if (!offsetIsValid(sx, sy)) {
+                showError(`Quedaría a menos de ${kerf}mm de otra pieza o invadiría el refilado.`);
+                return;
+            }
+            // Binario sobre magnitud entera entre [1, maxMag] buscando el último válido.
+            let lo = 1;
+            let hi = maxMag;
+            let best = 1;
+            while (lo <= hi) {
+                const mid = Math.floor((lo + hi) / 2);
+                const tryDx = sx * Math.round((Math.abs(dx) / maxMag) * mid);
+                const tryDy = sy * Math.round((Math.abs(dy) / maxMag) * mid);
+                if (offsetIsValid(tryDx, tryDy)) {
+                    best = mid;
+                    lo = mid + 1;
+                } else {
+                    hi = mid - 1;
+                }
+            }
+            finalDx = sx * Math.round((Math.abs(dx) / maxMag) * best);
+            finalDy = sy * Math.round((Math.abs(dy) / maxMag) * best);
         }
+
+        if (finalDx === 0 && finalDy === 0) return;
 
         const next = fresh.map(b => {
             if (b.id !== selectionBoardId) return b;
             return {
                 ...b,
-                placedPieces: b.placedPieces.map(p => selIds.has(p.id) ? { ...p, x: p.x + dx, y: p.y + dy } : p)
+                placedPieces: b.placedPieces.map(p => selIds.has(p.id) ? { ...p, x: p.x + finalDx, y: p.y + finalDy } : p)
             };
         });
         latestBoardsRef.current = next;
@@ -901,13 +965,22 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
     };
 
     // Listener global de teclado en modo manual:
-    //   - 'R'         → rotar selección 90°
-    //   - flechas     → mover selección 1 mm
-    //   - Shift+flecha → mover selección 10 mm
-    //   - Ctrl+flecha → mover selección 50 mm
-    // Se ignora si el foco está en un input/textarea/contenteditable.
+    //   - 'R'           → rotar selección 90°
+    //   - flechas       → mover selección 1 mm
+    //   - Shift+flecha  → mover selección 10 mm
+    //   - Ctrl+flecha   → mover selección 50 mm
+    // Aceleración progresiva al sostener una flecha (sin modificadores):
+    //   - 0–700ms       → 1 mm/evento
+    //   - 700–1500ms    → 5 mm/evento
+    //   - >1500ms       → 25 mm/evento
+    // El SO sigue generando autorepeats a ~30Hz; aumentar el paso multiplica la
+    // velocidad efectiva sin necesidad de un timer propio. Modificadores tienen
+    // prioridad y su paso es fijo (no acelera). Se ignora si el foco está en un
+    // input/textarea/contenteditable.
     useEffect(() => {
         if (!isManual) return;
+        let arrowHold: { key: string; startTime: number } | null = null;
+
         const onKeyDown = (e: KeyboardEvent) => {
             const target = e.target as HTMLElement | null;
             const tag = target?.tagName;
@@ -920,20 +993,50 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
                 return;
             }
 
-            const step = e.ctrlKey || e.metaKey ? 50 : (e.shiftKey ? 10 : 1);
+            const arrowKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+            if (!arrowKeys.includes(e.key)) return;
+            e.preventDefault();
+
+            const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            // Reiniciar el cronómetro al cambiar de flecha (cada eje es independiente).
+            if (!arrowHold || arrowHold.key !== e.key) {
+                arrowHold = { key: e.key, startTime: now };
+            }
+            const heldMs = now - arrowHold.startTime;
+
+            let step: number;
+            if (e.ctrlKey || e.metaKey) step = 50;
+            else if (e.shiftKey) step = 10;
+            else if (heldMs > 1500) step = 25;
+            else if (heldMs > 700) step = 5;
+            else step = 1;
+
             let dx = 0, dy = 0;
             switch (e.key) {
                 case 'ArrowLeft':  dx = -step; break;
                 case 'ArrowRight': dx =  step; break;
                 case 'ArrowUp':    dy = -step; break;
                 case 'ArrowDown':  dy =  step; break;
-                default: return;
             }
-            e.preventDefault();
             moveSelectionBy(dx, dy);
         };
+
+        const onKeyUp = (e: KeyboardEvent) => {
+            if (arrowHold && arrowHold.key === e.key) arrowHold = null;
+        };
+        // Si el usuario sale de la pestaña/ventana mientras sostiene una flecha,
+        // los eventos keyup pueden no llegar — limpiar al perder foco evita
+        // que el siguiente keydown crea estar "ya sostenido" desde antes.
+        const onBlur = () => { arrowHold = null; };
+
         window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
+        window.addEventListener('keyup', onKeyUp);
+        window.addEventListener('blur', onBlur);
+        return () => {
+            window.removeEventListener('keydown', onKeyDown);
+            window.removeEventListener('keyup', onKeyUp);
+            window.removeEventListener('blur', onBlur);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isManual, selectionBoardId, selectedIds]);
 
@@ -960,6 +1063,7 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
                             <span className="opacity-30">·</span>
                             <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#cbd5e1] text-[#1c3547] font-mono text-[10px] shadow-sm">←↑↓→</kbd>
                             <span>1mm</span>
+                            <span className="opacity-40 normal-case">(sostener acelera)</span>
                             <span className="opacity-30">·</span>
                             <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#cbd5e1] text-[#1c3547] font-mono text-[10px] shadow-sm">⇧</kbd>
                             <span>10mm</span>
