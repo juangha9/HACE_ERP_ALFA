@@ -968,6 +968,7 @@ export const OptimizationLayout = () => {
                             boardWidth={config.boardWidth}
                             boardHeight={config.boardHeight}
                             sawKerf={config.sawKerf}
+                            trimming={config.trimming}
                             onPiecesAdjust={(delta) => {
                                 isManualAdjustingRef.current = true;
                                 setPieces(prev => prev.map(p => {

@@ -5,6 +5,12 @@ interface CuttingMapProps {
     boards: Board[];
     boardWidth?: number;
     boardHeight?: number;
+    /** Grosor de la sierra (mm). Las piezas no pueden quedar más cerca que este
+     *  valor entre sí — refleja el material que se "pierde" en el corte. */
+    sawKerf?: number;
+    /** Refilado / trimming del tablero (mm). Las piezas no pueden invadir esta
+     *  franja en ningún lado. */
+    trimming?: { top: number; bottom: number; left: number; right: number };
     /** Delta por pieceTemplateId (id de fila en la tabla de medidas).
      *  El padre debe marcar isManualAdjustingRef antes de mutar pieces para
      *  evitar que el efecto de geometry vacíe `boards` y reinicie el manual. */
@@ -66,7 +72,15 @@ interface DragCtx {
 
 const matKeyOf = (board: Board) => board.materialNumber || 'default';
 
-export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjust }: CuttingMapProps) => {
+export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trimming, onPiecesAdjust }: CuttingMapProps) => {
+    // Constantes de geometría usadas en validación y snap magnético.
+    const kerf = Math.max(0, sawKerf ?? 0);
+    const trim = {
+        top: Math.max(0, trimming?.top ?? 0),
+        bottom: Math.max(0, trimming?.bottom ?? 0),
+        left: Math.max(0, trimming?.left ?? 0),
+        right: Math.max(0, trimming?.right ?? 0)
+    };
     const [isManual, setIsManual] = useState(false);
     const [localBoards, setLocalBoards] = useState<Board[]>([]);
     const [repository, setRepository] = useState<Repository>({});
@@ -96,6 +110,9 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
     // reciente al validar colisiones y bordes (evita el "ghost" de un targetBoard stale
     // cuando hubo un re-render entre dragstart y drop).
     const latestBoardsRef = useRef<Board[]>([]);
+    // Mismo patrón para repository — los handlers leen siempre lo último, sin
+    // depender de la closure del render previo.
+    const latestRepositoryRef = useRef<Repository>({});
 
     // Firma estructural del prop boards. Captura solo IDs (no metadatos como
     // printCode/printIndex que se inyectan en cada re-render del padre). Así el
@@ -122,7 +139,27 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
     const lastSyncedFingerprintRef = useRef<string>('');
     useEffect(() => {
         if (lastSyncedFingerprintRef.current === boardsFingerprint) return;
-        const cloned = JSON.parse(JSON.stringify(boards));
+        const cloned: Board[] = JSON.parse(JSON.stringify(boards));
+        // FIX duplicación cross-material: el optimizador genera ids como
+        // "board-1", "board-2" reiniciando el contador en CADA llamada, y en
+        // OptimizationLayout se llama una vez POR MATERIAL. Con dos o más
+        // materiales hay colisión de ids ("board-1" del material 1 == "board-1"
+        // del material 2). Eso hacía que `fresh.map(b => b.id === target.id ? ... : b)`
+        // mutara AMBOS tableros — duplicando la pieza en el tablero que no era.
+        // Normalizamos prefijando con materialNumber para garantizar unicidad
+        // dentro del estado local. El padre conserva sus ids originales.
+        const seen = new Set<string>();
+        for (const b of cloned) {
+            const matKey = b.materialNumber || 'default';
+            let id = `m${matKey}#${b.id}`;
+            let suffix = 0;
+            while (seen.has(id)) {
+                suffix++;
+                id = `m${matKey}#${b.id}#${suffix}`;
+            }
+            seen.add(id);
+            b.id = id;
+        }
         setLocalBoards(cloned);
         latestBoardsRef.current = cloned;
         setRepository({});
@@ -136,6 +173,10 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
     useEffect(() => {
         latestBoardsRef.current = localBoards;
     }, [localBoards]);
+
+    useEffect(() => {
+        latestRepositoryRef.current = repository;
+    }, [repository]);
 
     const fallbackW = boardWidth || 2440;
     const fallbackH = boardHeight || 2140;
@@ -273,6 +314,11 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
     // le está soltando: cada repo es exclusivo de su tablero, no se comparte
     // con otros tableros del mismo material.
     // Descuenta `quantity` en la tabla del padre vía onPiecesAdjust(pieceTemplateId, -1).
+    //
+    // El patrón es: leer estado fresco desde refs → validar → setear DIRECTO.
+    // No usamos `setLocalBoards(prev => ...)` con abortMsg leakage porque ese
+    // patrón causaba estados inconsistentes (la verificación afterwards leía
+    // `let abortMsg` ANTES de que el updater corriese, por el batching de React).
     const handleDropOnRepo = (e: React.DragEvent, targetBoard: Board) => {
         e.preventDefault();
         e.stopPropagation();
@@ -283,54 +329,48 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
             return clearDrag();
         }
         const targetMatKey = matKeyOf(targetBoard);
+        const { sourceBoardId } = ctx;
 
-        const { sourceBoardId, pieces: piecesToMove } = ctx;
-
-        // Validar contra el estado más fresco — no contra el closure del render previo.
         const fresh = latestBoardsRef.current;
         const srcFresh = fresh.find(b => b.id === sourceBoardId);
         if (!srcFresh) return clearDrag();
-        const actuallyPresent = piecesToMove.filter(p => srcFresh.placedPieces.some(sp => sp.id === p.id));
+
+        const movingIds = new Set(ctx.pieces.map(p => p.id));
+        const actuallyPresent = srcFresh.placedPieces.filter(p => movingIds.has(p.id));
         if (actuallyPresent.length === 0) return clearDrag();
 
         const actuallyMovingIds = new Set(actuallyPresent.map(p => p.id));
         const movedTotalArea = actuallyPresent.reduce((acc, p) => acc + p.width * p.height, 0);
 
-        // Mutación atómica: filtra la fuente solo si las piezas siguen ahí.
-        setLocalBoards(prev => {
-            const board = prev.find(b => b.id === sourceBoardId);
-            if (!board) return prev;
-            const present = board.placedPieces.some(p => actuallyMovingIds.has(p.id));
-            if (!present) return prev;
-            const next = prev.map(b => {
-                if (b.id !== sourceBoardId) return b;
-                return {
-                    ...b,
-                    placedPieces: b.placedPieces.filter(p => !actuallyMovingIds.has(p.id)),
-                    usedArea: Math.max(0, b.usedArea - movedTotalArea)
-                };
-            });
-            latestBoardsRef.current = next;
-            return next;
+        const nextBoards = fresh.map(b => {
+            if (b.id !== sourceBoardId) return b;
+            return {
+                ...b,
+                placedPieces: b.placedPieces.filter(p => !actuallyMovingIds.has(p.id)),
+                usedArea: Math.max(0, b.usedArea - movedTotalArea)
+            };
         });
+        latestBoardsRef.current = nextBoards;
+        setLocalBoards(nextBoards);
 
-        setRepository(prev => {
-            const boardRepo = { ...(prev[targetBoard.id] || {}) };
-            for (const piece of actuallyPresent) {
-                const existing = boardRepo[piece.code];
-                const origin = { boardId: sourceBoardId, x: piece.x, y: piece.y, pieceId: piece.id };
-                boardRepo[piece.code] = {
-                    code: piece.code,
-                    piece: JSON.parse(JSON.stringify(piece)),
-                    count: (existing?.count ?? 0) + 1,
-                    color: getCodeColor(piece.code),
-                    ownerBoardId: targetBoard.id,
-                    sourceMaterialKey: targetMatKey,
-                    origins: existing ? [...existing.origins, origin] : [origin]
-                };
-            }
-            return { ...prev, [targetBoard.id]: boardRepo };
-        });
+        const repoNow = latestRepositoryRef.current;
+        const boardRepo = { ...(repoNow[targetBoard.id] || {}) };
+        for (const piece of actuallyPresent) {
+            const existing = boardRepo[piece.code];
+            const origin = { boardId: sourceBoardId, x: piece.x, y: piece.y, pieceId: piece.id };
+            boardRepo[piece.code] = {
+                code: piece.code,
+                piece: JSON.parse(JSON.stringify(piece)),
+                count: (existing?.count ?? 0) + 1,
+                color: getCodeColor(piece.code),
+                ownerBoardId: targetBoard.id,
+                sourceMaterialKey: targetMatKey,
+                origins: existing ? [...existing.origins, origin] : [origin]
+            };
+        }
+        const nextRepo = { ...repoNow, [targetBoard.id]: boardRepo };
+        latestRepositoryRef.current = nextRepo;
+        setRepository(nextRepo);
 
         // Descontar de la tabla de medidas (1 por pieza) usando pieceTemplateId.
         if (onPiecesAdjust) {
@@ -353,16 +393,98 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
         clearDrag();
     };
 
+    // ---------- Helpers de geometría con kerf y trimming ----------
+
+    // ¿La pieza A en (ax,ay) con (aw,ah) y la pieza B en (bx,by,bw,bh) están más
+    // cerca que `kerf` mm? Devuelve true si se "tocan" (incluyendo distancia 0
+    // al considerar el grosor de la sierra). Útil para validar colocación.
+    const hitsWithKerf = (ax: number, ay: number, aw: number, ah: number, bx: number, by: number, bw: number, bh: number): boolean => {
+        // Sin separación de al menos kerf en X o Y → conflicto.
+        const overlapX = ax < bx + bw + kerf && ax + aw + kerf > bx;
+        const overlapY = ay < by + bh + kerf && ay + ah + kerf > by;
+        return overlapX && overlapY;
+    };
+
+    // Bordes con trimming: la pieza debe caber dentro del rectángulo útil.
+    const fitsInBounds = (x: number, y: number, w: number, h: number, bw: number, bh: number): boolean => {
+        return x >= trim.left && y >= trim.top && x + w <= bw - trim.right && y + h <= bh - trim.bottom;
+    };
+
+    // Snap magnético: dado el cursor (cx,cy) y la pieza (pw,ph) que se quiere
+    // colocar en `board`, devuelve la posición válida más cercana al cursor
+    // (respetando bordes con trimming y kerf entre piezas). `excludeIds` ignora
+    // piezas que se están moviendo (para no chocar con uno mismo en intra-mov.).
+    // Si nada cabe dentro de la tolerancia, devuelve null.
+    const magneticSnap = (
+        cx: number, cy: number,
+        pw: number, ph: number,
+        board: Board,
+        excludeIds: Set<string>,
+        toleranceMm: number
+    ): { x: number; y: number } | null => {
+        const bw = board.width || fallbackW;
+        const bh = board.height || fallbackH;
+        const minX = trim.left;
+        const minY = trim.top;
+        const maxX = bw - trim.right - pw;
+        const maxY = bh - trim.bottom - ph;
+        if (maxX < minX || maxY < minY) return null;
+
+        const others = board.placedPieces.filter(p => !excludeIds.has(p.id));
+
+        // Candidatos de X: cursor, bordes útiles, y posiciones "pegadas" a otras
+        // piezas con kerf (a derecha, a izquierda, alineadas al borde del vecino).
+        const xs = new Set<number>([Math.round(cx), minX, maxX]);
+        const ys = new Set<number>([Math.round(cy), minY, maxY]);
+        for (const o of others) {
+            xs.add(o.x + o.width + kerf);
+            xs.add(o.x - pw - kerf);
+            xs.add(o.x);
+            xs.add(o.x + o.width - pw);
+            ys.add(o.y + o.height + kerf);
+            ys.add(o.y - ph - kerf);
+            ys.add(o.y);
+            ys.add(o.y + o.height - ph);
+        }
+
+        let best: { x: number; y: number; dist: number } | null = null;
+        for (const xRaw of xs) {
+            const x = Math.round(xRaw);
+            if (x < minX || x > maxX) continue;
+            for (const yRaw of ys) {
+                const y = Math.round(yRaw);
+                if (y < minY || y > maxY) continue;
+                let collides = false;
+                for (const o of others) {
+                    if (hitsWithKerf(x, y, pw, ph, o.x, o.y, o.width, o.height)) { collides = true; break; }
+                }
+                if (collides) continue;
+                const dx = x - cx;
+                const dy = y - cy;
+                const dist = Math.hypot(dx, dy);
+                if (dist > toleranceMm) continue;
+                if (!best || dist < best.dist) best = { x, y, dist };
+            }
+        }
+        return best ? { x: best.x, y: best.y } : null;
+    };
+
     // Tablero acepta:
-    //   - REPO → BOARD del mismo tipo (saca del repositorio compartido)
-    //   - BOARD → BOARD distintos pero del mismo tipo (mueve la pieza)
-    //   - Re-posicionamiento dentro del mismo tablero (incluye "devolver al origen")
+    //   - REPO → BOARD: la pieza solo puede volver a su tablero de origen
+    //     (cada repo es privado al tablero, no compartido por material)
+    //   - BOARD → BOARD distintos pero del MISMO material (mueve la pieza)
+    //   - Re-posicionamiento dentro del mismo tablero (incluye snap-a-origen)
     // Soporta drop multi-pieza preservando offsets relativos al anchor.
+    //
+    // Validación: bordes contra trimming, colisiones contra otras piezas con
+    // gap mínimo de `kerf`. Drop con mouse aplica snap magnético (busca el
+    // hueco válido más cercano para que el usuario no calcule al milímetro).
     const handleDropOnBoard = (e: React.DragEvent, targetBoard: Board) => {
         e.preventDefault();
         const ctx = dragCtxRef.current;
         if (!ctx) return clearDrag();
         const targetMatKey = matKeyOf(targetBoard);
+        // Validación de material: solo permitir mezcla cuando MAT. coincide.
         if (ctx.sourceMaterialKey !== targetMatKey) {
             showError("La pieza no corresponde al material de este tablero.");
             return clearDrag();
@@ -398,92 +520,117 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
             newY: anchorY + ctx.relativeOffsets[i].dy
         }));
 
-        // Bordes: si ALGUNA pieza queda fuera del tablero, rechazar.
-        for (const { piece, newX, newY } of proposed) {
-            if (newX < 0 || newY < 0 || newX + piece.width > bw || newY + piece.height > bh) {
-                showError("Alguna pieza queda fuera del tablero.");
-                return clearDrag();
-            }
-        }
-
         const draggingIds = new Set(ctx.pieces.map(p => p.id));
         const isSameBoardMove = ctx.sourceType === 'BOARD' && ctx.sourceBoardId === targetBoard.id;
 
-        // Detector de colisión que opera sobre un board "fresco" (el que React tiene en cola).
-        // Devuelve la pieza ofensiva (o null) — útil para mostrar un mensaje claro y
-        // distinguir colisión real de "fantasma" cuando una pieza ya fue removida.
-        const findCollisionAgainst = (freshBoard: Board): PlacedPiece | null => {
-            for (const { piece, newX, newY } of proposed) {
-                for (const p of freshBoard.placedPieces) {
+        // Estado fresco: piezas y repo. Los closures pueden estar stale entre
+        // dragstart y drop si hubo un re-render del padre — los refs no.
+        const fresh = latestBoardsRef.current;
+        const tgtFresh = fresh.find(b => b.id === targetBoard.id);
+        if (!tgtFresh) return clearDrag();
+
+        // Conjunto de IDs a excluir al validar (las que se mueven).
+        const excludeIds = new Set<string>(isSameBoardMove ? ctx.pieces.map(p => p.id) : []);
+
+        // Detector de colisión basado en kerf: dos piezas no pueden estar a
+        // menos de `kerf` mm entre sí (refleja el grosor real de la sierra).
+        const findCollisionOn = (board: Board, items: { piece: PlacedPiece; newX: number; newY: number }[]): PlacedPiece | null => {
+            for (const { piece, newX, newY } of items) {
+                for (const p of board.placedPieces) {
                     if (p.id === piece.id) continue;
                     if (isSameBoardMove && draggingIds.has(p.id)) continue;
-                    const overlapX = newX < p.x + p.width && newX + piece.width > p.x;
-                    const overlapY = newY < p.y + p.height && newY + piece.height > p.y;
-                    if (overlapX && overlapY) return p;
+                    if (hitsWithKerf(newX, newY, piece.width, piece.height, p.x, p.y, p.width, p.height)) return p;
                 }
             }
             return null;
         };
 
-        // Re-posicionamiento intra-tablero (preserva IDs).
+        // ---------- 1) RE-POSICIONAMIENTO INTRA-TABLERO ----------
         if (isSameBoardMove) {
-            const updatedById = new Map(proposed.map(({ piece, newX, newY }) => [piece.id, { x: newX, y: newY }]));
-            let abortMsg: string | null = null;
-            setLocalBoards(prev => {
-                const freshBoard = prev.find(b => b.id === targetBoard.id);
-                if (!freshBoard) return prev;
-                const offender = findCollisionAgainst(freshBoard);
-                if (offender) {
-                    abortMsg = `La pieza choca con "${offender.code}".`;
-                    return prev;
-                }
-                const next = prev.map(board => {
-                    if (board.id !== targetBoard.id) return board;
-                    return {
-                        ...board,
-                        placedPieces: board.placedPieces.map(p => {
-                            const upd = updatedById.get(p.id);
-                            return upd ? { ...p, x: upd.x, y: upd.y } : p;
-                        })
+            // Snap magnético: si la posición exacta del cursor no es válida o
+            // está cerca de un hueco más limpio, atrae al spot válido más
+            // cercano (respeta trim y kerf). Solo se aplica si es 1 sola pieza
+            // o si el grupo entero cabe; con grupos, snap se aplica al anchor.
+            const anchorIdx = ctx.anchorIndex;
+            const anchorProposed = proposed[anchorIdx];
+            const tolerance = Math.max(anchorProposed.piece.width, anchorProposed.piece.height) * 1.2;
+            const snapped = magneticSnap(
+                anchorProposed.newX, anchorProposed.newY,
+                anchorProposed.piece.width, anchorProposed.piece.height,
+                tgtFresh, excludeIds, tolerance
+            );
+            // Si hubo snap del anchor, recalcular toda la propuesta usando los
+            // mismos offsets relativos.
+            if (snapped) {
+                const ax = snapped.x, ay = snapped.y;
+                for (let i = 0; i < proposed.length; i++) {
+                    proposed[i] = {
+                        piece: proposed[i].piece,
+                        newX: ax + ctx.relativeOffsets[i].dx,
+                        newY: ay + ctx.relativeOffsets[i].dy
                     };
-                });
-                latestBoardsRef.current = next;
-                return next;
+                }
+            }
+
+            // Bordes con trimming
+            for (const { piece, newX, newY } of proposed) {
+                if (!fitsInBounds(newX, newY, piece.width, piece.height, bw, bh)) {
+                    showError("Alguna pieza queda fuera del refilado del tablero.");
+                    return clearDrag();
+                }
+            }
+            const offender = findCollisionOn(tgtFresh, proposed);
+            if (offender) {
+                showError(`La pieza choca con "${offender.code}" (mín. ${kerf}mm de sierra).`);
+                return clearDrag();
+            }
+            const updatedById = new Map(proposed.map(({ piece, newX, newY }) => [piece.id, { x: newX, y: newY }]));
+            const next = fresh.map(board => {
+                if (board.id !== targetBoard.id) return board;
+                return {
+                    ...board,
+                    placedPieces: board.placedPieces.map(p => {
+                        const upd = updatedById.get(p.id);
+                        return upd ? { ...p, x: upd.x, y: upd.y } : p;
+                    })
+                };
             });
-            if (abortMsg) showError(abortMsg);
+            latestBoardsRef.current = next;
+            setLocalBoards(next);
             clearDrag();
             return;
         }
 
+        // ---------- 2) REPO → BOARD ----------
         if (ctx.sourceType === 'REPO') {
-            // El repo es privado al tablero — la pieza solo puede regresar a
-            // su tablero de origen, no a otro del mismo material.
+            // Repo privado al tablero: solo vuelve al de origen.
             if (ctx.sourceBoardId !== targetBoard.id) {
                 showError("La pieza del repositorio solo puede volver a su tablero de origen.");
                 return clearDrag();
             }
             const code = ctx.pieceCodes[0];
-            const boardRepo = repository[targetBoard.id];
+            const repoNow = latestRepositoryRef.current;
+            const boardRepo = repoNow[targetBoard.id];
             const repoItem = boardRepo?.[code];
-            if (!repoItem) return clearDrag();
+            if (!repoItem || repoItem.count <= 0) return clearDrag();
 
-            // SNAP A ORIGEN: si una de las instancias guardadas en `origins` proviene del
-            // tablero destino, intentar primero su (x,y) original. Como esa pieza ya no
-            // está en placedPieces (fue movida al repo), su hueco está libre — esto evita
-            // colisiones falsas por imprecisión del cursor (a escala 2.4mm/px un offset
-            // pequeño basta para solapar con la vecina).
-            const originOnTarget = repoItem.origins.find(o => o.boardId === targetBoard.id);
             const cursorX = proposed[0].newX;
             const cursorY = proposed[0].newY;
-            let placeX = cursorX;
-            let placeY = cursorY;
+            const pw = repoItem.piece.width;
+            const ph = repoItem.piece.height;
+
+            // Snap a origen tiene prioridad (pieza vuelve a su sitio exacto si
+            // el cursor está cerca). Si no aplica, busca posición válida más
+            // cercana con snap magnético respetando trim y kerf.
+            const originOnTarget = repoItem.origins.find(o => o.boardId === targetBoard.id);
+            let placeX: number | null = null;
+            let placeY: number | null = null;
             let consumedOriginPieceId: string | null = null;
 
             if (originOnTarget) {
-                // Distancia al origen en mm; tolerancia generosa: ~el 60% del lado mayor.
                 const dx = cursorX - originOnTarget.x;
                 const dy = cursorY - originOnTarget.y;
-                const tolerance = Math.max(repoItem.piece.width, repoItem.piece.height) * 0.6;
+                const tolerance = Math.max(pw, ph) * 0.6;
                 if (Math.abs(dx) <= tolerance && Math.abs(dy) <= tolerance) {
                     placeX = originOnTarget.x;
                     placeY = originOnTarget.y;
@@ -491,84 +638,118 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                 }
             }
 
-            // Recalcular `proposed[0]` para que la validación de colisión use placeX/placeY.
-            proposed[0] = { piece: proposed[0].piece, newX: placeX, newY: placeY };
+            if (placeX === null || placeY === null) {
+                const tolerance = Math.max(pw, ph) * 1.5;
+                const snapped = magneticSnap(cursorX, cursorY, pw, ph, tgtFresh, new Set(), tolerance);
+                if (!snapped) {
+                    showError("No hay espacio válido cerca para colocar la pieza.");
+                    return clearDrag();
+                }
+                placeX = snapped.x;
+                placeY = snapped.y;
+            }
+
+            // Doble check (trim + kerf) — el snap puede devolver origen sin re-validar.
+            if (!fitsInBounds(placeX, placeY, pw, ph, bw, bh)) {
+                showError("La pieza queda fuera del refilado del tablero.");
+                return clearDrag();
+            }
+            const finalProposed = [{ piece: proposed[0].piece, newX: placeX, newY: placeY }];
+            const offender = findCollisionOn(tgtFresh, finalProposed);
+            if (offender) {
+                showError(`La pieza choca con "${offender.code}" (mín. ${kerf}mm de sierra).`);
+                return clearDrag();
+            }
 
             const newPieceId = consumedOriginPieceId
-                ? consumedOriginPieceId
-                : `${repoItem.piece.pieceTemplateId}-repo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                ?? `${repoItem.piece.pieceTemplateId}-repo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
             const newPiece: PlacedPiece = JSON.parse(JSON.stringify(repoItem.piece));
             newPiece.id = newPieceId;
             newPiece.x = placeX;
             newPiece.y = placeY;
 
-            let abortMsg: string | null = null;
-            setLocalBoards(prev => {
-                const freshBoard = prev.find(b => b.id === targetBoard.id);
-                if (!freshBoard) return prev;
-                const offender = findCollisionAgainst(freshBoard);
-                if (offender) {
-                    abortMsg = `La pieza choca con "${offender.code}" en (${offender.x},${offender.y}).`;
-                    return prev;
-                }
-                const next = prev.map(board => {
-                    if (board.id !== targetBoard.id) return board;
-                    if (board.placedPieces.some(p => p.id === newPieceId)) return board;
-                    return {
-                        ...board,
-                        placedPieces: [...board.placedPieces, newPiece],
-                        usedArea: board.usedArea + newPiece.width * newPiece.height
-                    };
-                });
-                latestBoardsRef.current = next;
-                return next;
-            });
-            if (abortMsg) {
-                showError(abortMsg);
-                return clearDrag();
-            }
-
-            setRepository(prev => {
-                const boardRepoPrev = prev[targetBoard.id] || {};
-                const existing = boardRepoPrev[code];
-                if (!existing) return prev;
-                // Consumir el origin que coincida (si hubo snap) o el primero disponible.
-                const remainingOrigins = consumedOriginPieceId
-                    ? existing.origins.filter(o => o.pieceId !== consumedOriginPieceId)
-                    : existing.origins.slice(1);
-                if (existing.count <= 1) {
-                    const nextRepo = { ...boardRepoPrev };
-                    delete nextRepo[code];
-                    return { ...prev, [targetBoard.id]: nextRepo };
-                }
+            const nextBoards = fresh.map(board => {
+                if (board.id !== targetBoard.id) return board;
+                if (board.placedPieces.some(p => p.id === newPieceId)) return board;
                 return {
-                    ...prev,
-                    [targetBoard.id]: {
-                        ...boardRepoPrev,
-                        [code]: { ...existing, count: existing.count - 1, origins: remainingOrigins }
-                    }
+                    ...board,
+                    placedPieces: [...board.placedPieces, newPiece],
+                    usedArea: board.usedArea + newPiece.width * newPiece.height
                 };
             });
+            latestBoardsRef.current = nextBoards;
+            setLocalBoards(nextBoards);
 
-            // Re-incrementar `quantity` en la tabla del padre — la pieza vuelve al plan.
+            // Decrementar repo (consumir el origin usado o el primero disponible).
+            const remainingOrigins = consumedOriginPieceId
+                ? repoItem.origins.filter(o => o.pieceId !== consumedOriginPieceId)
+                : repoItem.origins.slice(1);
+            const updatedBoardRepo: Record<string, RepositoryItem> = { ...boardRepo };
+            if (repoItem.count <= 1) {
+                delete updatedBoardRepo[code];
+            } else {
+                updatedBoardRepo[code] = { ...repoItem, count: repoItem.count - 1, origins: remainingOrigins };
+            }
+            const nextRepo = { ...repoNow, [targetBoard.id]: updatedBoardRepo };
+            latestRepositoryRef.current = nextRepo;
+            setRepository(nextRepo);
+
             if (onPiecesAdjust && newPiece.pieceTemplateId) {
                 onPiecesAdjust({ [newPiece.pieceTemplateId]: 1 });
             }
 
-            // Selección al nuevo id colocado.
             setSelectionBoardId(targetBoard.id);
             setSelectedIds(new Set([newPieceId]));
-
             setNewBoardPieceIds(prev => new Set(prev).add(newPieceId));
             setTimeout(() => setNewBoardPieceIds(prev => { const s = new Set(prev); s.delete(newPieceId); return s; }), 450);
-
             clearDrag();
             return;
         }
 
-        // BOARD → BOARD distinto: mover el grupo completo.
+        // ---------- 3) BOARD → BOARD distinto (mismo material) ----------
         if (ctx.sourceType === 'BOARD') {
             const sourceBoardId = ctx.sourceBoardId;
+            const srcFresh = fresh.find(b => b.id === sourceBoardId);
+            if (!srcFresh) return clearDrag();
+            const movingIdsSet = new Set(ctx.pieces.map(p => p.id));
+            const stillPresent = srcFresh.placedPieces.some(p => movingIdsSet.has(p.id));
+            if (!stillPresent) return clearDrag();
+
+            // Snap magnético del anchor — busca el spot válido más cercano al
+            // cursor. Si lo encuentra, recalcular todo el grupo manteniendo
+            // offsets relativos.
+            const anchorIdx = ctx.anchorIndex;
+            const anchorProposed = proposed[anchorIdx];
+            const tolerance = Math.max(anchorProposed.piece.width, anchorProposed.piece.height) * 1.5;
+            const snapped = magneticSnap(
+                anchorProposed.newX, anchorProposed.newY,
+                anchorProposed.piece.width, anchorProposed.piece.height,
+                tgtFresh, new Set(), tolerance
+            );
+            if (snapped) {
+                const ax = snapped.x, ay = snapped.y;
+                for (let i = 0; i < proposed.length; i++) {
+                    proposed[i] = {
+                        piece: proposed[i].piece,
+                        newX: ax + ctx.relativeOffsets[i].dx,
+                        newY: ay + ctx.relativeOffsets[i].dy
+                    };
+                }
+            }
+
+            // Bordes con trimming
+            for (const { piece, newX, newY } of proposed) {
+                if (!fitsInBounds(newX, newY, piece.width, piece.height, bw, bh)) {
+                    showError("Alguna pieza queda fuera del refilado del tablero.");
+                    return clearDrag();
+                }
+            }
+            const offender = findCollisionOn(tgtFresh, proposed);
+            if (offender) {
+                showError(`La pieza choca con "${offender.code}" (mín. ${kerf}mm de sierra).`);
+                return clearDrag();
+            }
+
             const movedTotalArea = ctx.pieces.reduce((acc, p) => acc + p.width * p.height, 0);
             const tsTag = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
             const newPiecesForTarget: PlacedPiece[] = proposed.map(({ piece, newX, newY }, i) => {
@@ -578,61 +759,86 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                 np.y = newY;
                 return np;
             });
-            const movingIdsSet = new Set(ctx.pieces.map(p => p.id));
 
-            let abortMsg: string | null = null;
-            setLocalBoards(prev => {
-                const srcBoard = prev.find(b => b.id === sourceBoardId);
-                if (!srcBoard) return prev;
-                // Si la pieza fuente ya no está, abortar para no insertar el destino y duplicar.
-                const stillPresent = srcBoard.placedPieces.some(p => movingIdsSet.has(p.id));
-                if (!stillPresent) return prev;
-                const freshTargetBoard = prev.find(b => b.id === targetBoard.id);
-                if (!freshTargetBoard) return prev;
-                const offender = findCollisionAgainst(freshTargetBoard);
-                if (offender) {
-                    abortMsg = `La pieza choca con "${offender.code}".`;
-                    return prev;
+            const next = fresh.map(board => {
+                if (board.id === sourceBoardId) {
+                    return {
+                        ...board,
+                        placedPieces: board.placedPieces.filter(p => !movingIdsSet.has(p.id)),
+                        usedArea: Math.max(0, board.usedArea - movedTotalArea)
+                    };
                 }
-                const next = prev.map(board => {
-                    if (board.id === sourceBoardId) {
-                        return {
-                            ...board,
-                            placedPieces: board.placedPieces.filter(p => !movingIdsSet.has(p.id)),
-                            usedArea: Math.max(0, board.usedArea - movedTotalArea)
-                        };
-                    }
-                    if (board.id === targetBoard.id) {
-                        const existingIds = new Set(board.placedPieces.map(p => p.id));
-                        const toAdd = newPiecesForTarget.filter(p => !existingIds.has(p.id));
-                        return {
-                            ...board,
-                            placedPieces: [...board.placedPieces, ...toAdd],
-                            usedArea: board.usedArea + toAdd.reduce((a, p) => a + p.width * p.height, 0)
-                        };
-                    }
-                    return board;
-                });
-                latestBoardsRef.current = next;
-                return next;
+                if (board.id === targetBoard.id) {
+                    return {
+                        ...board,
+                        placedPieces: [...board.placedPieces, ...newPiecesForTarget],
+                        usedArea: board.usedArea + newPiecesForTarget.reduce((a, p) => a + p.width * p.height, 0)
+                    };
+                }
+                return board;
             });
-
-            if (abortMsg) {
-                showError(abortMsg);
-                return clearDrag();
-            }
+            latestBoardsRef.current = next;
+            setLocalBoards(next);
 
             for (const np of newPiecesForTarget) {
                 setNewBoardPieceIds(prev => new Set(prev).add(np.id));
                 setTimeout(() => setNewBoardPieceIds(prev => { const s = new Set(prev); s.delete(np.id); return s; }), 450);
             }
 
-            // Selección sigue al grupo en el tablero destino.
             setSelectionBoardId(targetBoard.id);
             setSelectedIds(new Set(newPiecesForTarget.map(p => p.id)));
         }
 
         clearDrag();
+    };
+
+    // Mueve la selección activa por (dx,dy) mm en el tablero. Validado contra
+    // bordes (con refilado/trimming) y colisiones con el resto (respetando el
+    // grosor de la sierra/kerf — las piezas no pueden quedar a menos de ese
+    // valor entre sí). Flechas = 1mm, Shift = 10mm, Ctrl = 50mm.
+    const moveSelectionBy = (dx: number, dy: number) => {
+        if (!selectionBoardId || selectedIds.size === 0) return;
+        const fresh = latestBoardsRef.current;
+        const board = fresh.find(b => b.id === selectionBoardId);
+        if (!board) return;
+        const bw = board.width || fallbackW;
+        const bh = board.height || fallbackH;
+
+        const sel = board.placedPieces.filter(p => selectedIds.has(p.id));
+        if (sel.length === 0) return;
+        const selIds = selectedIds;
+
+        // Bordes con trimming
+        for (const p of sel) {
+            const nx = p.x + dx;
+            const ny = p.y + dy;
+            if (!fitsInBounds(nx, ny, p.width, p.height, bw, bh)) {
+                showError("La selección no puede invadir el refilado del tablero.");
+                return;
+            }
+        }
+        // Colisiones con kerf contra piezas no seleccionadas
+        for (const p of sel) {
+            const nx = p.x + dx;
+            const ny = p.y + dy;
+            for (const other of board.placedPieces) {
+                if (selIds.has(other.id)) continue;
+                if (hitsWithKerf(nx, ny, p.width, p.height, other.x, other.y, other.width, other.height)) {
+                    showError(`Quedaría a menos de ${kerf}mm de "${other.code}" (grosor sierra).`);
+                    return;
+                }
+            }
+        }
+
+        const next = fresh.map(b => {
+            if (b.id !== selectionBoardId) return b;
+            return {
+                ...b,
+                placedPieces: b.placedPieces.map(p => selIds.has(p.id) ? { ...p, x: p.x + dx, y: p.y + dy } : p)
+            };
+        });
+        latestBoardsRef.current = next;
+        setLocalBoards(next);
     };
 
     // Rotación de la selección activa (modo manual). Tecla 'R'/'r'.
@@ -653,18 +859,17 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
         // Mapa id → nuevas dimensiones tras rotar.
         const rotatedDims = new Map(selectedPieces.map(p => [p.id, { w: p.height, h: p.width }]));
 
-        // Bordes: el bbox rotado debe caber dentro del tablero.
+        // Bordes con trimming: el bbox rotado debe caber dentro del rect útil.
         for (const p of selectedPieces) {
             const nd = rotatedDims.get(p.id)!;
-            if (p.x < 0 || p.y < 0 || p.x + nd.w > bw || p.y + nd.h > bh) {
-                showError(`"${p.code}" no cabe rotada en el tablero.`);
+            if (!fitsInBounds(p.x, p.y, nd.w, nd.h, bw, bh)) {
+                showError(`"${p.code}" no cabe rotada (refilado del tablero).`);
                 return;
             }
         }
 
-        // Colisiones: cada pieza seleccionada (con sus nuevas dims) vs todas las
-        // demás (las no seleccionadas mantienen sus dims originales; las
-        // seleccionadas usan sus dims rotadas).
+        // Colisiones con kerf: cada pieza seleccionada (con sus nuevas dims)
+        // contra todas las demás. Las seleccionadas usan sus dims rotadas.
         for (const p of selectedPieces) {
             const nd = rotatedDims.get(p.id)!;
             for (const other of board.placedPieces) {
@@ -672,10 +877,8 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                 const otherDims = rotatedDims.get(other.id);
                 const ow = otherDims ? otherDims.w : other.width;
                 const oh = otherDims ? otherDims.h : other.height;
-                const overlapX = p.x < other.x + ow && p.x + nd.w > other.x;
-                const overlapY = p.y < other.y + oh && p.y + nd.h > other.y;
-                if (overlapX && overlapY) {
-                    showError(`"${p.code}" rotada chocaría con "${other.code}".`);
+                if (hitsWithKerf(p.x, p.y, nd.w, nd.h, other.x, other.y, ow, oh)) {
+                    showError(`"${p.code}" rotada quedaría a menos de ${kerf}mm de "${other.code}".`);
                     return;
                 }
             }
@@ -697,19 +900,37 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
         });
     };
 
-    // Listener global de teclado: 'R' rota la selección estando en modo manual.
-    // Se ignora si el foco está en un input/textarea para no interferir con
-    // la edición de campos en el resto de la página.
+    // Listener global de teclado en modo manual:
+    //   - 'R'         → rotar selección 90°
+    //   - flechas     → mover selección 1 mm
+    //   - Shift+flecha → mover selección 10 mm
+    //   - Ctrl+flecha → mover selección 50 mm
+    // Se ignora si el foco está en un input/textarea/contenteditable.
     useEffect(() => {
         if (!isManual) return;
         const onKeyDown = (e: KeyboardEvent) => {
-            if (e.key !== 'r' && e.key !== 'R') return;
             const target = e.target as HTMLElement | null;
             const tag = target?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
             if (!selectionBoardId || selectedIds.size === 0) return;
+
+            if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                rotateSelection();
+                return;
+            }
+
+            const step = e.ctrlKey || e.metaKey ? 50 : (e.shiftKey ? 10 : 1);
+            let dx = 0, dy = 0;
+            switch (e.key) {
+                case 'ArrowLeft':  dx = -step; break;
+                case 'ArrowRight': dx =  step; break;
+                case 'ArrowUp':    dy = -step; break;
+                case 'ArrowDown':  dy =  step; break;
+                default: return;
+            }
             e.preventDefault();
-            rotateSelection();
+            moveSelectionBy(dx, dy);
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
@@ -733,10 +954,18 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, onPiecesAdjus
                 <div className="flex items-center gap-4">
                     {isManual && (
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#4A90E2]/5 border border-[#4A90E2]/20 text-[10px] font-black uppercase tracking-wider text-[#1c3547]/60">
-                            <span className="material-icons-round text-[14px] text-[#4A90E2]/70">rotate_right</span>
-                            <span>Selecciona una pieza y pulsa</span>
+                            <span className="material-icons-round text-[14px] text-[#4A90E2]/70">tune</span>
                             <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#cbd5e1] text-[#1c3547] font-mono text-[10px] shadow-sm">R</kbd>
-                            <span>para rotar</span>
+                            <span>rotar</span>
+                            <span className="opacity-30">·</span>
+                            <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#cbd5e1] text-[#1c3547] font-mono text-[10px] shadow-sm">←↑↓→</kbd>
+                            <span>1mm</span>
+                            <span className="opacity-30">·</span>
+                            <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#cbd5e1] text-[#1c3547] font-mono text-[10px] shadow-sm">⇧</kbd>
+                            <span>10mm</span>
+                            <span className="opacity-30">·</span>
+                            <kbd className="px-1.5 py-0.5 rounded bg-white border border-[#cbd5e1] text-[#1c3547] font-mono text-[10px] shadow-sm">Ctrl</kbd>
+                            <span>50mm</span>
                         </div>
                     )}
                     <button
