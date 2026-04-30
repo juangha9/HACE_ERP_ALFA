@@ -11,7 +11,7 @@ interface SettingsModalProps {
     viewMode: 'VISUAL' | 'COMMANDS';
     setViewMode: (val: 'VISUAL' | 'COMMANDS') => void;
     onPrintLabels?: () => void;
-    initialCustomBoards?: {id: string, label: string, w: number, h: number, number?: number, name: string}[];
+    initialCustomBoards?: {id: string, label: string, w: number, h: number, number?: number, name: string, veta: boolean}[];
 }
 
 const COMMON_BOARD_SIZES = [
@@ -22,10 +22,14 @@ const COMMON_BOARD_SIZES = [
 ];
 
 const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfig, onClose, isOpen, viewMode, setViewMode, onPrintLabels, initialCustomBoards }) => {
-    const [customBoards, setCustomBoards] = useState<{id: string, label: string, w: number, h: number, number?: number, name: string}[]>(initialCustomBoards || []);
+    const [customBoards, setCustomBoards] = useState<{id: string, label: string, w: number, h: number, number?: number, name: string, veta: boolean}[]>(initialCustomBoards || []);
     const [isCustomMode, setIsCustomMode] = useState(false);
     const [boardNumber, setBoardNumber] = useState<string>('');
     const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
+    // Veta del tablero personalizado en edición. null mientras no se elija
+    // (campo obligatorio al guardar). TRUE = pieza no rota; FALSE = libre.
+    const [boardVeta, setBoardVeta] = useState<boolean | null>(null);
+    const [vetaError, setVetaError] = useState(false);
 
     useScrollLock(isOpen);
 
@@ -42,20 +46,34 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
     };
 
     const ALL_BOARDS = [...COMMON_BOARD_SIZES.map(b => ({ ...b, id: `std-${b.w}x${b.h}` })), ...customBoards];
-    
+
     // Check if current config differs from the selected board (if any)
     const currentSelectedBoard = ALL_BOARDS.find(b => b.id === selectedBoardId);
-    const hasChanges = !currentSelectedBoard || 
-        currentSelectedBoard.w !== config.boardWidth || 
-        currentSelectedBoard.h !== config.boardHeight || 
+    // veta solo aplica a tableros personalizados (los estándar no la tienen).
+    const currentVeta = currentSelectedBoard
+        ? customBoards.find(b => b.id === currentSelectedBoard.id)?.veta
+        : undefined;
+    const hasChanges = !currentSelectedBoard ||
+        currentSelectedBoard.w !== config.boardWidth ||
+        currentSelectedBoard.h !== config.boardHeight ||
         (currentSelectedBoard.name || currentSelectedBoard.label.split(' (')[0]) !== config.material ||
-        (currentSelectedBoard.number?.toString() || '') !== boardNumber;
+        (currentSelectedBoard.number?.toString() || '') !== boardNumber ||
+        // Si el tablero es personalizado, también detectar cambios de veta —
+        // sin esto el botón "Guardar" no aparecía cuando el usuario solo
+        // alternaba CON/SIN VETA, y el cambio nunca llegaba a la BD.
+        (currentVeta !== undefined && currentVeta !== boardVeta);
 
     const isStandard = !isCustomMode && !hasChanges && !!currentSelectedBoard && currentSelectedBoard.id.startsWith('std-');
     const selectValue = selectedBoardId || (isCustomMode ? 'custom' : '');
 
     const handleSaveCustomBoard = async () => {
         if (!config.material) return;
+        // Veta es obligatoria — no se puede crear/editar sin definirla.
+        if (boardVeta === null) {
+            setVetaError(true);
+            setTimeout(() => setVetaError(false), 2500);
+            return;
+        }
         try {
             if (selectedBoardId && !selectedBoardId.startsWith('std-')) {
                 // Update existing
@@ -64,7 +82,8 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                     width: config.boardWidth,
                     height: config.boardHeight,
                     material: config.material,
-                    number: boardNumber ? parseInt(boardNumber) : undefined
+                    number: boardNumber ? parseInt(boardNumber) : undefined,
+                    veta: boardVeta
                 });
             } else {
                 // Add new
@@ -73,14 +92,14 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                     width: config.boardWidth,
                     height: config.boardHeight,
                     material: config.material,
-                    number: boardNumber ? parseInt(boardNumber) : undefined
+                    number: boardNumber ? parseInt(boardNumber) : undefined,
+                    veta: boardVeta
                 });
             }
             // Refresh list
             const updated = await api.getCustomBoards();
             setCustomBoards(updated);
-            setIsCustomMode(false); 
-            // setBoardNumber(''); // Keep it or clear it? User might want to keep it.
+            setIsCustomMode(false);
             // Find the board we just saved/updated to keep it selected
             const justSaved = updated.find(b => b.name === config.material && b.w === config.boardWidth && b.h === config.boardHeight);
             if (justSaved) setSelectedBoardId(justSaved.id);
@@ -142,20 +161,25 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                                                 setIsCustomMode(true);
                                                 setSelectedBoardId(null);
                                                 setBoardNumber('');
+                                                setBoardVeta(null); // forzar al usuario a elegir veta
                                                 return;
                                             }
                                             setIsCustomMode(false);
                                             setSelectedBoardId(val);
-                                            
+
                                             const selected = ALL_BOARDS.find(b => b.id === val);
                                             if (selected) {
-                                                setConfig(prev => ({ 
-                                                    ...prev, 
-                                                    boardWidth: selected.w, 
+                                                setConfig(prev => ({
+                                                    ...prev,
+                                                    boardWidth: selected.w,
                                                     boardHeight: selected.h,
                                                     material: selected.name || selected.label.split(' (')[0]
                                                 }));
                                                 setBoardNumber(selected.number?.toString() || '');
+                                                // Precargar veta del tablero personalizado;
+                                                // los estándares (std-*) no tienen, por defecto TRUE.
+                                                const customRef = customBoards.find(b => b.id === val);
+                                                setBoardVeta(customRef ? customRef.veta : true);
                                             }
                                         }}
                                     >
@@ -222,7 +246,7 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                                             placeholder="Ej: Melamina 18mm Blanco"
                                         />
                                         {hasChanges && !isStandard && (
-                                            <button 
+                                            <button
                                                 onClick={handleSaveCustomBoard}
                                                 className="px-3 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 rounded-xl border border-indigo-200 dark:border-indigo-800/60 transition-colors flex items-center justify-center"
                                                 title={selectedBoardId ? "Actualizar tablero" : "Guardar como tablero personalizado"}
@@ -232,6 +256,40 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Veta del tablero (campo obligatorio en custom_boards).
+                                    Solo se muestra cuando el tablero seleccionado es
+                                    personalizado o se está creando uno nuevo. */}
+                                {(isCustomMode || (selectedBoardId && !selectedBoardId.startsWith('std-'))) && (
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">
+                                            Veta del tablero <span className="text-rose-500">*</span>
+                                        </label>
+                                        <div className={`grid grid-cols-2 gap-2 p-1 rounded-xl border ${vetaError ? 'border-rose-400 bg-rose-50' : 'border-transparent bg-[#e9efee]/50'}`}>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setBoardVeta(true); setVetaError(false); }}
+                                                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${boardVeta === true ? 'bg-indigo-600 text-white shadow' : 'bg-white/60 text-slate-600 hover:bg-white'}`}
+                                            >
+                                                <span className="material-icons-round text-[14px] align-middle mr-1">lock</span>
+                                                CON VETA · No rota
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setBoardVeta(false); setVetaError(false); }}
+                                                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${boardVeta === false ? 'bg-emerald-600 text-white shadow' : 'bg-white/60 text-slate-600 hover:bg-white'}`}
+                                            >
+                                                <span className="material-icons-round text-[14px] align-middle mr-1">sync</span>
+                                                SIN VETA · Rota libre
+                                            </button>
+                                        </div>
+                                        <p className={`text-[10px] mt-1.5 ${vetaError ? 'text-rose-500 font-bold' : 'text-slate-400'}`}>
+                                            {vetaError
+                                                ? 'Selecciona si el tablero respeta veta antes de guardar.'
+                                                : 'Define si las piezas de este material pueden rotar (modo manual y optimización).'}
+                                        </p>
+                                    </div>
+                                )}
 
                                 <div>
                                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Sentido de la Veta</label>

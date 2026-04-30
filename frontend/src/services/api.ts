@@ -504,13 +504,13 @@ export const api = {
     },
 
     // --- Custom Boards ---
-    getCustomBoards: async (): Promise<{ id: string, label: string, w: number, h: number, number?: number, name: string }[]> => {
+    getCustomBoards: async (): Promise<{ id: string, label: string, w: number, h: number, number?: number, name: string, veta: boolean }[]> => {
         const { data, error } = await supabase
             .from('custom_boards')
             .select('*')
             .order('number', { ascending: true, nullsFirst: false })
             .order('created_at', { ascending: true });
-        
+
         if (error) {
             console.error('Error fetching custom boards:', error);
             return [];
@@ -525,12 +525,16 @@ export const api = {
                 w: Number(board.width),
                 h: Number(board.height),
                 number: effectiveNumber,
-                name: board.name
+                name: board.name,
+                // veta: TRUE = la pieza tiene veta y no puede rotar.
+                // Si la columna aún no existe en BD (migración pendiente),
+                // tratamos como TRUE por seguridad (no rotar por defecto).
+                veta: board.veta === undefined || board.veta === null ? true : !!board.veta
             };
         });
     },
 
-    addCustomBoard: async (board: { name: string, width: number, height: number, material: string, number?: number }) => {
+    addCustomBoard: async (board: { name: string, width: number, height: number, material: string, number?: number, veta: boolean }) => {
         const { data, error } = await supabase
             .from('custom_boards')
             .insert([{
@@ -538,11 +542,12 @@ export const api = {
                 width: board.width,
                 height: board.height,
                 material: board.material,
-                number: board.number
+                number: board.number,
+                veta: board.veta
             }])
             .select()
             .single();
-            
+
         if (error) {
             console.error('Error adding custom board:', error);
             throw error;
@@ -550,7 +555,7 @@ export const api = {
         return data;
     },
 
-    updateCustomBoard: async (id: string, board: { name: string, width: number, height: number, material: string, number?: number }) => {
+    updateCustomBoard: async (id: string, board: { name: string, width: number, height: number, material: string, number?: number, veta: boolean }) => {
         const { data, error } = await supabase
             .from('custom_boards')
             .update({
@@ -559,12 +564,13 @@ export const api = {
                 height: board.height,
                 material: board.material,
                 number: board.number,
+                veta: board.veta,
                 updated_at: new Date().toISOString()
             })
             .eq('id', id)
             .select()
             .single();
-            
+
         if (error) {
             console.error('Error updating custom board:', error);
             throw error;

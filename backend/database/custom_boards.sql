@@ -10,6 +10,11 @@ CREATE TABLE public.custom_boards (
     width NUMERIC(10, 2) NOT NULL,
     height NUMERIC(10, 2) NOT NULL,
     material VARCHAR(255),
+    -- veta: TRUE = el material tiene veta y las piezas no pueden rotar
+    --       (ni con la tecla R en el modo manual ni en la optimización).
+    --       FALSE = sin veta; las piezas pueden rotar libremente.
+    -- Campo obligatorio en la UI al crear/editar un tablero personalizado.
+    veta BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

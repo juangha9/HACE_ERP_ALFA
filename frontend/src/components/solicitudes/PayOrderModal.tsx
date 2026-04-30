@@ -162,34 +162,34 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* Left Side: Order Info */}
                     <div className="space-y-8">
-                        <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm space-y-6">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">Información del Requerimiento</p>
+                        <div className="bg-white p-8 rounded-[2rem] border border-[#e8eded] shadow-sm space-y-6">
+                            <p className="text-[10px] font-black text-[#8b9ba5] uppercase tracking-widest border-b border-[#e8eded] pb-2">Información del Requerimiento</p>
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
-                                    <span className="text-xs font-bold text-slate-400 uppercase">Proveedor</span>
-                                    <span className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-300">{orden.proveedor?.razon_social || 'N/A'}</span>
+                                    <span className="text-xs font-bold text-[#8b9ba5] uppercase">Proveedor</span>
+                                    <span className="text-[11px] font-black uppercase text-[#2c3434]">{orden.proveedor?.razon_social || 'N/A'}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-xs font-bold text-slate-400 uppercase">Moneda</span>
-                                    <span className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-300">{orden.moneda === 'PEN' ? 'Soles (S/)' : 'Dólares ($)'}</span>
+                                    <span className="text-xs font-bold text-[#8b9ba5] uppercase">Moneda</span>
+                                    <span className="text-[11px] font-black uppercase text-[#2c3434]">{orden.moneda === 'PEN' ? 'Soles (S/)' : 'Dólares ($)'}</span>
                                 </div>
                             </div>
                         </div>
 
                         {/* Items Table */}
-                        <div className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-8 pt-8 pb-4 border-b">Conceptos / Detalles</p>
+                        <div className="bg-white rounded-[2rem] border border-[#e8eded] shadow-sm overflow-hidden">
+                            <p className="text-[10px] font-black text-[#8b9ba5] uppercase tracking-widest px-8 pt-8 pb-4 border-b border-[#e8eded]">Conceptos / Detalles</p>
                             <div className="max-h-64 overflow-y-auto custom-scrollbar">
                                 <table className="w-full text-left">
-                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                                    <tbody className="divide-y divide-[#e8eded]">
                                         {(orden.conceptos || []).map((c: any, i: number) => (
-                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                            <tr key={i} className="hover:bg-[#f8faf9] transition-colors">
                                                 <td className="px-8 py-4">
-                                                    <p className="text-[11px] font-black text-slate-700 dark:text-slate-300 uppercase">{c.descripcion}</p>
-                                                    <p className="text-[9px] font-bold text-slate-400">Cant: {c.cantidad}</p>
+                                                    <p className="text-[11px] font-black text-[#2c3434] uppercase">{c.descripcion}</p>
+                                                    <p className="text-[9px] font-bold text-[#8b9ba5]">Cant: {c.cantidad}</p>
                                                 </td>
                                                 <td className="px-8 py-4 text-right pr-10">
-                                                    <span className="text-sm font-black text-slate-900 dark:text-white">
+                                                    <span className="text-sm font-black text-[#2c3434]">
                                                         {orden.moneda === 'PEN' ? 'S/' : '$'} {formatCurrency(c.subtotal_item)}
                                                     </span>
                                                 </td>
@@ -198,9 +198,9 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                                     </tbody>
                                 </table>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-900 px-8 py-6 flex justify-between items-center">
-                                <span className="text-xs font-black text-slate-400 uppercase">Total a Pagar</span>
-                                <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                            <div className="bg-[#f8faf9] px-8 py-6 flex justify-between items-center">
+                                <span className="text-xs font-black text-[#8b9ba5] uppercase">Total a Pagar</span>
+                                <span className="text-2xl font-black text-[#366480]">
                                     {orden.moneda === 'PEN' ? 'S/' : '$'} {formatCurrency(orden.monto_total)}
                                 </span>
                             </div>
@@ -209,20 +209,20 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                         {/* Reference Files */}
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Factura / PDF</label>
+                                <label className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest ml-4">Factura / PDF</label>
                                 {orden.url_factura ? (
-                                    <a href={orden.url_factura} target="_blank" rel="noreferrer" className="block p-4 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl hover:border-indigo-400 transition-all text-center">
-                                        <FileText className="w-6 h-6 mx-auto mb-1 text-indigo-500" />
-                                        <span className="text-[9px] font-black text-slate-500 uppercase">Ver Factura</span>
+                                    <a href={orden.url_factura} target="_blank" rel="noreferrer" className="block p-4 bg-white border-2 border-[#e8eded] rounded-2xl hover:border-[#4A90E2] transition-all text-center">
+                                        <FileText className="w-6 h-6 mx-auto mb-1 text-[#4A90E2]" />
+                                        <span className="text-[9px] font-black text-[#8b9ba5] uppercase">Ver Factura</span>
                                     </a>
                                 ) : (
-                                    <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl text-center opacity-40">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sin Factura</span>
+                                    <div className="p-4 bg-[#f8faf9] rounded-2xl text-center opacity-40">
+                                        <span className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Sin Factura</span>
                                     </div>
                                 )}
                             </div>
                             <div className="space-y-4">
-                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-4">Evidencia (Fotos)</label>
+                                <label className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest ml-4">Evidencia (Fotos)</label>
                                 {orden.url_evidencia ? (
                                     <div className="grid grid-cols-2 gap-2">
                                         {orden.url_evidencia.split(/[|,]/).filter(Boolean).map((url, idx) => (
@@ -231,17 +231,17 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                                                 href={url} 
                                                 target="_blank" 
                                                 rel="noreferrer" 
-                                                className="block p-4 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl hover:border-indigo-400 transition-all text-center group relative h-20 overflow-hidden"
+                                                className="block p-4 bg-white border-2 border-[#e8eded] rounded-2xl hover:border-[#4A90E2] transition-all text-center group relative h-20 overflow-hidden"
                                             >
                                                 <img src={url} className="absolute inset-0 w-full h-full object-cover opacity-20 group-hover:opacity-40 transition-opacity" alt="" />
-                                                <Camera className="w-5 h-5 mx-auto mb-1 text-emerald-500 relative z-10" />
-                                                <span className="text-[8px] font-black text-slate-500 uppercase relative z-10">Imagen {idx + 1}</span>
+                                                <Camera className="w-5 h-5 mx-auto mb-1 text-[#166534] relative z-10" />
+                                                <span className="text-[8px] font-black text-[#8b9ba5] uppercase relative z-10">Imagen {idx + 1}</span>
                                             </a>
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl text-center opacity-40">
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Sin Evidencia</span>
+                                    <div className="p-4 bg-[#f8faf9] rounded-2xl text-center opacity-40">
+                                        <span className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Sin Evidencia</span>
                                     </div>
                                 )}
                             </div>
@@ -252,22 +252,22 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                     <div className="space-y-8">
                         <div className="space-y-6">
                             <div className="space-y-2">
-                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-4">Fecha de {isPaid ? 'Pago' : 'Registro'}</label>
+                                <label className="text-xs font-black text-[#8b9ba5] uppercase tracking-widest ml-4">Fecha de {isPaid ? 'Pago' : 'Registro'}</label>
                                 <input 
                                     type="date" 
                                     value={fechaPago} 
                                     onChange={(e) => !isPaid && setFechaPago(e.target.value)}
                                     disabled={isPaid}
-                                    className={`w-full bg-white dark:bg-slate-800 border-2 p-4 rounded-2xl font-bold transition-all shadow-sm ${isPaid ? 'border-transparent text-slate-400' : 'border-slate-100 dark:border-slate-700 focus:border-emerald-500'}`}
+                                    className={`w-full bg-[#f8faf9] border-2 p-4 rounded-2xl font-bold transition-all shadow-sm ${isPaid ? 'border-transparent text-[#8b9ba5]' : 'border-transparent focus:border-[#4A90E2] text-[#2c3434]'}`}
                                 />
                             </div>
 
                             <div className="space-y-4">
-                                <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-4">Origen de Fondos</label>
+                                <label className="text-xs font-black text-[#8b9ba5] uppercase tracking-widest ml-4">Origen de Fondos</label>
                                 {isPaid ? (
-                                    <div className="p-5 bg-white dark:bg-slate-800 border border-slate-100 rounded-2xl flex items-center justify-between">
-                                        <span className="text-sm font-black uppercase text-slate-700 dark:text-slate-300">{selectedAccount}</span>
-                                        <span className="material-icons-round text-emerald-500">verified</span>
+                                    <div className="p-5 bg-white border border-[#e8eded] rounded-2xl flex items-center justify-between">
+                                        <span className="text-sm font-black uppercase text-[#2c3434]">{selectedAccount}</span>
+                                        <span className="material-icons-round text-[#166534]">verified</span>
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
@@ -279,13 +279,13 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                                                     onClick={() => { setSelectedAccount(acc); setShowError(false); }}
                                                     className={`flex items-center justify-between p-5 rounded-2xl border-2 transition-all font-black uppercase tracking-widest ${
                                                         selectedAccount === acc 
-                                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' 
-                                                        : 'bg-white border-slate-100 dark:bg-slate-800 dark:border-slate-700 text-slate-400 hover:bg-slate-50'
+                                                        ? 'bg-[#366480] border-[#366480] text-white shadow-lg shadow-[#366480]/20' 
+                                                        : 'bg-white border-[#e8eded] text-[#8b9ba5] hover:bg-[#f8faf9]'
                                                     }`}
                                                 >
                                                     <div className="flex flex-col items-start text-left">
                                                         <span className="text-sm">{acc}</span>
-                                                        <span className={`text-[10px] uppercase font-black tracking-widest ${selectedAccount === acc ? 'text-indigo-200' : 'text-slate-300'}`}>
+                                                        <span className={`text-[10px] uppercase font-black tracking-widest ${selectedAccount === acc ? 'text-white/80' : 'text-[#8b9ba5]'}`}>
                                                             DISP: {formatCurrency(accBalance)}
                                                         </span>
                                                     </div>
@@ -296,33 +296,33 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                                 )}
                             </div>
 
-                            <div className="flex gap-4 animate-in slide-in-from-bottom-4 duration-500 pt-4 border-t border-slate-100 dark:border-slate-800">
+                            <div className="flex gap-4 animate-in slide-in-from-bottom-4 duration-500 pt-4 border-t border-[#e8eded]">
                                 <div className="flex-1 space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pl-1">Váucher de Pago</label>
-                                    <div onClick={() => !isPaid && fileInputRef.current?.click()} className={`h-40 w-full border-2 border-dashed rounded-3xl flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden bg-white dark:bg-slate-800 relative group ${isPaid ? 'border-transparent' : (showError && !voucherFile ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 hover:border-emerald-400')}`}>
+                                    <label className="text-[10px] font-black text-[#8b9ba5] uppercase tracking-widest block pl-1">Váucher de Pago</label>
+                                    <div onClick={() => !isPaid && fileInputRef.current?.click()} className={`h-40 w-full border-2 border-dashed rounded-3xl flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden bg-white relative group ${isPaid ? 'border-transparent' : (showError && !voucherFile ? 'border-rose-400 bg-rose-50/50' : 'border-[#d3dcdb] hover:border-[#4A90E2]')}`}>
                                         {voucherPreview ? (
                                             <div className="relative w-full h-full">
                                                 <img src={voucherPreview} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                                                 {!isPaid && <button onClick={(e) => { e.stopPropagation(); setVoucherFile(null); setVoucherPreview(null); }} className="absolute top-2 right-2 p-1.5 bg-rose-500/90 text-white rounded-full shadow-lg hover:bg-rose-600 transition-all z-10 hover:scale-110 flex items-center justify-center border border-rose-400/50" title="Eliminar imagen"><X className="w-3 h-3" /></button>}
-                                                {isPaid && <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><a href={voucherPreview} target="_blank" rel="noreferrer" className="p-3 bg-white rounded-full text-slate-900 uppercase font-black text-[9px]">Ver Ampliado</a></div>}
+                                                {isPaid && <div className="absolute inset-0 bg-[#2c3434]/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><a href={voucherPreview} target="_blank" rel="noreferrer" className="p-3 bg-white rounded-full text-[#2c3434] uppercase font-black text-[9px]">Ver Ampliado</a></div>}
                                             </div>
                                         ) : (
                                             <>
-                                                <Camera className={`w-6 h-6 mb-1 ${showError && !voucherFile ? 'text-rose-400' : 'text-slate-300'}`} />
-                                                <span className={`text-[8px] font-black uppercase ${showError && !voucherFile ? 'text-rose-500' : 'text-slate-400'}`}>{isPaid ? 'Sin Váucher' : 'Adjuntar'}</span>
+                                                <Camera className={`w-6 h-6 mb-1 ${showError && !voucherFile ? 'text-rose-400' : 'text-[#8b9ba5]'}`} />
+                                                <span className={`text-[8px] font-black uppercase ${showError && !voucherFile ? 'text-rose-500' : 'text-[#8b9ba5]'}`}>{isPaid ? 'Sin Váucher' : 'Adjuntar'}</span>
                                             </>
                                         )}
                                     </div>
                                 </div>
                                 <div className="flex-1 space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block pl-1">N° Operación</label>
+                                    <label className="text-[10px] font-black text-[#8b9ba5] uppercase tracking-widest block pl-1">N° Operación</label>
                                     <input
                                         type="text"
                                         placeholder="N° XXXX"
                                         value={numOp}
                                         onChange={(e) => !isPaid && setNumOp(e.target.value.toUpperCase())}
                                         disabled={isPaid}
-                                        className={`w-full h-40 bg-white dark:bg-slate-800 border-2 rounded-3xl px-6 font-black text-center text-lg outline-none transition-all ${isPaid ? 'border-transparent text-emerald-600 dark:text-emerald-400' : (showError && !numOp ? 'border-rose-400 bg-rose-50' : 'border-slate-100 dark:border-slate-700 focus:border-indigo-400')}`}
+                                        className={`w-full h-40 bg-[#f8faf9] border-2 rounded-3xl px-6 font-black text-center text-lg outline-none transition-all ${isPaid ? 'border-transparent text-[#166534]' : (showError && !numOp ? 'border-rose-400 bg-rose-50' : 'border-transparent focus:border-[#4A90E2] text-[#2c3434]')}`}
                                     />
                                 </div>
                             </div>
@@ -330,7 +330,7 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
 
                         {!isPaid && (
                             <div className="flex flex-col gap-4 mt-10">
-                                <div className={`p-6 rounded-2xl flex items-center justify-between border-2 ${isInsufficient ? 'bg-rose-50 border-rose-100 dark:bg-rose-900/20 dark:border-rose-900/40 text-rose-600' : 'bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-900/40 text-emerald-600'}`}>
+                                <div className={`p-6 rounded-2xl flex items-center justify-between border-2 ${isInsufficient ? 'bg-rose-50 border-rose-100 text-rose-600' : 'bg-[#e0f2fe] border-[#bbf7d0] text-[#366480]'}`}>
                                     <div className="flex flex-col">
                                         <span className="text-[9px] font-black uppercase tracking-widest opacity-80">Saldo Resultante</span>
                                         <span className="text-xl font-black tabular-nums tracking-tighter">
@@ -348,8 +348,8 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                                     disabled={submitting || isInsufficient}
                                     className={`w-full text-white font-black py-5 px-10 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-sm border-b-4 flex items-center justify-center gap-2 ${
                                         submitting || isInsufficient 
-                                        ? 'bg-slate-300 border-slate-400 shadow-slate-200 cursor-not-allowed dark:bg-slate-800 dark:border-slate-900 dark:text-slate-500' 
-                                        : 'bg-emerald-600 border-emerald-800 shadow-emerald-100 hover:bg-emerald-700 active:translate-y-px'
+                                        ? 'bg-[#e8eded] border-[#d3dcdb] shadow-none cursor-not-allowed text-[#8b9ba5]' 
+                                        : 'bg-[#166534] border-[#14532d] hover:bg-[#14532d] shadow-[#166534]/20 active:translate-y-px'
                                     }`}
                                 >
                                     {submitting ? 'PROCESANDO...' : 'CONFIRMAR Y REGISTRAR PAGO'}
@@ -360,7 +360,7 @@ export const PayOrderModal: React.FC<PayOrderModalProps> = ({ orden, onClose, on
                         {isPaid && (
                             <button
                                 onClick={onClose}
-                                className="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black py-5 rounded-2xl uppercase tracking-widest text-sm active:scale-95 transition-transform"
+                                className="w-full bg-[#f8faf9] border-2 border-[#e8eded] text-[#8b9ba5] hover:bg-[#e8eded] font-black py-5 rounded-2xl uppercase tracking-widest text-sm active:scale-95 transition-transform"
                             >
                                 CERRAR DETALLES
                             </button>

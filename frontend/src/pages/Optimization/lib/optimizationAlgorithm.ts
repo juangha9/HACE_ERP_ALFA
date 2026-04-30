@@ -12,6 +12,11 @@ export interface PlacedPiece {
     rotated: boolean;
     code: string;
     description: string;
+    /** Si TRUE la pieza tiene veta y NO puede rotarse — ni con la tecla R en
+     *  modo manual ni por la optimización. Se hereda de Piece.matchGrain (que
+     *  a su vez puede provenir de la columna `veta` del custom_board del
+     *  material elegido para esta pieza). */
+    matchGrain: boolean;
     edgeBanding: {
         top: number;
         bottom: number;
@@ -62,11 +67,23 @@ function runStripPacking(
     boardHeight: number,
     config: OptimizationConfig
 ): Board[] {
-    // Horizontal strips: strips run across the board width, stacked top→bottom.
-    // Vertical strips:   strips run down the board height, stacked left→right.
+    // SIMPLE_CUTS con guillotina horizontal-prioritaria.
+    //
+    // Antes era strip-packing puro: el primer corte horizontal definía la
+    // altura del strip y dentro de él solo se acumulaban piezas a la derecha.
+    // Si una pieza tenía altura menor a la del strip, todo el offcut debajo
+    // quedaba sin usar (ej.: tras una pieza alta se desperdiciaba la columna
+    // derecha). Ahora cada slot vacío del tablero se sigue como rectángulo
+    // libre y se sub-divide al colocar una pieza:
+    //   1. Slot derecho del slot original, conserva la altura completa.
+    //   2. Slot inferior, debajo de la pieza, con el ancho de la pieza.
+    // Las piezas se ordenan por altura desc (sort en optimizeCuttingMap), así
+    // las primeras en cada slot fijan una altura "tipo strip" y las cortas
+    // posteriores caben en los slots inferiores. Los cortes siguen siendo
+    // rectos (guillotina pura) — solo se requieren cortes adicionales para
+    // separar el offcut, lo cual es aceptable a cambio de mejor utilización.
     const useHorizontalStrips = config.cutDirection !== 'VERTICAL';
 
-    // Usable board dimensions (trimming removed, +sawKerf compensates for last piece not needing kerf on outer edge)
     const usableAcross = (useHorizontalStrips
         ? boardWidth  - config.trimming.left - config.trimming.right
         : boardHeight - config.trimming.top  - config.trimming.bottom
@@ -77,72 +94,70 @@ function runStripPacking(
         : boardWidth  - config.trimming.left - config.trimming.right
     ) + config.sawKerf;
 
+    interface Slot {
+        x: number;  // across offset within usable area (relative al borde de trimming)
+        y: number;  // along offset within usable area
+        w: number;  // capacidad across (incluye kerf)
+        h: number;  // capacidad along  (incluye kerf)
+    }
+
     const activeBoards: Board[] = [];
-    let curBoard: Board | null = null;
+    const boardSlots = new Map<string, Slot[]>();
 
-    // Strip tracking (offsets are relative to the trimming edge, not the board origin)
-    let stripOffset  = 0;  // along-axis start of current strip (y for H, x for V)
-    let stripSize    = 0;  // along-axis size of current strip including sawKerf
-    let cursorAcross = 0;  // across-axis cursor within current strip
-
-    const createNewBoard = () => {
-        curBoard = {
+    const createNewBoard = (): Board => {
+        const board: Board = {
             id: `board-${activeBoards.length + 1}`,
             width: boardWidth,
             height: boardHeight,
             placedPieces: [],
             usedArea: 0,
         };
-        activeBoards.push(curBoard);
-        stripOffset  = 0;
-        stripSize    = 0;
-        cursorAcross = 0;
+        activeBoards.push(board);
+        boardSlots.set(board.id, [{ x: 0, y: 0, w: usableAcross, h: usableAlong }]);
+        return board;
     };
 
-    for (const item of items) {
-        // "along"  = the strip's fixed dimension (height for H strips, width for V strips)
-        // "across" = the piece's variable dimension within the strip (width for H, height for V)
-        const dimAlong  = useHorizontalStrips ? item.h : item.w;
+    const tryPlaceInBoard = (board: Board, item: ItemToPlace): boolean => {
         const dimAcross = useHorizontalStrips ? item.w : item.h;
-        const cutAlong  = useHorizontalStrips ? item.cutH : item.cutW;
+        const dimAlong  = useHorizontalStrips ? item.h : item.w;
         const cutAcross = useHorizontalStrips ? item.cutW : item.cutH;
+        const cutAlong  = useHorizontalStrips ? item.cutH : item.cutW;
 
-        if (!curBoard) {
-            createNewBoard();
-            stripSize = dimAlong;
-        }
+        const slots = boardSlots.get(board.id);
+        if (!slots) return false;
 
-        // A new strip is needed when: piece height differs from current strip, or strip is full across.
-        const differentStrip = Math.abs(dimAlong - stripSize) > 0.5;
-        const stripFull      = cursorAcross + dimAcross > usableAcross;
-
-        if (differentStrip || stripFull) {
-            const nextOffset = stripOffset + stripSize;
-            if (nextOffset + dimAlong > usableAlong) {
-                // New strip won't fit on this board → open a new board
-                createNewBoard();
-            } else {
-                // Advance to next strip on the same board
-                stripOffset  = nextOffset;
-                cursorAcross = 0;
+        // Best-fit: elegir el slot con menos desperdicio donde la pieza entra.
+        // Esto agrupa piezas similares en el mismo "strip" lógico (altura del
+        // primer slot que las acepta) y reserva slots grandes para piezas
+        // grandes posteriores.
+        let bestIdx = -1;
+        let bestWaste = Infinity;
+        for (let i = 0; i < slots.length; i++) {
+            const s = slots[i];
+            if (dimAcross <= s.w + 0.5 && dimAlong <= s.h + 0.5) {
+                const waste = (s.w * s.h) - (dimAcross * dimAlong);
+                if (waste < bestWaste) {
+                    bestWaste = waste;
+                    bestIdx = i;
+                }
             }
-            stripSize = dimAlong;
         }
+        if (bestIdx < 0) return false;
+        const slot = slots[bestIdx];
 
-        // Compute absolute x,y position on board
+        // Posición absoluta en el tablero.
         const x = useHorizontalStrips
-            ? config.trimming.left + cursorAcross
-            : config.trimming.left + stripOffset;
+            ? config.trimming.left + slot.x
+            : config.trimming.left + slot.y;
         const y = useHorizontalStrips
-            ? config.trimming.top  + stripOffset
-            : config.trimming.top  + cursorAcross;
+            ? config.trimming.top  + slot.y
+            : config.trimming.top  + slot.x;
 
-        // No rotation in strip mode — rotating would change the strip dimension and break grouping.
         const pieceVisualW = useHorizontalStrips ? cutAcross : cutAlong;
         const pieceVisualH = useHorizontalStrips ? cutAlong  : cutAcross;
 
-        curBoard!.placedPieces.push({
-            id: `${item.template.id}-${curBoard!.placedPieces.length}`,
+        board.placedPieces.push({
+            id: `${item.template.id}-${board.placedPieces.length}`,
             pieceTemplateId: item.template.id,
             x,
             y,
@@ -151,13 +166,37 @@ function runStripPacking(
             finalWidth:  item.template.width,
             finalHeight: item.template.height,
             rotated:     false,
+            matchGrain:  !!item.template.matchGrain,
             code:        item.template.code,
             description: item.template.description,
             edgeBanding: item.template.edgeBanding,
         });
+        board.usedArea += item.cutW * item.cutH;
 
-        curBoard!.usedArea += item.cutW * item.cutH;
-        cursorAcross += dimAcross;
+        // Split guillotina con preferencia horizontal:
+        //   - rightSlot: a la derecha de la pieza con la altura COMPLETA del slot.
+        //   - bottomSlot: debajo de la pieza, solo con el ancho de la pieza.
+        // Esto reserva la "columna derecha" como una franja continua para más
+        // piezas tipo strip, y aprovecha el espacio bajo piezas cortas.
+        const rightSlot:  Slot = { x: slot.x + dimAcross, y: slot.y,            w: slot.w - dimAcross, h: slot.h };
+        const bottomSlot: Slot = { x: slot.x,             y: slot.y + dimAlong, w: dimAcross,          h: slot.h - dimAlong };
+
+        slots.splice(bestIdx, 1);
+        if (rightSlot.w  > 0.5 && rightSlot.h  > 0.5) slots.push(rightSlot);
+        if (bottomSlot.w > 0.5 && bottomSlot.h > 0.5) slots.push(bottomSlot);
+
+        return true;
+    };
+
+    for (const item of items) {
+        let placed = false;
+        for (const board of activeBoards) {
+            if (tryPlaceInBoard(board, item)) { placed = true; break; }
+        }
+        if (!placed) {
+            const newBoard = createNewBoard();
+            tryPlaceInBoard(newBoard, item);
+        }
     }
 
     return activeBoards;
@@ -358,6 +397,7 @@ export function optimizeCuttingMap(
             finalWidth:     finalTemplW,
             finalHeight:    finalTemplH,
             rotated:        isRotated,
+            matchGrain:     !!item.template.matchGrain,
             code:           item.template.code,
             description:    item.template.description,
             edgeBanding:    isRotated ? {

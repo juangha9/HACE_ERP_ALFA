@@ -8,30 +8,55 @@ interface CommandModeTableProps {
     isLocked?: boolean;
 }
 
+// Modelo semántico del data:
+//   eb.left/right = "cortos" (lados más cortos de la pieza)
+//   eb.top/bottom = "largos" (lados más largos de la pieza)
+// El render de la previsualización rota la vista cuando la pieza es portrait
+// para que el usuario siempre vea cortos como los lados visualmente más cortos
+// y largos como los más largos. Los datos quedan estables.
+//
+// Leyenda de comandos (fuente única — debe coincidir con el tooltip de CANTOS):
+//   @1 = 2 cortos, @2 = 2 largos, @3 = 4 lados,
+//   @4 = 1 corto + 1 largo, @5 = 2 largos + 1 corto, @6 = 2 cortos + 1 largo,
+//   @7 = 1 corto, @8 = 1 largo
+//
+// Comportamiento aditivo: cada @N rellena los espacios que aún están en 0
+// según su definición. Repetir un comando rellena el "siguiente" espacio que
+// quedaba libre, en vez de bloquear (antes @4 solo se podía teclear una vez).
 const parseEdgeCommand = (fullCommand: string) => {
-    const banding = { top: 0, bottom: 0, left: 0, right: 0 };
+    const banding: { top: number; bottom: number; left: number; right: number } =
+        { top: 0, bottom: 0, left: 0, right: 0 };
     if (!fullCommand) return banding;
     const commands = fullCommand.trim().split(/\s+/);
+
+    type Side = 'top' | 'bottom' | 'left' | 'right';
+    const cortos: Side[] = ['left', 'right'];
+    const largos: Side[] = ['top', 'bottom'];
+
+    const fillFirst = (sides: Side[], type: number): boolean => {
+        for (const s of sides) {
+            if (banding[s] === 0) { banding[s] = type; return true; }
+        }
+        return false;
+    };
+    const fillAll = (sides: Side[], type: number) => {
+        for (const s of sides) banding[s] = type;
+    };
+
     commands.forEach(command => {
         if (!command.startsWith('@')) return;
         const isThick = command.toLowerCase().endsWith('g');
         const type = isThick ? 2 : 1;
         const code = command.replace('@', '').toLowerCase().replace('g', '');
         switch (code) {
-            case '1': banding.left = type; banding.right = type; break;
-            case '2': banding.top = type; banding.bottom = type; break;
-            case '3': banding.top = type; banding.bottom = type; banding.left = type; banding.right = type; break;
-            case '4': banding.left = type; banding.top = type; break;
-            case '5': banding.left = type; banding.right = type; banding.top = type; break;
-            case '6': banding.top = type; banding.bottom = type; banding.left = type; break;
-            case '7': 
-                if (banding.top === 0) banding.top = type;
-                else if (banding.bottom === 0) banding.bottom = type;
-                break;
-            case '8': 
-                if (banding.left === 0) banding.left = type;
-                else if (banding.right === 0) banding.right = type;
-                break;
+            case '1': fillAll(cortos, type); break;                                  // 2 cortos
+            case '2': fillAll(largos, type); break;                                  // 2 largos
+            case '3': fillAll([...cortos, ...largos], type); break;                  // 4 lados
+            case '4': fillFirst(cortos, type); fillFirst(largos, type); break;       // 1 corto + 1 largo
+            case '5': fillAll(largos, type); fillFirst(cortos, type); break;         // 2 largos + 1 corto
+            case '6': fillAll(cortos, type); fillFirst(largos, type); break;         // 2 cortos + 1 largo
+            case '7': fillFirst(cortos, type); break;                                // 1 corto
+            case '8': fillFirst(largos, type); break;                                // 1 largo
         }
     });
     return banding;
@@ -173,35 +198,22 @@ const CantosInput = memo(({
             const start = input.selectionStart || 0;
             const value = input.value;
             const isNewCode = start === 0 || value[start - 1] === ' ';
-            
-            if (isNewCode) {
-                // Validación preventiva en KeyDown solo al iniciar un nuevo código
-                const currentParsed = parseEdgeCommand(value);
-                const code = e.key;
-                const newEdges = [];
-                if (code === '1') newEdges.push('left', 'right');
-                else if (code === '2') newEdges.push('top', 'bottom');
-                else if (code === '3') newEdges.push('top', 'bottom', 'left', 'right');
-                else if (code === '4') newEdges.push('left', 'top');
-                else if (code === '5') newEdges.push('left', 'right', 'top');
-                else if (code === '6') newEdges.push('top', 'bottom', 'left');
-                else if (code === '7') {
-                    if (currentParsed.top > 0 && currentParsed.bottom > 0) newEdges.push('top', 'bottom');
-                }
-                else if (code === '8') {
-                    if (currentParsed.left > 0 && currentParsed.right > 0) newEdges.push('left', 'right');
-                }
-
-                const conflict = newEdges.length > 0 && newEdges.every(edge => (currentParsed as any)[edge] > 0);
-                if (conflict) {
-                    // Si el usuario presiona el mismo número que ya existe, no bloqueamos para permitir "re-escribir" o simplemente no hacer nada agresivo
-                    // Pero si es un número diferente que choca, sí bloqueamos
-                    return; 
-                }
-            }
-
             const insertion = isNewCode ? `@${e.key}` : e.key;
             const newValue = value.substring(0, start) + insertion + value.substring(start);
+
+            // Bloqueo solo cuando el comando no aporta NADA al estado actual
+            // (todos los lados que tocaría ya están rellenos). Esto permite, por
+            // ejemplo, teclear @4 dos veces: la primera rellena 1 corto + 1 largo
+            // y la segunda rellena el corto y largo restantes — antes la segunda
+            // pulsación se bloqueaba, dejando los otros dos lados sin tocar.
+            if (isNewCode) {
+                const before = parseEdgeCommand(value);
+                const after  = parseEdgeCommand(newValue);
+                const noChange = (['top', 'bottom', 'left', 'right'] as const)
+                    .every(s => before[s] === after[s]);
+                if (noChange) return;
+            }
+
             applyValue(newValue);
         } else if (e.key === 'Enter' || (e.key === 'Tab' && isLast && !e.shiftKey)) {
             handleSync(localValue);

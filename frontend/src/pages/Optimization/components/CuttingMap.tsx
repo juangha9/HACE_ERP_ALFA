@@ -920,6 +920,16 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
         const selectedPieces = board.placedPieces.filter(p => selectedIds.has(p.id));
         if (selectedPieces.length === 0) return;
 
+        // Veta: si alguna pieza tiene matchGrain (heredado del custom_board.veta
+        // del material), bloquear la rotación entera del grupo. La veta es una
+        // restricción del material — rotarla cambiaría la dirección y arruinaría
+        // el corte.
+        const grainLocked = selectedPieces.find(p => p.matchGrain);
+        if (grainLocked) {
+            showError(`"${grainLocked.code}" tiene veta — no se puede rotar.`);
+            return;
+        }
+
         // Mapa id → nuevas dimensiones tras rotar.
         const rotatedDims = new Map(selectedPieces.map(p => [p.id, { w: p.height, h: p.width }]));
 

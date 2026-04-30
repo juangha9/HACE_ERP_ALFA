@@ -5,20 +5,14 @@ import type { OrdenPago, Proveedor, Project } from '../services/types';
 import { PaymentOrderModal } from '../components/solicitudes/PaymentOrderModal';
 import { 
     Search, 
-    Filter, 
     Plus,
-    Clock,
-    Building2,
     Pencil,
     RefreshCw,
-    TrendingDown,
     Eye,
     ChevronDown,
-    FileText,
-    FileSpreadsheet,
     Calendar
 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, startOfWeek, subDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, subDays } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { RangeDatePicker } from '../components/RangeDatePicker';
 
@@ -29,7 +23,7 @@ const SearchInput = React.memo(({ value, onSearch, placeholder, className }: {
     className: string;
 }) => {
     const [local, setLocal] = React.useState(value);
-    const timer = React.useRef<ReturnType<typeof setTimeout>>();
+    const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     React.useEffect(() => { setLocal(value); }, [value]);
 
@@ -160,66 +154,91 @@ export const SolicitudesPage: React.FC = () => {
         const baseClass = "px-4 py-1.5 text-[8px] font-black rounded-full uppercase tracking-widest border shadow-sm";
         switch (status) {
             case 'pagado':
-                return <span className={`${baseClass} bg-emerald-50 text-emerald-700 border-emerald-100`}>Pagado</span>;
+                return <span className={`${baseClass} bg-[#dcfce7] text-[#166534] border-[#bbf7d0]`}>Pagado</span>;
             case 'enviado':
-                return <span className={`${baseClass} bg-amber-50 text-amber-700 border-amber-100`}>Enviado</span>;
+                return <span className={`${baseClass} bg-[#fef3c7] text-[#92400e] border-[#fde68a]`}>Enviado</span>;
             case 'anulado':
             case 'rechazado':
-                return <span className={`${baseClass} bg-rose-50 text-rose-700 border-rose-100`}>{status}</span>;
+                return <span className={`${baseClass} bg-[#ffe4e6] text-[#be123c] border-[#fecdd3]`}>{status}</span>;
             default:
-                return <span className={`${baseClass} bg-slate-50 text-slate-700 border-slate-100`}>{status}</span>;
+                return <span className={`${baseClass} bg-[#f0f5f4] text-[#8b9ba5] border-[#d3dcdb]`}>{status}</span>;
         }
     };
 
     return (
         <React.Fragment>
-            <div 
-                key={(loading || !fontsLoaded) ? 'loading' : 'content'}
-                className="p-10 max-w-[1600px] mx-auto space-y-10 animate-premium-fade"
-            >
+            <div className="flex flex-col h-full bg-[#f7faf9] text-[#2c3434] overflow-hidden relative" style={{ fontFamily: "'Work Sans', sans-serif" }}>
+                <style>{`
+                    @import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800;900&display=swap');
+                `}</style>
+                <div 
+                    key={(loading || !fontsLoaded) ? 'loading' : 'content'}
+                    className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar pb-16"
+                >
                 {(loading || !fontsLoaded) ? (
                     <div className="flex items-center justify-center h-[60vh]">
-                        <RefreshCw className="w-12 h-12 animate-spin text-indigo-600" />
+                        <RefreshCw className="w-12 h-12 animate-spin text-[#4A90E2]" />
                     </div>
                 ) : (
-                    <div className="space-y-10">
-                        {/* Header */}
-                        <div className="flex justify-between items-center">
+                    <div className="space-y-6">
+                        {/* Header Section */}
+                        <div className="flex items-start justify-between mb-2">
                             <div>
-                                <h1 className="text-5xl font-black text-slate-900 dark:text-white tracking-tighter italic uppercase">SOLICITUDES</h1>
-                                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-1">Gestión de requerimientos y pagos</p>
+                                <h2 className="text-3xl font-[900] text-[#1c3547] tracking-tighter leading-none mb-1">Gestión de Requerimientos y<br/>Pagos</h2>
                             </div>
-                            <button
-                                onClick={() => handleOpenModal()}
-                                className="flex items-center gap-3 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-[1.5rem] font-black text-[10px] uppercase shadow-xl shadow-indigo-100 dark:shadow-indigo-900/40 transition-all border-b-4 border-indigo-800 active:translate-y-px hover:scale-105"
-                            >
-                                <Plus className="w-4 h-4" />
-                                Nueva Solicitud
-                            </button>
-                        </div>
-
-                        {/* Stats & Search/Filters Area */}
-                        <div className="flex flex-col lg:flex-row gap-8 items-start lg:items-stretch">
-                            <div className="grid grid-cols-3 gap-4 flex-[1.5] w-full">
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-xl relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Clock className="w-12 h-12 text-indigo-600" /></div>
-                                    <p className="text-slate-400 text-[8px] font-black uppercase tracking-[0.2em] mb-1">Pendientes</p>
-                                    <p className="text-3xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">{stats.pending}</p>
-                                </div>
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-xl relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><TrendingDown className="w-12 h-12 text-emerald-600" /></div>
-                                    <p className="text-slate-400 text-[8px] font-black uppercase tracking-[0.2em] mb-1">Monto Mes</p>
-                                    <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums tracking-tighter">S/ {stats.totalMonth.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</p>
-                                </div>
-                                <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-xl relative overflow-hidden group">
-                                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Building2 className="w-12 h-12 text-amber-600" /></div>
-                                    <p className="text-slate-400 text-[8px] font-black uppercase tracking-[0.2em] mb-1">Proveedores</p>
-                                    <p className="text-3xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">{stats.activeProviders}</p>
-                                </div>
+                            <div className="flex items-center gap-4 mt-2">
+                                <button
+                                    onClick={() => handleOpenModal()}
+                                    className="flex items-center gap-2 px-5 py-3 bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0] rounded-xl text-[13px] font-bold transition-all"
+                                >
+                                    <Plus className="w-4 h-4 text-[#166534]" /> <span className="leading-tight">Nueva<br/>Solicitud</span>
+                                </button>
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-[32px] flex flex-col mb-10 shadow-sm border border-[#e8eded] flex-1 relative z-20">
+                        {/* KPI Cards */}
+                        <div className="grid grid-cols-3 gap-6 mb-8">
+                            <div className="relative bg-white rounded-3xl p-6 shadow-sm cursor-default overflow-hidden h-[150px] flex flex-col justify-center border border-[#e8eded]">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-[#f8faf9] rounded-full translate-x-12 -translate-y-12 opacity-100 pointer-events-none"></div>
+                                <div className="relative z-10 flex flex-col items-start mt-2">
+                                    <span className="text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest mb-3">Requerimientos Pendientes</span>
+                                    <span className="text-[34px] font-[900] text-[#244c66] tracking-tighter tabular-nums mb-4">
+                                        {stats.pending}
+                                    </span>
+                                    <div className="w-[85%] h-1 bg-[#f4f7f6] rounded-full overflow-hidden flex">
+                                        <div className="h-full bg-[#356d90] w-[40%] rounded-full"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="relative bg-white rounded-3xl p-6 shadow-sm cursor-default overflow-hidden h-[150px] flex flex-col justify-center border border-[#e8eded]">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-[#f8faf9] rounded-full translate-x-12 -translate-y-12 opacity-100 pointer-events-none"></div>
+                                <div className="relative z-10 flex flex-col items-start mt-2">
+                                    <span className="text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest mb-3">Monto Total del Mes</span>
+                                    <span className="text-[34px] font-[900] text-[#3e6853] tracking-tighter tabular-nums mb-4">
+                                        S/ {stats.totalMonth.toLocaleString('es-PE', { minimumFractionDigits: 0 })}
+                                    </span>
+                                    <div className="w-[85%] h-1 bg-[#f4f7f6] rounded-full overflow-hidden flex">
+                                        <div className="h-full bg-[#3e6853] w-[60%] rounded-full"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="relative bg-white rounded-3xl p-6 shadow-sm cursor-default overflow-hidden h-[150px] flex flex-col justify-center border border-[#e8eded]">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-[#f8faf9] rounded-full translate-x-12 -translate-y-12 opacity-100 pointer-events-none"></div>
+                                <div className="relative z-10 flex flex-col items-start mt-2">
+                                    <span className="text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest mb-3">Proveedores Activos</span>
+                                    <span className="text-[34px] font-[900] text-[#2c4e66] tracking-tighter tabular-nums mb-4">
+                                        {stats.activeProviders}
+                                    </span>
+                                    <div className="w-[85%] h-1 bg-[#f4f7f6] rounded-full overflow-hidden flex">
+                                        <div className="h-full bg-[#2c4e66] w-[80%] rounded-full"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-[32px] flex flex-col mb-10 shadow-sm border border-[#e8eded] flex-1 relative z-40">
                             {/* Filter Bar */}
                             <div className="p-8 pb-4 flex flex-wrap items-center gap-4 shrink-0 bg-transparent border-b border-[#f0f5f4]">
                                 <div className="relative flex-1 min-w-[300px]">
@@ -324,44 +343,44 @@ export const SolicitudesPage: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
+                        <div className="bg-white rounded-[32px] flex flex-col mb-10 shadow-sm border border-[#e8eded] flex-1 relative z-20 overflow-hidden">
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left">
+                                <table className="w-full text-left border-collapse">
                                     <thead>
-                                        <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Código</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Fecha Emisión</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Proveedor</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Obra</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest text-right">Monto</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest">Estado</th>
-                                            <th className="px-6 py-4 text-xs font-black text-slate-400 uppercase tracking-widest text-center">Acciones</th>
+                                        <tr className="border-b border-[#f0f5f4]">
+                                            <th className="px-8 py-5 text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest bg-transparent">Código</th>
+                                            <th className="px-8 py-5 text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest bg-transparent">Fecha Emisión</th>
+                                            <th className="px-8 py-5 text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest bg-transparent">Proveedor</th>
+                                            <th className="px-8 py-5 text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest bg-transparent">Obra</th>
+                                            <th className="px-8 py-5 text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest text-right bg-transparent">Monto</th>
+                                            <th className="px-8 py-5 text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest bg-transparent">Estado</th>
+                                            <th className="px-8 py-5 text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest text-center bg-transparent">Acciones</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                    <tbody className="divide-y divide-[#f0f5f4]">
                                         {loading ? (
-                                            <tr><td colSpan={7} className="px-10 py-20 text-center font-black animate-pulse text-slate-300 uppercase text-[10px]">Actualizando solicitudes...</td></tr>
+                                            <tr><td colSpan={7} className="px-10 py-20 text-center font-bold animate-pulse text-[#8b9ba5] uppercase text-[10px]">Actualizando solicitudes...</td></tr>
                                         ) : filteredOrdenes.length === 0 ? (
-                                            <tr><td colSpan={7} className="px-10 py-20 text-center font-black text-slate-300 uppercase text-[10px]">No se encontraron registros</td></tr>
+                                            <tr><td colSpan={7} className="px-10 py-20 text-center font-bold text-[#8b9ba5] uppercase text-[10px]">No se encontraron registros</td></tr>
                                         ) : (
                                             filteredOrdenes.map((orden) => (
-                                                <tr key={orden.id} className="hover:bg-amber-50/20 transition-all border-b border-slate-50 dark:border-slate-800">
-                                                    <td className="px-10 py-7"><span className="font-black text-[11px] text-indigo-600 uppercase tracking-tighter">#{orden.codigo_orden}</span></td>
-                                                    <td className="px-10 py-7"><span className="text-[10px] font-bold text-slate-400 uppercase">{format(new Date(orden.fecha_emision), "dd/MM/yyyy")}</span></td>
-                                                    <td className="px-10 py-7">
+                                                <tr key={orden.id} className="hover:bg-[#f8faf9] transition-all group">
+                                                    <td className="px-8 py-5"><span className="font-[900] text-[12px] text-[#244c66] uppercase tracking-tight">#{orden.codigo_orden}</span></td>
+                                                    <td className="px-8 py-5"><span className="text-[11px] font-bold text-[#8b9ba5] uppercase">{format(new Date(orden.fecha_emision), "dd/MM/yyyy")}</span></td>
+                                                    <td className="px-8 py-5">
                                                         <div className="flex flex-col">
-                                                            <span className="font-black text-[10px] text-slate-700 dark:text-slate-300 uppercase">{orden.proveedor?.razon_social}</span>
-                                                            <span className="text-[8px] font-bold text-slate-400 tracking-widest uppercase">{orden.proveedor?.tax_id}</span>
+                                                            <span className="font-[900] text-[11px] text-[#2c3434] uppercase">{orden.proveedor?.razon_social}</span>
+                                                            <span className="text-[9px] font-bold text-[#8b9ba5] tracking-widest uppercase mt-0.5">{orden.proveedor?.tax_id}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-10 py-7"><span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{orden.obra_nombre}</span></td>
-                                                    <td className="px-10 py-7 text-right"><span className="font-black text-sm text-slate-900 dark:text-white tabular-nums tracking-tighter">{orden.moneda === 'PEN' ? 'S/' : '$'} {Number(orden.monto_total).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span></td>
-                                                    <td className="px-10 py-7 text-center">{getStatusBadge(orden.estado)}</td>
-                                                    <td className="px-10 py-7 text-right">
-                                                        <div className="flex items-center justify-end gap-3">
-                                                            <button onClick={() => handleOpenModal(orden, 'VIEW')} className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 rounded-2xl transition-all shadow-sm active:scale-90" title="Ver Detalles"><Eye className="w-4 h-4" /></button>
+                                                    <td className="px-8 py-5"><span className="text-[11px] font-[900] text-[#366480] uppercase tracking-tight">{orden.obra_nombre}</span></td>
+                                                    <td className="px-8 py-5 text-right"><span className="font-[900] text-[13px] text-[#2c3434] tabular-nums tracking-tighter">{orden.moneda === 'PEN' ? 'S/' : '$'} {Number(orden.monto_total).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span></td>
+                                                    <td className="px-8 py-5">{getStatusBadge(orden.estado)}</td>
+                                                    <td className="px-8 py-5 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <button onClick={() => handleOpenModal(orden, 'VIEW')} className="w-8 h-8 rounded-full bg-[#f8faf9] text-[#8b9ba5] group-hover:text-[#366480] hover:bg-[#e8eded] flex items-center justify-center transition-all" title="Ver Detalles"><Eye className="w-4 h-4" /></button>
                                                             {orden.estado === 'enviado' && (
-                                                                <button onClick={() => handleOpenModal(orden, 'EDIT')} className="p-3 bg-amber-50 dark:bg-slate-800 text-amber-500 hover:text-amber-600 rounded-2xl transition-all shadow-sm active:scale-90 border border-amber-100" title="Editar Requerimiento"><Pencil className="w-4 h-4" /></button>
+                                                                <button onClick={() => handleOpenModal(orden, 'EDIT')} className="w-8 h-8 rounded-full bg-[#f8faf9] text-[#8b9ba5] group-hover:text-[#366480] hover:bg-[#e8eded] flex items-center justify-center transition-all" title="Editar Requerimiento"><Pencil className="w-4 h-4" /></button>
                                                             )}
                                                         </div>
                                                     </td>
@@ -374,6 +393,7 @@ export const SolicitudesPage: React.FC = () => {
                         </div>
                     </div>
                 )}
+                </div>
             </div>
 
             {showModal && (

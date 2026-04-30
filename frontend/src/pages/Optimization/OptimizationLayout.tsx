@@ -23,7 +23,7 @@ export const OptimizationLayout = () => {
 
     const [boards, setBoards] = useState<Board[]>([]);
     // Custom boards from DB — needed to resolve material names and dimensions per MAT. group
-    const [customBoards, setCustomBoards] = useState<{id: string, w: number, h: number, number?: number, name: string, label: string}[]>([]);
+    const [customBoards, setCustomBoards] = useState<{id: string, w: number, h: number, number?: number, name: string, label: string, veta: boolean}[]>([]);
 
     const [config, setConfig] = useState<OptimizationConfig>({
         sawKerf: 3,
@@ -328,7 +328,15 @@ export const OptimizationLayout = () => {
                 const bName = matchedBoard?.name
                     ?? (matKey !== '0' ? `MAT.${matKey}` : 'Sin material asignado');
 
-                const resultBoards = optimizeCuttingMap(groupPieces, bw, bh, config);
+                // Si el custom_board tiene veta=TRUE, forzar matchGrain en todas
+                // las piezas del grupo para que el optimizador no las rote. Si
+                // es FALSE, respetar el matchGrain individual de cada pieza
+                // (el usuario puede haberlo bloqueado manualmente).
+                const piecesForOpt = matchedBoard?.veta
+                    ? groupPieces.map(p => ({ ...p, matchGrain: true }))
+                    : groupPieces;
+
+                const resultBoards = optimizeCuttingMap(piecesForOpt, bw, bh, config);
                 resultBoards.forEach(b => {
                     (b as any).materialNumber = matKey;
                     (b as any).materialLabel = bName;
