@@ -1,4 +1,5 @@
-import React, { memo, useCallback, useRef, useEffect, useState, startTransition } from 'react';
+import React, { memo, useCallback, useRef, useEffect, useState, useMemo, startTransition } from 'react';
+import { createPortal } from 'react-dom';
 import type { Piece } from '../types';
 import { api } from '../../../services/api';
 
@@ -62,8 +63,29 @@ const parseEdgeCommand = (fullCommand: string) => {
     return banding;
 };
 
-const CommandInput = memo(({ 
-    initialValue, 
+/**
+ * Mueve el foco al siguiente input editable en orden de DOM. Útil tras copiar
+ * un valor con ENTER — el cursor se desplaza a la columna siguiente como en
+ * Excel. Recorre todos los inputs/selects/textareas no deshabilitados y
+ * encuentra el siguiente al actual.
+ */
+const moveFocusToNextInput = (currentEl: HTMLElement) => {
+    const focusables = Array.from(
+        document.querySelectorAll<HTMLElement>(
+            'input:not([disabled]):not([type="hidden"]):not([type="checkbox"]), textarea:not([disabled]), select:not([disabled])'
+        )
+    );
+    const idx = focusables.indexOf(currentEl);
+    if (idx < 0 || idx + 1 >= focusables.length) return;
+    const next = focusables[idx + 1];
+    next.focus();
+    if ('select' in next && typeof (next as HTMLInputElement).select === 'function') {
+        (next as HTMLInputElement).select();
+    }
+};
+
+const CommandInput = memo(({
+    initialValue,
     onSync,
     onRealTimeChange,
     type = 'text',
@@ -73,9 +95,11 @@ const CommandInput = memo(({
     numericOnly = false,
     maxDigits = 999,
     inputRef,
-    hasError = false
-}: { 
-    initialValue: string | number, 
+    hasError = false,
+    previousValue,
+    onAddRowOnTab,
+}: {
+    initialValue: string | number,
     onSync: (val: string) => void,
     onRealTimeChange?: (val: string) => void,
     type?: string,
@@ -85,12 +109,21 @@ const CommandInput = memo(({
     numericOnly?: boolean,
     maxDigits?: number,
     inputRef?: React.RefObject<HTMLInputElement>,
-    hasError?: boolean
+    hasError?: boolean,
+    /** Valor de la celda inmediata superior. Si está definido y la celda actual
+     *  está vacía, ENTER copia este valor en lugar de solo sincronizar. */
+    previousValue?: string | number,
+    /** Si está definido, TAB en esta celda crea una nueva fila (cuando es la última). */
+    onAddRowOnTab?: () => void,
+    /** Si está definido, ENTER en esta celda crea una nueva fila CUANDO no
+     *  haya nada para copiar de la fila superior y esta sea la última fila.
+     *  Replica el flujo "copy or create" de CANTOS para COMENTARIO. */
+    onAddRowOnEnter?: () => void,
 }) => {
     const [localValue, setLocalValue] = useState(initialValue === 0 ? '' : initialValue);
-    
-    useEffect(() => { 
-        setLocalValue(initialValue === 0 ? '' : initialValue); 
+
+    useEffect(() => {
+        setLocalValue(initialValue === 0 ? '' : initialValue);
     }, [initialValue]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,7 +142,7 @@ const CommandInput = memo(({
 
     return (
         <div className="relative w-full h-full flex items-center overflow-hidden">
-            <input 
+            <input
                 ref={inputRef}
                 type={type}
                 value={localValue}
@@ -117,7 +150,48 @@ const CommandInput = memo(({
                 onBlur={handleBlur}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {
+                        // "Pristine" = la celda no fue tocada por el usuario:
+                        // o está vacía/cero, o sigue mostrando exactamente el
+                        // valor inicial recibido del piece (ej.: CANTIDAD que
+                        // arranca con default 1). El check anterior (solo
+                        // empty/zero) fallaba para CANTIDAD porque 1 no es 0.
+                        const isPristine =
+                            localValue === '' ||
+                            localValue === 0 ||
+                            String(localValue) === String(initialValue);
+                        const hasPrev = previousValue !== undefined && previousValue !== '' && previousValue !== 0;
+                        if (isPristine && hasPrev) {
+                            // Copia el valor de la celda superior y mueve el
+                            // foco al siguiente input — flujo de "ENTER por
+                            // columna" para replicar la fila de arriba.
+                            e.preventDefault();
+                            const v = String(previousValue);
+                            setLocalValue(numericOnly ? v.replace(/\D/g, '') : v);
+                            onRealTimeChange?.(v);
+                            startTransition(() => onSync(v));
+                            const currentEl = e.currentTarget;
+                            setTimeout(() => moveFocusToNextInput(currentEl), 0);
+                            return;
+                        }
+                        // Sin copia posible: si esta celda crea fila al final
+                        // (típicamente COMENTARIO último), abrir nueva fila.
+                        if (onAddRowOnEnter) {
+                            e.preventDefault();
+                            handleBlur();
+                            onAddRowOnEnter();
+                            return;
+                        }
                         handleBlur();
+                    }
+                    if (e.key === 'Tab' && !e.shiftKey && onAddRowOnTab) {
+                        // El TAB en COMENTARIOS de la última fila crea una fila
+                        // nueva (replica el atajo de CANTOS). Si NO es la última
+                        // fila, el caller no setea onAddRowOnTab, así que el
+                        // tabulador conserva la navegación normal.
+                        e.preventDefault();
+                        handleBlur();
+                        onAddRowOnTab();
+                        return;
                     }
                     onKeyDown?.(e);
                 }}
@@ -135,20 +209,24 @@ const CommandInput = memo(({
 });
 
 // Local state Cantos component — rectangle preview is real-time via local state
-const CantosInput = memo(({ 
-    piece, 
-    onUpdate, 
+const CantosInput = memo(({
+    piece,
+    onUpdate,
     onAddRow,
     isLast,
     liveWidth,
-    liveHeight
-}: { 
-    piece: Piece, 
+    liveHeight,
+    previousValue,
+}: {
+    piece: Piece,
     onUpdate: (id: string, updates: Partial<Piece>) => void,
     onAddRow: () => void,
     isLast: boolean,
     liveWidth: number,
-    liveHeight: number
+    liveHeight: number,
+    /** Cantos en formato string ("@1 @2") de la fila inmediata superior. ENTER
+     *  copia esto si esta celda está vacía. */
+    previousValue?: string,
 }) => {
     const [localValue, setLocalValue] = useState(piece.comment?.split('|')[0] || '');
     // Real-time local edge banding for the preview rectangle
@@ -215,14 +293,27 @@ const CantosInput = memo(({
             }
 
             applyValue(newValue);
-        } else if (e.key === 'Enter' || (e.key === 'Tab' && isLast && !e.shiftKey)) {
+        } else if (e.key === 'Enter') {
+            // ENTER en CANTOS: si la celda está vacía Y la fila superior tiene
+            // cantos definidos, copiar de arriba (no crear fila). Si NO hay
+            // nada que copiar y es la última fila, crear nueva fila.
+            const isEmpty = !localValue || localValue.trim() === '';
+            const hasPrev = !!previousValue && previousValue.trim() !== '';
+            if (isEmpty && hasPrev) {
+                e.preventDefault();
+                applyValue(previousValue!);
+                handleSync(previousValue!);
+                return;
+            }
             handleSync(localValue);
             if (isLast) {
                 e.preventDefault();
-                // Always call onAddRow — it is validateAndAdd from CommandRow
-                // and will handle showing error badges if fields are missing
                 onAddRow();
             }
+        } else if (e.key === 'Tab' && isLast && !e.shiftKey) {
+            handleSync(localValue);
+            e.preventDefault();
+            onAddRow();
         }
     };
 
@@ -297,24 +388,36 @@ const CantosInput = memo(({
 });
 
 
-const CommandRow = memo(({ 
-    piece, 
-    onUpdate, 
-    onRemove, 
-    onAddRow, 
+const CommandRow = memo(({
+    piece,
+    onUpdate,
+    onRemove,
+    onAddRow,
     isLast,
     shouldFocusQuantity,
     rowIndex,
-    validMaterials
-}: { 
-    piece: Piece, 
-    onUpdate: (id: string, updates: Partial<Piece>) => void, 
+    validMaterials,
+    previousPiece,
+    isSelected = false,
+    onSelect,
+}: {
+    piece: Piece,
+    onUpdate: (id: string, updates: Partial<Piece>) => void,
     onRemove: (id: string) => void,
     onAddRow: () => void,
     isLast: boolean,
     shouldFocusQuantity: boolean,
     rowIndex: number,
-    validMaterials: { id: string, label: string, w: number, h: number, number?: number, name: string }[]
+    validMaterials: { id: string, label: string, w: number, h: number, number?: number, name: string }[],
+    /** Pieza de la fila inmediata superior. Permite copiar valores con ENTER
+     *  cuando una celda está vacía — flujo "duplicar fila por columna". */
+    previousPiece?: Piece,
+    /** True cuando la fila está dentro del set de selección activo. Resalta
+     *  la fila visualmente y muestra el checkbox marcado. */
+    isSelected?: boolean,
+    /** Callback al clickear el checkbox/celda de selección. Recibe el evento
+     *  para detectar Ctrl/Shift y soportar selección múltiple/de rango. */
+    onSelect?: (id: string, e: React.MouseEvent) => void,
 }) => {
     const [showMatTooltip, setShowMatTooltip] = useState(false);
     const quantityRef = useRef<HTMLInputElement>(null);
@@ -360,32 +463,41 @@ const CommandRow = memo(({
     };
 
     const isEven = rowIndex % 2 === 0;
-    const rowBg = isEven ? '#ffffff' : '#f0f5f4'; // white vs Light Mint Mist
+    // Si la fila está seleccionada, fondo distintivo. El hover sigue siendo
+    // verde claro pero el bg "estable" es un tinte azul.
+    const rowBg = isSelected ? '#dbeafe' : (isEven ? '#ffffff' : '#f0f5f4');
 
     return (
         <tr
             className="transition-colors group/row"
             style={{ height: '18px', maxHeight: '18px', lineHeight: '13px', background: rowBg }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#dcfce7')}  
+            onMouseEnter={e => (e.currentTarget.style.background = '#dcfce7')}
             onMouseLeave={e => (e.currentTarget.style.background = rowBg)}
         >
             <td className="p-0 m-0 border-b border-r border-l border-[#d3dcdb]/30 w-8" style={{ height: '18px', maxHeight: '18px' }}>
                 <div className="flex items-center justify-center w-full h-full">
-                    <input 
-                        type="checkbox" 
-                        checked={piece.enabled !== false} 
+                    <input
+                        type="checkbox"
+                        checked={piece.enabled !== false}
                         onChange={(e) => { e.stopPropagation(); onUpdate(piece.id, { enabled: e.target.checked }); }}
                         className="w-3 h-3 rounded border-[#d3dcdb] text-[#4A90E2] focus:ring-[#4A90E2] cursor-pointer m-0 p-0"
+                        title="Habilitar/deshabilitar pieza"
                     />
                 </div>
             </td>
-            <td className="p-0 m-0 border-b border-r border-[#d3dcdb]/30 text-center font-normal text-slate-400 bg-slate-50/10 w-12" style={{ height: '18px', maxHeight: '18px', lineHeight: '13px', fontSize: '12px' }}>
+            <td
+                className={`p-0 m-0 border-b border-r border-[#d3dcdb]/30 text-center font-normal w-12 cursor-pointer select-none ${isSelected ? 'bg-[#4A90E2]/20 text-[#1c3547] font-bold' : 'text-slate-400 bg-slate-50/10'}`}
+                style={{ height: '18px', maxHeight: '18px', lineHeight: '13px', fontSize: '12px' }}
+                onClick={(e) => onSelect?.(piece.id, e)}
+                title="Click para seleccionar (Ctrl/Cmd=múltiple, Shift=rango)"
+            >
                 {piece.code}
             </td>
             <td className="p-0 m-0 border-b border-r border-[#d3dcdb]/30" style={{ height: '18px', maxHeight: '18px' }}>
-                <CommandInput 
+                <CommandInput
                     inputRef={quantityRef}
                     initialValue={piece.quantity}
+                    previousValue={previousPiece?.quantity}
                     onSync={(val) => onUpdate(piece.id, { quantity: Number(val) })}
                     type="number"
                     hasError={errors.quantity}
@@ -393,8 +505,9 @@ const CommandRow = memo(({
                 />
             </td>
             <td className="p-0 m-0 border-b border-r border-[#d3dcdb]/30" style={{ height: '18px', maxHeight: '18px' }}>
-                <CommandInput 
+                <CommandInput
                     initialValue={piece.height}
+                    previousValue={previousPiece?.height}
                     onSync={(val) => onUpdate(piece.id, { height: Number(val) })}
                     onRealTimeChange={(val) => setLiveHeight(Number(val) || 0)}
                     numericOnly={true}
@@ -404,8 +517,9 @@ const CommandRow = memo(({
                 />
             </td>
             <td className="p-0 m-0 border-b border-r border-[#d3dcdb]/30" style={{ height: '18px', maxHeight: '18px' }}>
-                <CommandInput 
+                <CommandInput
                     initialValue={piece.width}
+                    previousValue={previousPiece?.width}
                     onSync={(val) => onUpdate(piece.id, { width: Number(val) })}
                     onRealTimeChange={(val) => setLiveWidth(Number(val) || 0)}
                     numericOnly={true}
@@ -420,8 +534,9 @@ const CommandRow = memo(({
                 onMouseEnter={() => selectedMaterial && setShowMatTooltip(true)}
                 onMouseLeave={() => setShowMatTooltip(false)}
             >
-                <CommandInput 
+                <CommandInput
                     initialValue={piece.material || ''}
+                    previousValue={previousPiece?.material}
                     onSync={(val) => {
                         const isValid = !val || val === '0' || validMaterials.some(m => m.number?.toString() === val);
                         startTransition(() => {
@@ -454,23 +569,27 @@ const CommandRow = memo(({
             </td>
             <td className="p-0 m-0 border-b border-r border-[#d3dcdb]/30 overflow-hidden" style={{ height: '18px', maxHeight: '18px' }}>
                 {/* CantosInput: receives live dimensions for real-time rectangle preview */}
-                <CantosInput 
+                <CantosInput
                     piece={piece}
                     onUpdate={onUpdate}
                     isLast={isLast}
                     onAddRow={validateAndAdd}
                     liveWidth={liveWidth}
                     liveHeight={liveHeight}
+                    previousValue={previousPiece?.comment?.split('|')[0]}
                 />
             </td>
             <td className="p-0 m-0 border-b border-r border-[#d3dcdb]/30" style={{ height: '15px' }}>
-                <CommandInput 
+                <CommandInput
                     initialValue={piece.comment?.split('|')[1] || ''}
-                    onSync={(val) => onUpdate(piece.id, { 
-                        comment: (piece.comment?.split('|')[0] || '') + '|' + val 
+                    previousValue={previousPiece?.comment?.split('|')[1]}
+                    onSync={(val) => onUpdate(piece.id, {
+                        comment: (piece.comment?.split('|')[0] || '') + '|' + val
                     })}
                     placeholder="..."
                     className="text-left px-1 italic text-slate-400 dark:text-slate-500 text-[11px]"
+                    onAddRowOnTab={isLast ? validateAndAdd : undefined}
+                    onAddRowOnEnter={isLast ? validateAndAdd : undefined}
                 />
             </td>
             <td className="p-0 m-0 border-b border-r border-[#d3dcdb]/30 text-center w-10" style={{ height: '18px', maxHeight: '18px' }}>
@@ -491,6 +610,17 @@ export const CommandModeTable: React.FC<CommandModeTableProps> = ({ pieces, setP
     const [validMaterials, setValidMaterials] = useState<{ id: string, label: string, w: number, h: number, number?: number, name: string }[]>([]);
     const [lastAddedId, setLastAddedId] = useState<string | null>(null);
 
+    // Selección múltiple de filas. Soporta click + Ctrl (toggle) + Shift (rango).
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [lastClickedRow, setLastClickedRow] = useState<string | null>(null);
+    // Portapapeles interno — almacena pieces clonadas (sin mutar las originales).
+    const clipboardRef = useRef<Piece[]>([]);
+    // Sort cíclico por columna (asc → desc → none).
+    const [sortKey, setSortKey] = useState<{ field: 'width' | 'height'; dir: 'asc' | 'desc' } | null>(null);
+    // Dropdown "Opciones".
+    const [showOptions, setShowOptions] = useState(false);
+    const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+
     useEffect(() => {
         api.getCustomBoards().then(setValidMaterials);
     }, []);
@@ -508,7 +638,7 @@ export const CommandModeTable: React.FC<CommandModeTableProps> = ({ pieces, setP
                 matchGrain: false,
                 edgeBanding: { top: 0, bottom: 0, left: 0, right: 0 },
                 enabled: true,
-                comment: '', 
+                comment: '',
                 material: ''
             };
             return [...prev, newPiece];
@@ -517,8 +647,6 @@ export const CommandModeTable: React.FC<CommandModeTableProps> = ({ pieces, setP
     }, [setPieces]);
 
     const handleUpdatePiece = useCallback((id: string, updates: Partial<Piece>) => {
-        // startTransition: marks this update as non-urgent so focusout returns immediately.
-        // React will batch and process this after the browser has painted.
         startTransition(() => {
             setPieces(prev => {
                 const idx = prev.findIndex(p => p.id === id);
@@ -532,7 +660,134 @@ export const CommandModeTable: React.FC<CommandModeTableProps> = ({ pieces, setP
 
     const handleRemovePiece = useCallback((id: string) => {
         setPieces(prev => prev.filter(p => p.id !== id));
+        setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n; });
     }, [setPieces]);
+
+    /** Genera un ID único para una pieza pegada — IMPORTANTE: si reusáramos
+     *  el id original, Supabase lanzaría error de PK duplicada al guardar. */
+    const newPieceId = (suffix?: string | number) =>
+        `p-${Date.now()}-${suffix ?? Math.random().toString(36).slice(2, 7)}`;
+
+    const handleCopySelected = useCallback(() => {
+        if (selectedIds.size === 0) return;
+        const ordered = pieces.filter(p => selectedIds.has(p.id));
+        clipboardRef.current = ordered.map(p => JSON.parse(JSON.stringify(p)));
+    }, [pieces, selectedIds]);
+
+    const handlePaste = useCallback(() => {
+        if (clipboardRef.current.length === 0) return;
+        // Genera IDs nuevos. Inserta justo después de la última fila seleccionada
+        // (si hay selección) o al final.
+        const cloned = clipboardRef.current.map((p, i) => ({
+            ...JSON.parse(JSON.stringify(p)),
+            id: newPieceId(i),
+        }));
+        setPieces(prev => {
+            if (selectedIds.size === 0) {
+                return [...prev, ...cloned];
+            }
+            const lastSelectedIdx = Math.max(...prev
+                .map((p, idx) => selectedIds.has(p.id) ? idx : -1)
+                .filter(i => i >= 0));
+            if (lastSelectedIdx < 0) return [...prev, ...cloned];
+            const next = [...prev];
+            next.splice(lastSelectedIdx + 1, 0, ...cloned);
+            return next;
+        });
+    }, [setPieces, selectedIds]);
+
+    const handleDeleteSelected = useCallback(() => {
+        if (selectedIds.size === 0) return;
+        setPieces(prev => prev.filter(p => !selectedIds.has(p.id)));
+        setSelectedIds(new Set());
+        setShowOptions(false);
+    }, [setPieces, selectedIds]);
+
+    const handleDeleteAll = useCallback(() => {
+        setPieces([]);
+        setSelectedIds(new Set());
+        setShowDeleteAllConfirm(false);
+        setShowOptions(false);
+    }, [setPieces]);
+
+    /** Click sobre la celda de selección — soporta Ctrl (toggle) y Shift (rango). */
+    const handleSelectRow = useCallback((id: string, e: React.MouseEvent) => {
+        if (e.shiftKey && lastClickedRow) {
+            const idxA = pieces.findIndex(p => p.id === lastClickedRow);
+            const idxB = pieces.findIndex(p => p.id === id);
+            if (idxA >= 0 && idxB >= 0) {
+                const [from, to] = idxA < idxB ? [idxA, idxB] : [idxB, idxA];
+                setSelectedIds(prev => {
+                    const n = new Set(prev);
+                    for (let i = from; i <= to; i++) n.add(pieces[i].id);
+                    return n;
+                });
+                return;
+            }
+        }
+        if (e.ctrlKey || e.metaKey) {
+            setSelectedIds(prev => {
+                const n = new Set(prev);
+                if (n.has(id)) n.delete(id); else n.add(id);
+                return n;
+            });
+        } else {
+            setSelectedIds(prev => {
+                if (prev.has(id) && prev.size === 1) return new Set();
+                return new Set([id]);
+            });
+        }
+        setLastClickedRow(id);
+    }, [pieces, lastClickedRow]);
+
+    // Atajos globales Ctrl+C / Ctrl+V (cuando el foco no está en un input).
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null;
+            const tag = target?.tagName;
+            const inField = tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable;
+            if (inField) return;
+            if (!(e.ctrlKey || e.metaKey)) return;
+            if (e.key === 'c' || e.key === 'C') {
+                if (selectedIds.size === 0) return;
+                e.preventDefault();
+                handleCopySelected();
+            } else if (e.key === 'v' || e.key === 'V') {
+                if (clipboardRef.current.length === 0) return;
+                e.preventDefault();
+                handlePaste();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [selectedIds, handleCopySelected, handlePaste]);
+
+    // Pieces ordenadas según sortKey. NO muta el array fuente — el orden de
+    // IDs originales se preserva intacto. La vista solo refleja una versión
+    // ordenada para visualización.
+    const displayedPieces = useMemo(() => {
+        if (!sortKey) return pieces;
+        const sorted = [...pieces].sort((a, b) => {
+            const va = a[sortKey.field] || 0;
+            const vb = b[sortKey.field] || 0;
+            return sortKey.dir === 'asc' ? va - vb : vb - va;
+        });
+        return sorted;
+    }, [pieces, sortKey]);
+
+    /** Sort cíclico: asc → desc → none. */
+    const cycleSort = (field: 'width' | 'height') => {
+        setSortKey(prev => {
+            if (!prev || prev.field !== field) return { field, dir: 'asc' };
+            if (prev.dir === 'asc') return { field, dir: 'desc' };
+            return null;
+        });
+    };
+
+    const sortIcon = (field: 'width' | 'height') => {
+        if (!sortKey || sortKey.field !== field) return 'unfold_more';
+        return sortKey.dir === 'asc' ? 'arrow_upward' : 'arrow_downward';
+    };
 
     return (
         <div className="flex flex-col h-auto bg-white">
@@ -541,10 +796,46 @@ export const CommandModeTable: React.FC<CommandModeTableProps> = ({ pieces, setP
                     <thead className="sticky top-0 z-30 bg-[#f0f5f4] text-[#366480] font-bold uppercase tracking-wider" style={{ fontSize: '11px', lineHeight: '11px' }}>
                         <tr style={{ height: '18px', maxHeight: '18px' }}>
                             <th className="p-0 border-b border-r border-l border-[#d3dcdb]/30 w-8 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>M</th>
-                            <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-12 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>CÓD.</th>
+                            <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-12 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>
+                                <div className="flex items-center justify-center gap-1">
+                                    {/* Checkbox master en encabezado de CÓD: selecciona/deselecciona
+                                        todas las filas. Click en CÓD de cada fila también selecciona. */}
+                                    <input
+                                        type="checkbox"
+                                        checked={pieces.length > 0 && pieces.every(p => selectedIds.has(p.id))}
+                                        ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < pieces.length; }}
+                                        onChange={(e) => {
+                                            if (e.target.checked) setSelectedIds(new Set(pieces.map(p => p.id)));
+                                            else setSelectedIds(new Set());
+                                        }}
+                                        className="w-3 h-3 cursor-pointer m-0 p-0"
+                                        onClick={(e) => e.stopPropagation()}
+                                        title="Seleccionar todo"
+                                    />
+                                    <span>CÓD.</span>
+                                </div>
+                            </th>
                             <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-16 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>CANT.</th>
-                            <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-20 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>ANCHO</th>
-                            <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-20 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>LARGO</th>
+                            <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-20 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>
+                                <button
+                                    onClick={() => cycleSort('height')}
+                                    className="w-full h-full flex items-center justify-center gap-0.5 hover:bg-white/60 transition-colors"
+                                    title="Ordenar Ancho"
+                                >
+                                    ANCHO
+                                    <span className={`material-icons-round text-[12px] ${sortKey?.field === 'height' ? 'text-[#4A90E2]' : 'text-slate-400'}`}>{sortIcon('height')}</span>
+                                </button>
+                            </th>
+                            <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-20 text-center bg-[#f0f5f4]" style={{ height: '18px' }}>
+                                <button
+                                    onClick={() => cycleSort('width')}
+                                    className="w-full h-full flex items-center justify-center gap-0.5 hover:bg-white/60 transition-colors"
+                                    title="Ordenar Largo"
+                                >
+                                    LARGO
+                                    <span className={`material-icons-round text-[12px] ${sortKey?.field === 'width' ? 'text-[#4A90E2]' : 'text-slate-400'}`}>{sortIcon('width')}</span>
+                                </button>
+                            </th>
                             <th className="p-0 border-b border-r border-[#d3dcdb]/30 w-16 text-center bg-[#f0f5f4] relative group/mat-header" style={{ height: '18px' }}>
                                 MAT.
                                 <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover/mat-header:block z-[100] pointer-events-none">
@@ -620,41 +911,162 @@ export const CommandModeTable: React.FC<CommandModeTableProps> = ({ pieces, setP
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-[#d3dcdb]/20 bg-white">
-                        {pieces.map((piece, index) => (
-                            <CommandRow 
+                        {displayedPieces.map((piece, index) => (
+                            <CommandRow
                                 key={piece.id}
                                 piece={piece}
+                                previousPiece={index > 0 ? displayedPieces[index - 1] : undefined}
                                 onUpdate={handleUpdatePiece}
                                 onRemove={handleRemovePiece}
                                 onAddRow={handleAddRow}
-                                isLast={index === pieces.length - 1}
+                                isLast={index === displayedPieces.length - 1}
                                 shouldFocusQuantity={piece.id === lastAddedId}
                                 rowIndex={index}
                                 validMaterials={validMaterials}
+                                isSelected={selectedIds.has(piece.id)}
+                                onSelect={handleSelectRow}
                             />
                         ))}
                     </tbody>
                 </table>
             </div>
             <div className="p-1 border-t dark:border-slate-800 bg-slate-50/50 dark:bg-transparent flex justify-between items-center shrink-0">
-                <button 
-                    onClick={isLocked ? undefined : handleAddRow}
-                    disabled={isLocked}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-[6px] text-[10px] font-[800] transition-all active:scale-95 shadow-sm uppercase tracking-wider ${
-                        isLocked
-                        ? 'bg-[#f0f5f4] text-[#366480]/30 cursor-not-allowed shadow-none'
-                        : 'bg-[#4A90E2] text-white hover:bg-[#357ABD] shadow-blue-500/10'
-                    }`}
-                    title={isLocked ? 'Optimización bloqueada — no se pueden agregar filas' : 'Agregar fila'}
-                >
-                    <span className="material-icons-round text-xs">{isLocked ? 'lock' : 'add'}</span>
-                    Nueva Fila
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={isLocked ? undefined : handleAddRow}
+                        disabled={isLocked}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-[6px] text-[10px] font-[800] transition-all active:scale-95 shadow-sm uppercase tracking-wider ${
+                            isLocked
+                            ? 'bg-[#f0f5f4] text-[#366480]/30 cursor-not-allowed shadow-none'
+                            : 'bg-[#4A90E2] text-white hover:bg-[#357ABD] shadow-blue-500/10'
+                        }`}
+                        title={isLocked ? 'Optimización bloqueada — no se pueden agregar filas' : 'Agregar fila'}
+                    >
+                        <span className="material-icons-round text-xs">{isLocked ? 'lock' : 'add'}</span>
+                        Nueva Fila
+                    </button>
+
+                    {/* Dropdown OPCIONES — copiar / pegar / borrado inteligente. */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowOptions(s => !s)}
+                            disabled={isLocked}
+                            className={`flex items-center gap-1.5 px-3 py-1 rounded-[6px] text-[10px] font-[800] transition-all active:scale-95 shadow-sm uppercase tracking-wider border ${
+                                isLocked
+                                ? 'bg-[#f0f5f4] text-[#366480]/30 border-transparent cursor-not-allowed'
+                                : 'bg-white text-[#366480] border-[#d3dcdb]/40 hover:bg-[#f0f5f4]'
+                            }`}
+                        >
+                            <span className="material-icons-round text-xs">tune</span>
+                            Opciones
+                            <span className="material-icons-round text-xs">expand_more</span>
+                        </button>
+                        {showOptions && !isLocked && (
+                            <>
+                                {/* Backdrop transparente para cerrar al click-out */}
+                                <div className="fixed inset-0 z-[200]" onClick={() => setShowOptions(false)} />
+                                <div className="absolute left-0 bottom-full mb-1 z-[201] bg-white/95 backdrop-blur-md rounded-xl shadow-xl border border-white/60 min-w-[220px] p-1.5 flex flex-col gap-0.5">
+                                    <button
+                                        onClick={() => { handleCopySelected(); setShowOptions(false); }}
+                                        disabled={selectedIds.size === 0}
+                                        className="flex items-center justify-between px-3 py-2 rounded-lg text-[11px] font-bold text-[#1c3547] hover:bg-[#f0f5f4] disabled:opacity-30 disabled:cursor-not-allowed text-left"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-icons-round text-[14px] text-[#4A90E2]">content_copy</span>
+                                            Copiar selección
+                                        </span>
+                                        <kbd className="text-[9px] font-mono bg-slate-100 px-1.5 py-0.5 rounded">Ctrl+C</kbd>
+                                    </button>
+                                    <button
+                                        onClick={() => { handlePaste(); setShowOptions(false); }}
+                                        disabled={clipboardRef.current.length === 0}
+                                        className="flex items-center justify-between px-3 py-2 rounded-lg text-[11px] font-bold text-[#1c3547] hover:bg-[#f0f5f4] disabled:opacity-30 disabled:cursor-not-allowed text-left"
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            <span className="material-icons-round text-[14px] text-[#4A90E2]">content_paste</span>
+                                            Pegar
+                                        </span>
+                                        <kbd className="text-[9px] font-mono bg-slate-100 px-1.5 py-0.5 rounded">Ctrl+V</kbd>
+                                    </button>
+                                    <div className="h-px bg-slate-200 my-0.5" />
+                                    {selectedIds.size > 0 ? (
+                                        <button
+                                            onClick={handleDeleteSelected}
+                                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold text-rose-600 hover:bg-rose-50 text-left"
+                                        >
+                                            <span className="material-icons-round text-[14px]">delete</span>
+                                            Borrar selección ({selectedIds.size})
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => { setShowDeleteAllConfirm(true); setShowOptions(false); }}
+                                            disabled={pieces.length === 0}
+                                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed text-left"
+                                        >
+                                            <span className="material-icons-round text-[14px]">delete_sweep</span>
+                                            Borrar TODO
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {selectedIds.size > 0 && (
+                        <span className="text-[10px] font-bold text-[#4A90E2] ml-1">
+                            {selectedIds.size} seleccionada{selectedIds.size !== 1 ? 's' : ''}
+                        </span>
+                    )}
+                </div>
+
                 <div className="flex gap-4 text-[9px] font-[800] text-[#366480]/50 uppercase tracking-[0.1em] overflow-hidden pr-2">
                     <span className="flex items-center gap-1.5 shrink-0"><div className="w-2 h-2 rounded-full bg-[#fb7185]"></div> Delgado</span>
                     <span className="flex items-center gap-1.5 shrink-0"><div className="w-2 h-2 rounded-full bg-[#4A90E2]"></div> Grueso</span>
                 </div>
             </div>
+
+            {/* Modal de confirmación de borrado total — usa createPortal y la
+                misma paleta translúcida que los demás modals (Nueva Venta). */}
+            {showDeleteAllConfirm && createPortal(
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-white/40 backdrop-blur-[16px] animate-premium-fade"
+                    style={{ width: '100vw', height: '100vh' }}
+                    onClick={() => setShowDeleteAllConfirm(false)}
+                >
+                    <div
+                        className="bg-[#f8faf9]/95 backdrop-blur-[12px] rounded-[36px] shadow-[0_40px_120px_rgba(0,0,0,0.15)] w-full max-w-md overflow-hidden border border-white/90 p-10"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex flex-col gap-3 mb-6">
+                            <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center">
+                                <span className="material-icons-round text-rose-500 text-[28px]">warning</span>
+                            </div>
+                            <h3 className="text-[22px] font-[900] text-[#2c3434] tracking-tight leading-tight">
+                                ¿Borrar TODAS las medidas?
+                            </h3>
+                            <p className="text-[13px] text-[#366480]/70 leading-relaxed">
+                                Vas a perder las <strong className="text-rose-600">{pieces.length}</strong> filas de la tabla.
+                                Esta acción no se puede deshacer.
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowDeleteAllConfirm(false)}
+                                className="flex-1 px-6 py-3 bg-white border border-[#d3dcdb]/60 text-[#366480] font-[900] text-[11px] rounded-[16px] hover:bg-[#f0f5f4] transition-all uppercase tracking-[0.15em]"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleDeleteAll}
+                                className="flex-1 px-6 py-3 bg-rose-600 text-white font-[900] text-[11px] rounded-[16px] hover:bg-rose-700 transition-all uppercase tracking-[0.15em] shadow-md"
+                            >
+                                Sí, borrar todo
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 };

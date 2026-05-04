@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../../services/api';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import type { OptimizationConfig } from '../types';
@@ -12,6 +13,11 @@ interface SettingsModalProps {
     setViewMode: (val: 'VISUAL' | 'COMMANDS') => void;
     onPrintLabels?: () => void;
     initialCustomBoards?: {id: string, label: string, w: number, h: number, number?: number, name: string, veta: boolean}[];
+    /** Si true, oculta todas las secciones excepto la de Tableros. Útil para
+     *  abrir este modal desde la lista de optimizaciones (donde no hay un
+     *  contexto de "configuración de optimización", solo gestión del catálogo
+     *  de tableros). */
+    boardsOnly?: boolean;
 }
 
 const COMMON_BOARD_SIZES = [
@@ -21,7 +27,7 @@ const COMMON_BOARD_SIZES = [
     { label: 'Especial (3200 × 2100)', w: 3200, h: 2100 }
 ];
 
-const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfig, onClose, isOpen, viewMode, setViewMode, onPrintLabels, initialCustomBoards }) => {
+const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfig, onClose, isOpen, viewMode, setViewMode, onPrintLabels, initialCustomBoards, boardsOnly = false }) => {
     const [customBoards, setCustomBoards] = useState<{id: string, label: string, w: number, h: number, number?: number, name: string, veta: boolean}[]>(initialCustomBoards || []);
     const [isCustomMode, setIsCustomMode] = useState(false);
     const [boardNumber, setBoardNumber] = useState<string>('');
@@ -121,27 +127,61 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
         }));
     };
 
-    return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/20 print:hidden" style={{ backdropFilter: 'blur(6px)' }}>
-            <div className="bg-white/90 rounded-2xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-4xl overflow-hidden border border-white/50 flex flex-col max-h-[90vh] relative">
-                {/* Subtle top highlight for depth */}
-                <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
+    // Estilos según contexto:
+    //   - boardsOnly: replica el look del modal "Nueva Venta" (overlay
+    //     translúcido blanco + contenedor mate con esquinas grandes y misma
+    //     paleta de #f8faf9 / #2c3434 / #366480). El header de "Optimizaciones"
+    //     usa transform vía animate-premium-fade, que crea stacking context y
+    //     atrapa cualquier `position: fixed`. Por eso renderizamos con
+    //     createPortal — saca el modal del subtree y lo monta en <body>.
+    //   - default (Configuración de Optimización desde el editor): mantiene su
+    //     look original.
+    const overlayClasses = boardsOnly
+        ? "fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-white/40 backdrop-blur-[16px] animate-premium-fade print:hidden"
+        : "fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/20 print:hidden";
+    const overlayStyle = boardsOnly
+        ? { width: '100vw', height: '100vh' }
+        : { backdropFilter: 'blur(6px)' };
+    const containerClasses = boardsOnly
+        ? "bg-[#f8faf9]/95 backdrop-blur-[12px] rounded-[48px] shadow-[0_40px_120px_rgba(0,0,0,0.15)] w-full max-w-2xl overflow-hidden border border-white/90 flex flex-col max-h-[90vh] relative"
+        : "bg-white/90 rounded-2xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-4xl overflow-hidden border border-white/50 flex flex-col max-h-[90vh] relative";
+
+    const modalNode = (
+        <div className={overlayClasses} style={overlayStyle}>
+            <div className={containerClasses}>
+                {!boardsOnly && (
+                    <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
+                )}
 
                 {/* Header */}
-                <div className="px-6 py-4 border-b border-slate-200/30 flex items-center justify-between">
-                    <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-3">
-                        <span className="material-icons-round text-[32px] text-slate-800 dark:text-white drop-shadow-sm">settings</span>
-                        Configuración de Optimización
-                    </h2>
-                    <button onClick={onClose} className="w-8 h-8 rounded-full text-slate-400 hover:text-slate-600 hover:bg-[#e9efee]/60 flex items-center justify-center transition-colors">
-                        <span className="material-icons-round text-lg">close</span>
+                <div className={boardsOnly ? "px-10 pt-10 pb-6 flex justify-between items-start" : "px-6 py-4 border-b border-slate-200/30 flex items-center justify-between"}>
+                    {boardsOnly ? (
+                        <div className="flex flex-col gap-1">
+                            <h3 className="text-[28px] font-[900] text-[#2c3434] tracking-tight leading-none">
+                                Gestión de Tableros
+                            </h3>
+                            <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em]">Catálogo de tableros personalizados</p>
+                        </div>
+                    ) : (
+                        <h2 className="text-xl font-black text-slate-800 dark:text-white flex items-center gap-3">
+                            <span className="material-icons-round text-[32px] text-slate-800 dark:text-white drop-shadow-sm">settings</span>
+                            Configuración de Optimización
+                        </h2>
+                    )}
+                    <button
+                        onClick={onClose}
+                        className={boardsOnly
+                            ? "w-10 h-10 flex items-center justify-center text-slate-400 hover:text-[#2c3434] transition-all"
+                            : "w-8 h-8 rounded-full text-slate-400 hover:text-slate-600 hover:bg-[#e9efee]/60 flex items-center justify-center transition-colors"}
+                    >
+                        <span className={boardsOnly ? "material-icons-round text-[24px]" : "material-icons-round text-lg"}>close</span>
                     </button>
                 </div>
 
                 {/* Body */}
-                <div className="p-6 overflow-y-auto flex flex-col gap-8">
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className={boardsOnly ? "px-10 pb-4 overflow-y-auto flex flex-col gap-8" : "p-6 overflow-y-auto flex flex-col gap-8"}>
+
+                    <div className={boardsOnly ? "grid grid-cols-1 gap-8" : "grid grid-cols-1 md:grid-cols-2 gap-8"}>
                         {/* Section 1: Tablero Base */}
                         <section className="flex flex-col gap-4">
                             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2">
@@ -292,6 +332,39 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                                 )}
 
                                 <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Esquina de Origen del Corte</label>
+                                    <div className="bg-[#e9efee]/50 rounded-xl p-3 flex items-center gap-3">
+                                        {/* Visual del tablero con 4 esquinas clicables. La esquina
+                                            seleccionada queda resaltada en azul. */}
+                                        <div className="relative w-20 h-14 bg-white border border-slate-200 rounded shrink-0">
+                                            {(['top-left','top-right','bottom-left','bottom-right'] as const).map(corner => {
+                                                const active = (config.originCorner ?? 'top-left') === corner;
+                                                const pos = {
+                                                    'top-left':     { top: -6, left: -6 },
+                                                    'top-right':    { top: -6, right: -6 },
+                                                    'bottom-left':  { bottom: -6, left: -6 },
+                                                    'bottom-right': { bottom: -6, right: -6 },
+                                                }[corner];
+                                                return (
+                                                    <button
+                                                        key={corner}
+                                                        type="button"
+                                                        onClick={() => setConfig(prev => ({ ...prev, originCorner: corner }))}
+                                                        className={`absolute w-3.5 h-3.5 rounded-full border-2 transition-all ${active ? 'bg-[#4A90E2] border-white shadow-md scale-125' : 'bg-slate-200 border-slate-300 hover:bg-slate-300'}`}
+                                                        style={pos}
+                                                        title={corner}
+                                                    />
+                                                );
+                                            })}
+                                        </div>
+                                        <div className="flex flex-col gap-1">
+                                            <span className="text-[11px] font-bold text-[#1c3547]">{config.originCorner ?? 'top-left'}</span>
+                                            <span className="text-[9px] text-slate-400">Pieza 1 nacerá en esta esquina</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
                                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Sentido de la Veta</label>
                                     <button 
                                         type="button"
@@ -312,6 +385,8 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                             </div>
                         </section>
 
+                        {!boardsOnly && (
+                        <>
                         {/* Section 2: Técnica de Corte */}
                         <section className="flex flex-col gap-4">
                             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2">
@@ -381,9 +456,10 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                                         <select
                                             className="w-full text-xs px-2 py-2 rounded-lg border-none bg-[#e9efee]/50 focus:ring-2 focus:ring-indigo-500/20 outline-none font-bold"
                                             value={config.strategy}
-                                            onChange={(e) => setConfig(prev => ({ ...prev, strategy: e.target.value as 'MAX_SAVINGS' | 'SIMPLE_CUTS' }))}
+                                            onChange={(e) => setConfig(prev => ({ ...prev, strategy: e.target.value as 'MAX_SAVINGS' | 'SIMPLE_CUTS' | 'BALANCED' }))}
                                         >
                                             <option value="MAX_SAVINGS">Ahorro Máx</option>
+                                            <option value="BALANCED">Equilibrado</option>
                                             <option value="SIMPLE_CUTS">Simples</option>
                                         </select>
                                     </div>
@@ -535,22 +611,31 @@ const SettingsModalComponent: React.FC<SettingsModalProps> = ({ config, setConfi
                                 </p>
                             </div>
                         </section>
+                        </>
+                        )}
                     </div>
 
                 </div>
 
                 {/* Footer */}
-                <div className="px-6 py-4 border-t border-slate-200/20 flex justify-end">
+                <div className={boardsOnly ? "px-10 py-6 flex justify-end" : "px-6 py-4 border-t border-slate-200/20 flex justify-end"}>
                     <button
                         onClick={onClose}
-                        className="px-8 py-3 bg-indigo-600 text-white font-black text-sm rounded-xl hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-500/20 transition-all active:scale-[0.98] uppercase tracking-widest"
+                        className={boardsOnly
+                            ? "px-10 py-3 bg-[#3b647d] text-white font-[900] text-[11px] rounded-[18px] hover:bg-[#2c4f63] transition-all active:scale-[0.98] uppercase tracking-[0.2em] shadow-md"
+                            : "px-8 py-3 bg-indigo-600 text-white font-black text-sm rounded-xl hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-500/20 transition-all active:scale-[0.98] uppercase tracking-widest"}
                     >
-                        Confirmar Configuración
+                        {boardsOnly ? 'Cerrar' : 'Confirmar Configuración'}
                     </button>
                 </div>
             </div>
         </div>
     );
+
+    // createPortal escapa el subtree de cualquier transform/overflow del padre
+    // — fundamental porque ProjectsList se renderiza dentro de un wrapper con
+    // animate-premium-fade que crea stacking context y atraparía un `fixed`.
+    return createPortal(modalNode, document.body);
 };
 
 export const SettingsModal = React.memo(SettingsModalComponent);

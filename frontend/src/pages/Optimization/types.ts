@@ -25,7 +25,7 @@ export interface OptimizationConfig {
         left: number;
         right: number;
     };
-    strategy: 'MAX_SAVINGS' | 'SIMPLE_CUTS';
+    strategy: 'MAX_SAVINGS' | 'SIMPLE_CUTS' | 'BALANCED';
     cutDirection: 'OPTIMAL' | 'HORIZONTAL' | 'VERTICAL';
     boardWidth: number;
     boardHeight: number;
@@ -43,4 +43,9 @@ export interface OptimizationConfig {
     clientName: string;
     workOrder: string; // Internal / Visual
     labelInfo: string;
+
+    /** Origen del corte: la esquina del tablero desde donde el algoritmo
+     *  empieza a colocar piezas. El optimizador genera el plan en (0,0) y
+     *  luego refleja coordenadas para llegar a la esquina elegida. */
+    originCorner?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 }

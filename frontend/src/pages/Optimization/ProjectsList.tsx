@@ -13,15 +13,45 @@ import { RangeDatePicker } from '../../components/RangeDatePicker';
 import { Calendar } from 'lucide-react';
 
 import { createPortal } from 'react-dom';
+import { SettingsModal } from './components/SettingsModal';
+import type { OptimizationConfig } from './types';
 
 export const ProjectsList = () => {
     const [projects, setProjects] = useState<OptimizationFlow[]>([]);
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
+    const [isBoardsOpen, setIsBoardsOpen] = useState(false);
+    const [boardsCustom, setBoardsCustom] = useState<{id: string, label: string, w: number, h: number, number?: number, name: string, veta: boolean}[]>([]);
+    // Config "stub" para que el modal pueda funcionar fuera del flujo de
+    // optimización. El usuario solo edita tableros desde aquí; los demás
+    // campos del config no se muestran (boardsOnly=true).
+    const [boardsStubConfig, setBoardsStubConfig] = useState<OptimizationConfig>({
+        sawKerf: 3,
+        trimming: { top: 10, bottom: 10, left: 10, right: 10 },
+        strategy: 'SIMPLE_CUTS',
+        cutDirection: 'OPTIMAL',
+        boardWidth: 2440,
+        boardHeight: 1830,
+        grainDirection: 'HORIZONTAL',
+        preFresado: 0,
+        material: '',
+        edgeThickness1: 0.4,
+        edgeThickness2: 2,
+        clientName: '',
+        workOrder: '',
+        labelInfo: ''
+    });
     const navigate = useNavigate();
     const [showDatePicker, setShowDatePicker] = useState(false);
     const datePickerRef = useRef<HTMLDivElement>(null);
+
+    // Refrescar el catálogo cada vez que se abre el modal de Tableros para que
+    // muestre cualquier cambio hecho desde otra parte del ERP.
+    useEffect(() => {
+        if (!isBoardsOpen) return;
+        api.getCustomBoards().then(setBoardsCustom).catch(() => {});
+    }, [isBoardsOpen]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -189,14 +219,36 @@ export const ProjectsList = () => {
                         <h1 className="text-3xl font-[800] text-[#2c3434] tracking-tight uppercase">Optimizaciones</h1>
                     </div>
                 </div>
-                <button 
-                    onClick={() => setIsModalOpen(true)}
-                    className="flex items-center gap-2 px-8 py-4 bg-[#4A90E2] hover:bg-[#357ABD] text-white font-bold rounded-[12px] transition-all shadow-lg shadow-blue-500/20 active:scale-95 group"
-                >
-                    <span className="material-icons-round group-hover:rotate-90 transition-transform">add</span>
-                    Nueva Venta
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setIsBoardsOpen(true)}
+                        className="flex items-center gap-2 px-6 py-4 bg-white hover:bg-[#f0f5f4] text-[#366480] font-bold rounded-[12px] transition-all shadow-sm border border-[#d3dcdb]/40 active:scale-95"
+                    >
+                        <span className="material-icons-round">dashboard</span>
+                        Tableros
+                    </button>
+                    <button
+                        onClick={() => setIsModalOpen(true)}
+                        className="flex items-center gap-2 px-8 py-4 bg-[#4A90E2] hover:bg-[#357ABD] text-white font-bold rounded-[12px] transition-all shadow-lg shadow-blue-500/20 active:scale-95 group"
+                    >
+                        <span className="material-icons-round group-hover:rotate-90 transition-transform">add</span>
+                        Nueva Venta
+                    </button>
+                </div>
             </header>
+
+            {isBoardsOpen && (
+                <SettingsModal
+                    isOpen={isBoardsOpen}
+                    onClose={() => setIsBoardsOpen(false)}
+                    config={boardsStubConfig}
+                    setConfig={setBoardsStubConfig}
+                    viewMode={'COMMANDS'}
+                    setViewMode={() => {}}
+                    initialCustomBoards={boardsCustom}
+                    boardsOnly
+                />
+            )}
 
             {/* RELOCATED FILTER BAR: From SalesTreasury Interface */}
             <div className="relative z-[60] bg-white/70 backdrop-blur-md rounded-[24px] border border-white/40 shadow-premium">

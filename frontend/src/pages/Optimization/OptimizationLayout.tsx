@@ -6,7 +6,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { PieceInputPanel, PieceListPanel } from './components/PieceList';
 import { api } from '../../services/api';
 import { CuttingMap } from './components/CuttingMap';
-import { optimizeCuttingMap, type Board } from './lib/optimizationAlgorithm';
+import { optimizeCuttingMap, safeFallbackPack, type Board } from './lib/optimizationAlgorithm';
 import { SettingsModal } from './components/SettingsModal';
 import { OptimizationHistoryModal } from './components/OptimizationHistoryModal';
 import { QuotationModal } from './components/QuotationModal';
@@ -39,7 +39,8 @@ export const OptimizationLayout = () => {
         edgeThickness2: 2,
         clientName: '',
         workOrder: 'OPT-XXXXXX',
-        labelInfo: ''
+        labelInfo: '',
+        originCorner: 'top-left',
     });
 
     const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -300,11 +301,25 @@ export const OptimizationLayout = () => {
         setShowRecoveryModal(false);
     };
 
-    const handleOptimize = () => {
+    const handleOptimize = async () => {
         setIsOptimizing(true);
         // Clear previous boards immediately so the CuttingMap always transitions
         // empty → new result, regardless of whether board count changes between strategies.
         setBoards([]);
+
+        // Refrescar custom_boards desde la BD justo antes de optimizar. El
+        // SettingsModal mantiene su PROPIA copia de customBoards y nunca
+        // notifica al padre cuando el usuario edita la veta de un tablero.
+        // Sin este fetch, handleOptimize lee veta obsoleta y, p. ej., al
+        // marcar veta=TRUE en un material seguía rotando piezas. Recargar
+        // aquí garantiza que el plan refleja siempre el estado actual.
+        let freshCustomBoards = customBoards;
+        try {
+            freshCustomBoards = await api.getCustomBoards();
+            setCustomBoards(freshCustomBoards);
+        } catch (e) {
+            console.warn('No se pudo refrescar custom boards antes de optimizar; usando caché.', e);
+        }
 
         // Defer computation to next tick so isOptimizing=true renders first (button grays out).
         // Avoids startTransition which can be interrupted by concurrent-mode urgent updates,
@@ -321,8 +336,14 @@ export const OptimizationLayout = () => {
             });
 
             const allBoards: import('./lib/optimizationAlgorithm').Board[] = [];
+            // Si CUALQUIER grupo (un material) falla la optimización principal o
+            // su auditoría, caemos en el plan B determinista para ese grupo y
+            // notificamos al usuario. El ERP nunca se queda sin plan.
+            const fallbackMaterials: string[] = [];
+            let hardError: string | null = null;
+
             materialGroups.forEach((groupPieces, matKey) => {
-                const matchedBoard = customBoards.find(b => b.number?.toString() === matKey);
+                const matchedBoard = freshCustomBoards.find(b => b.number?.toString() === matKey);
                 const bw = matchedBoard?.w ?? config.boardWidth;
                 const bh = matchedBoard?.h ?? config.boardHeight;
                 const bName = matchedBoard?.name
@@ -336,7 +357,30 @@ export const OptimizationLayout = () => {
                     ? groupPieces.map(p => ({ ...p, matchGrain: true }))
                     : groupPieces;
 
-                const resultBoards = optimizeCuttingMap(piecesForOpt, bw, bh, config);
+                let resultBoards: import('./lib/optimizationAlgorithm').Board[];
+                try {
+                    resultBoards = optimizeCuttingMap(piecesForOpt, bw, bh, config);
+                } catch (err: any) {
+                    const errMsg = err?.message || String(err);
+                    console.warn(`[Optimización ${bName}] falló: ${errMsg}`);
+                    
+                    // Si el error es por datos de entrada inválidos (pieza gigante, config errónea),
+                    // reportarlo directamente al usuario en lugar de aplicar el plan B ineficiente.
+                    if (errMsg.includes('área útil') || errMsg.includes('inválid') || errMsg.includes('corruptos')) {
+                        hardError = errMsg;
+                        resultBoards = [];
+                    } else {
+                        console.warn(`Aplicando plan B determinista para ${bName}.`);
+                        try {
+                            resultBoards = safeFallbackPack(piecesForOpt, bw, bh, config);
+                            fallbackMaterials.push(bName);
+                        } catch (fallbackErr: any) {
+                            console.error(`[Optimización ${bName}] plan B también falló:`, fallbackErr);
+                            hardError = errMsg;
+                            resultBoards = [];
+                        }
+                    }
+                }
                 resultBoards.forEach(b => {
                     (b as any).materialNumber = matKey;
                     (b as any).materialLabel = bName;
@@ -349,6 +393,15 @@ export const OptimizationLayout = () => {
             isManualAdjustingRef.current = true;
             setBoards(allBoards);
             setIsOptimizing(false);
+
+            if (hardError) {
+                showToast(`Optimización rechazada: ${hardError}`, 'error');
+            } else if (fallbackMaterials.length > 0) {
+                showToast(
+                    `Plan B aplicado en: ${fallbackMaterials.join(', ')}. Revise el resultado.`,
+                    'info'
+                );
+            }
         }, 0);
     };
 
@@ -977,6 +1030,7 @@ export const OptimizationLayout = () => {
                             boardHeight={config.boardHeight}
                             sawKerf={config.sawKerf}
                             trimming={config.trimming}
+                            pieces={pieces}
                             onPiecesAdjust={(delta) => {
                                 isManualAdjustingRef.current = true;
                                 setPieces(prev => prev.map(p => {

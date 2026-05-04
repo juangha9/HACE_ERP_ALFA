@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 import type { Board, PlacedPiece } from '../lib/optimizationAlgorithm';
+import type { Piece } from '../types';
 
 interface CuttingMapProps {
     boards: Board[];
@@ -15,6 +16,11 @@ interface CuttingMapProps {
      *  El padre debe marcar isManualAdjustingRef antes de mutar pieces para
      *  evitar que el efecto de geometry vacíe `boards` y reinicie el manual. */
     onPiecesAdjust?: (delta: Record<string, number>) => void;
+    /** Plantillas de piezas (filas de la tabla). Necesarias para leer el
+     *  `matchGrain` ACTUAL al rotar — el `PlacedPiece` lo lleva congelado
+     *  desde el optimize, así que cambios posteriores en la veta del
+     *  custom_board no se reflejarían sin esta consulta dinámica. */
+    pieces?: Piece[];
 }
 
 const DESATURATED_COLORS = [
@@ -72,7 +78,17 @@ interface DragCtx {
 
 const matKeyOf = (board: Board) => board.materialNumber || 'default';
 
-export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trimming, onPiecesAdjust }: CuttingMapProps) => {
+export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trimming, onPiecesAdjust, pieces }: CuttingMapProps) => {
+    // Mapa pieceTemplateId → matchGrain actual. Se reconstruye cuando el padre
+    // cambia el array de pieces (p.ej. al togglearse la veta de un material).
+    // Espejado en ref para que `rotateSelection` lea el valor más reciente sin
+    // depender del closure del render previo.
+    const grainByTemplateRef = useRef<Map<string, boolean>>(new Map());
+    useEffect(() => {
+        const m = new Map<string, boolean>();
+        if (pieces) for (const p of pieces) m.set(p.id, !!p.matchGrain);
+        grainByTemplateRef.current = m;
+    }, [pieces]);
     // Constantes de geometría usadas en validación y snap magnético.
     const kerf = Math.max(0, sawKerf ?? 0);
     const trim = {
@@ -920,11 +936,18 @@ export const CuttingMap = memo(({ boards, boardWidth, boardHeight, sawKerf, trim
         const selectedPieces = board.placedPieces.filter(p => selectedIds.has(p.id));
         if (selectedPieces.length === 0) return;
 
-        // Veta: si alguna pieza tiene matchGrain (heredado del custom_board.veta
-        // del material), bloquear la rotación entera del grupo. La veta es una
-        // restricción del material — rotarla cambiaría la dirección y arruinaría
-        // el corte.
-        const grainLocked = selectedPieces.find(p => p.matchGrain);
+        // Veta: si alguna pieza tiene matchGrain bloquear la rotación. Leer
+        // del template (vía grainByTemplateRef), NO de p.matchGrain, porque
+        // el PlacedPiece lleva el valor congelado al momento de optimizar:
+        // si el usuario cambió después la veta del custom_board, el cambio
+        // ya está reflejado en el template (parent's pieces) pero no en la
+        // pieza colocada. La fuente de verdad actual es el template.
+        const grainMap = grainByTemplateRef.current;
+        const grainLocked = selectedPieces.find(p => {
+            const tplGrain = grainMap.get(p.pieceTemplateId);
+            // Si no encuentro el template (raro), fallback al valor congelado.
+            return tplGrain ?? !!p.matchGrain;
+        });
         if (grainLocked) {
             showError(`"${grainLocked.code}" tiene veta — no se puede rotar.`);
             return;
