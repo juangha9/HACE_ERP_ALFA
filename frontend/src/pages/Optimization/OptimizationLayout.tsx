@@ -361,7 +361,7 @@ export const OptimizationLayout = () => {
             const bh = matchedBoard?.h ?? config.boardHeight;
             const bName = matchedBoard?.name ?? (matKey !== '0' ? `MAT.${matKey}` : 'Sin material');
             const piecesForOpt = matchedBoard?.veta ? groupPieces.map(p => ({ ...p, matchGrain: true })) : groupPieces;
-            const { population, evaluateSequence } = prepareEvolution(piecesForOpt, bw, bh, config);
+            const { population, evaluateSequence } = prepareEvolution(piecesForOpt, bw, bh, config, true);
             trainingMap.set(matKey, { population, evalFn: evaluateSequence, bestScore: -Infinity, bestBoards: [], bw, bh, bName, matKey });
         });
 
@@ -375,8 +375,8 @@ export const OptimizationLayout = () => {
 
             const updatedBoards: Board[] = [];
             trainingDataRef.current.forEach((data) => {
-                // Perform 25 generations per tick for HIGH-INTENSITY training
-                for (let i = 0; i < 25; i++) {
+                // Perform 100 generations per tick for ULTRA-HIGH-INTENSITY training
+                for (let i = 0; i < 100; i++) {
                     const { nextPopulation, bestInStep } = evolveStep(data.population, data.bw, data.bh, config, data.evalFn);
                     data.population = nextPopulation;
                     if (bestInStep.score > data.bestScore) {

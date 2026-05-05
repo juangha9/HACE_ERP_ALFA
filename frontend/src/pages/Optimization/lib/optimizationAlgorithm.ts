@@ -97,29 +97,35 @@ export function evolveStep(
             child = [...p1];
         }
 
-        // DIVERSE MUTATIONS
-        const mutProb = Math.random();
-        if (mutProb < 0.5) {
-            const i1 = Math.floor(Math.random() * child.length);
-            const i2 = Math.floor(Math.random() * child.length);
-            [child[i1], child[i2]] = [child[i2], child[i1]];
-        } else if (mutProb < 0.75) {
-            const start = Math.floor(Math.random() * child.length);
-            const end = Math.floor(Math.random() * (child.length - start)) + start;
-            const sub = child.slice(start, end + 1).reverse();
-            for (let i = 0; i < sub.length; i++) child[start + i] = sub[i];
-        } else if (mutProb < 0.95) {
-            const i1 = Math.floor(Math.random() * child.length);
-            const val = child.splice(i1, 1)[0];
-            const i2 = Math.floor(Math.random() * child.length);
-            child.splice(i2, 0, val);
+        // DIVERSE MUTATIONS (Aumentado al 40% para búsqueda exhaustiva)
+        if (Math.random() < 0.40) {
+            const mutType = Math.random();
+            if (mutType < 0.50) {
+                // 1. SWAP
+                const i1 = Math.floor(Math.random() * child.length);
+                const i2 = Math.floor(Math.random() * child.length);
+                [child[i1], child[i2]] = [child[i2], child[i1]];
+            } else if (mutType < 0.75) {
+                // 2. REVERSE
+                const start = Math.floor(Math.random() * child.length);
+                const end = Math.floor(Math.random() * (child.length - start)) + start;
+                const sub = child.slice(start, end + 1).reverse();
+                for (let i = 0; i < sub.length; i++) child[start + i] = sub[i];
+            } else {
+                // 3. SCRAMBLE
+                const i1 = Math.floor(Math.random() * child.length);
+                const val = child.splice(i1, 1)[0];
+                const i2 = Math.floor(Math.random() * child.length);
+                child.splice(i2, 0, val);
+            }
         }
 
         nextGen.push(child);
     }
 
     // 3. ENTROPY (Injection of new random individuals)
-    const entropyCount = Math.floor(POPULATION_SIZE * 0.10); // 10% new blood
+    // Aumentado a 35% para el entrenamiento para asegurar que NUNCA se detenga la variación
+    const entropyCount = Math.floor(POPULATION_SIZE * 0.35); 
     for (let i = 0; i < entropyCount; i++) {
         const seq = [...population[0]];
         for (let j = seq.length - 1; j > 0; j--) {
@@ -140,7 +146,7 @@ export function optimizeCuttingMap(
 ): Board[] {
     const { population, evaluateSequence } = prepareEvolution(pieces, boardWidth, boardHeight, config);
     let bestOverallBoards: Board[] = [], bestOverallScore = -Infinity, currentPopulation = population;
-    for (let gen = 0; gen < 200; gen++) { 
+    for (let gen = 0; gen < 1000; gen++) { // Aumentado a 1000 para búsqueda profunda
         const { nextPopulation, bestInStep } = evolveStep(currentPopulation, boardWidth, boardHeight, config, evaluateSequence);
         if (bestInStep.score > bestOverallScore) {
             bestOverallScore = bestInStep.score;
@@ -151,7 +157,7 @@ export function optimizeCuttingMap(
     return bestOverallBoards;
 }
 
-export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeight: number, config: OptimizationConfig) {
+export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeight: number, config: OptimizationConfig, trainingMode: boolean = false) {
     const kerf = config.sawKerf;
     const itemsToPlace: ItemToPlace[] = [];
     pieces.forEach((p, idx) => {
@@ -166,18 +172,21 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
     const evaluateSequence = (indices: number[]): { boards: Board[], score: number } => {
         const activeBoards: Board[] = [];
         const boardsFreeSpace: Map<string, Rect[]> = new Map();
+        const boardsMasterCutDir: Map<string, 'H' | 'V' | null> = new Map(); // Track dominant cut
         const simulatedItems = itemsToPlace.map(it => ({ ...it }));
 
         const createBoard = (): Board => {
             const b = { id: `board-${activeBoards.length + 1}`, width: boardWidth, height: boardHeight, placedPieces: [], usedArea: 0 };
             activeBoards.push(b);
             boardsFreeSpace.set(b.id, [{ x: config.trimming.left, y: config.trimming.top, w: boardWidth - config.trimming.left - config.trimming.right + kerf, h: boardHeight - config.trimming.top - config.trimming.bottom + kerf }]);
+            boardsMasterCutDir.set(b.id, null);
             return b;
         };
 
         const placeInBoard = (board: Board, item: any, prevItem?: any, ignoreQuality: boolean = false) => {
             const freeRects = boardsFreeSpace.get(board.id) || [];
-            let bestRectIndex = -1, bestRotated = false, bestScore = Infinity;
+            const masterDir = boardsMasterCutDir.get(board.id);
+            let bestRectIndex = -1, bestRotated = false, bestScore = Infinity, bestIsMasterH = false, bestIsMasterV = false;
 
             for (let i = 0; i < freeRects.length; i++) {
                 const r = freeRects[i];
@@ -187,16 +196,53 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
                         let score = (wasteW * r.h) + (wasteH * r.w); 
 
                         if (!ignoreQuality) {
-                            if (wasteW < 1) score -= 100000000000000;
-                            if (wasteH < 1) score -= 100000000000000;
-                            if (prevItem) {
-                                if (Math.abs(w - prevItem.w) < 1) score -= 50000000000000;
-                                if (Math.abs(h - prevItem.h) < 1) score -= 50000000000000;
+                            if (trainingMode) {
+                                // --- LÓGICA CERTO ULTRA (SOLO ENTRENAMIENTO) ---
+                                // Detectamos si el corte atraviesa el tablero COMPLETO (Global Master Cut)
+                                const isGlobalMasterH = Math.abs(r.w - (boardWidth - config.trimming.left - config.trimming.right + kerf)) < 1 && wasteW < 0.5;
+                                const isGlobalMasterV = Math.abs(r.h - (boardHeight - config.trimming.top - config.trimming.bottom + kerf)) < 1 && wasteH < 0.5;
+                                
+                                // Detectamos si es un corte maestro dentro de su bloque actual
+                                const isBlockMasterH = wasteW < 0.5;
+                                const isBlockMasterV = wasteH < 0.5;
+
+                                // 1. RECOMPENSA: Corte Maestro Global (Atraviesa todo el tablero)
+                                if (isGlobalMasterH || isGlobalMasterV) {
+                                    score -= 2000000000000000000; // 2,000,000T (Recompensa base masiva)
+                                    
+                                    // RECOMPENSA EXTRA: Consistencia de dirección global
+                                    if (masterDir) {
+                                        if ((masterDir === 'H' && isGlobalMasterH) || (masterDir === 'V' && isGlobalMasterV)) {
+                                            score -= 8000000000000000000; // 8,000,000T (Bono por alineación perfecta)
+                                        } else {
+                                            score += 5000000000000000000; // 5,000,000T (Castigo por romper el sentido del tablero)
+                                        }
+                                    }
+                                } else if (isBlockMasterH || isBlockMasterV) {
+                                    // 2. RECOMPENSA: Corte Maestro de Bloque (Local)
+                                    score -= 500000000000000000; // 500,000T
+                                }
+
+                                // 3. RECOMPENSA: Agrupar piezas idénticas
+                                if (prevItem && (Math.abs(h - prevItem.h) < 1 || Math.abs(w - prevItem.w) < 1)) {
+                                    score -= 200000000000000000; // 200,000T
+                                }
+
+                                // 4. CASTIGO EXTREMO: Corte en L (Dispersión)
+                                if (wasteW > 2 && wasteH > 2) score += 9000000000000000000; // Casi infinito
+                            } else {
+                                // Lógica estándar
+                                if (wasteW < 1) score -= 100000000000000;
+                                if (wasteH < 1) score -= 100000000000000;
+                                if (prevItem && (Math.abs(w - prevItem.w) < 1 || Math.abs(h - prevItem.h) < 1)) score -= 50000000000000;
+                                if (wasteW > 1 && wasteH > 1) score += 500000000000000;
                             }
-                            if (wasteW > 1 && wasteH > 1) score += 500000000000000;
                         }
 
-                        if (score < bestScore) { bestScore = score; bestRectIndex = i; bestRotated = isRotated; }
+                        if (score < bestScore) { 
+                            bestScore = score; bestRectIndex = i; bestRotated = isRotated; 
+                            bestIsMasterH = wasteW < 0.5; bestIsMasterV = wasteH < 0.5;
+                        }
                     }
                 };
                 evalRot(item.w, item.h, false);
@@ -204,6 +250,12 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
             }
 
             if (bestRectIndex !== -1) {
+                // Update master direction if not set
+                if (trainingMode && !masterDir) {
+                    if (bestIsMasterH) boardsMasterCutDir.set(board.id, 'H');
+                    else if (bestIsMasterV) boardsMasterCutDir.set(board.id, 'V');
+                }
+                
                 const r = freeRects[bestRectIndex], fw = bestRotated ? item.h : item.w, fh = bestRotated ? item.w : item.h;
                 item.w = fw; item.h = fh; 
                 const newFreeRects = [...freeRects];
@@ -227,7 +279,7 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
             let placed = false;
             if (activeBoards.length === 0) createBoard();
             for (const b of activeBoards) {
-                const res = placeInBoard(b, item, lastItem, true); // ignoreQuality=true
+                const res = placeInBoard(b, item, lastItem, trainingMode ? false : true); 
                 if (res) {
                     totalLayoutScore += res.score;
                     b.placedPieces.push({
@@ -244,7 +296,7 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
             }
             if (!placed) {
                 const nb = createBoard();
-                const res = placeInBoard(nb, item, undefined, true);
+                const res = placeInBoard(nb, item, undefined, trainingMode ? false : true);
                 if (res) {
                     totalLayoutScore += res.score;
                     nb.placedPieces.push({
@@ -262,22 +314,33 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
         }
 
         // --- PHASE 2: Apply quality constraints only if we are at minimum boards ---
-        // If we have more than 1 board, the priority is ONLY reducing boards and increasing area.
-        // Once we hit 1 board (or the target number), the totalLayoutScore becomes the driver.
         let fitness: number;
-        if (activeBoards.length > 1) {
-            // Focus ONLY on fitting more pieces and using more area in board 1
-            fitness = (-activeBoards.length * 1000000000000000000) + (activeBoards[0]?.usedArea || 0);
+        if (trainingMode) {
+            // PRIORIDAD ENTRENAMIENTO: APROVECHAMIENTO MÁXIMO + CERTO
+            // 1. Penalización masiva por tableros extra (Prioridad 1)
+            const boardPenalty = activeBoards.length * 1000000000000000000000000000; 
+            
+            // 2. Bono por área total utilizada (Prioridad 2)
+            let totalUsedArea = 0;
+            activeBoards.forEach(b => totalUsedArea += b.usedArea);
+            
+            // 3. Calidad CERTO (Prioridad 3)
+            // Dividimos por un factor para que el orden NO supere el beneficio de ahorrar un tablero entero.
+            const qualityScore = totalLayoutScore / 5000; 
+
+            fitness = (-boardPenalty) + (totalUsedArea * 10000000) - qualityScore;
         } else {
-            // We have only 1 board! Now RE-RUN evaluate but WITH QUALITY constraints
-            // (In a real GA this is handled by the layout score we already added above)
-            fitness = (-activeBoards.length * 1000000000000000000) - totalLayoutScore;
+            if (activeBoards.length > 1) {
+                fitness = (-activeBoards.length * 1000000000000000000) + (activeBoards[0]?.usedArea || 0);
+            } else {
+                fitness = (-activeBoards.length * 1000000000000000000) - totalLayoutScore;
+            }
         }
 
         return { boards: activeBoards, score: fitness };
     };
 
-    let population = Array.from({ length: 5000 }, () => {
+    let population = Array.from({ length: 10000 }, () => {
         const seq = [...itemIndices];
         for (let i = seq.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -287,6 +350,12 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
     });
     population[0] = [...itemIndices].sort((a, b) => (itemsToPlace[b].w * itemsToPlace[b].h) - (itemsToPlace[a].w * itemsToPlace[a].h));
     population[1] = [...itemIndices].sort((a, b) => Math.max(itemsToPlace[b].w, itemsToPlace[b].h) - Math.max(itemsToPlace[a].w, itemsToPlace[a].h));
+    // Semilla CERTO: Agrupar por altura y luego ancho para favorecer tiras
+    population[2] = [...itemIndices].sort((a, b) => {
+        const diffH = itemsToPlace[b].h - itemsToPlace[a].h;
+        if (Math.abs(diffH) > 1) return diffH;
+        return itemsToPlace[b].w - itemsToPlace[a].w;
+    });
     return { population, itemsToPlace, evaluateSequence };
 }
 
