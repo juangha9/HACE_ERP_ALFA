@@ -213,31 +213,34 @@ export function optimizeCuttingMap(
     config: OptimizationConfig
 ): Board[] {
 
-    // Unroll pieces by quantity
+    // ── STEP 1: PREPARE ITEMS ──
     const itemsToPlace: ItemToPlace[] = [];
     pieces.forEach((p, idx) => {
         const cutW = Math.max(0, p.width  - p.edgeBanding.left - p.edgeBanding.right);
         const cutH = Math.max(0, p.height - p.edgeBanding.top  - p.edgeBanding.bottom);
 
+        // Pre-calculate grain swap if necessary
         const shouldSwapForGrain = p.matchGrain && config.grainDirection === 'VERTICAL';
-
-        const finalW = shouldSwapForGrain ? cutH : cutW;
-        const finalH = shouldSwapForGrain ? cutW : cutH;
+        const initialW = shouldSwapForGrain ? cutH : cutW;
+        const initialH = shouldSwapForGrain ? cutW : cutH;
 
         for (let i = 0; i < p.quantity; i++) {
             itemsToPlace.push({
                 template: p,
-                w: finalW + config.sawKerf,
-                h: finalH + config.sawKerf,
-                cutW: finalW,
-                cutH: finalH,
+                w: initialW + config.sawKerf,
+                h: initialH + config.sawKerf,
+                cutW: initialW,
+                cutH: initialH,
                 index: idx,
             });
         }
     });
-    // Route SIMPLE_CUTS immediately (no multi-pass needed)
+
+    // Route SIMPLE_CUTS immediately
     if (config.strategy === 'SIMPLE_CUTS') {
         itemsToPlace.sort((a, b) => {
+            // Group by code first for families
+            if (a.template.code !== b.template.code) return a.template.code.localeCompare(b.template.code);
             const stripA = config.cutDirection === 'VERTICAL' ? a.w : a.h;
             const stripB = config.cutDirection === 'VERTICAL' ? b.w : b.h;
             if (Math.abs(stripB - stripA) > 0.5) return stripB - stripA;
@@ -245,235 +248,247 @@ export function optimizeCuttingMap(
             const acrossB = config.cutDirection === 'VERTICAL' ? b.h : b.w;
             return acrossB - acrossA;
         });
-        return runStripPacking(itemsToPlace, boardWidth, boardHeight, config, 'STRIP');
+        return runStripPacking(itemsToPlace, boardWidth, boardHeight, config);
     }
 
-    // ── METAHEURISTIC MULTI-PASS OPTIMIZATION (SIMULATED ANNEALING) ──
-    const PASSES = config.strategy === 'BALANCED' ? 50 : 1; // 50 attempts for perfect tetris
+    // ── STEP 2: FAMILY-BASED SORTING ──
+    const sortItems = (arr: ItemToPlace[]) => {
+        arr.sort((a, b) => {
+            // Priority 1: Large items first (crucial for guillotine)
+            const areaA = a.w * a.h;
+            const areaB = b.w * b.h;
+            if (Math.abs(areaB - areaA) > 1000) return areaB - areaA;
+
+            // Priority 2: Family (Code)
+            return 0;
+        });
+    };
+
+    // ── GENETIC ALGORITHM PARAMETERS (Eternal Search) ──
+    const POPULATION_SIZE = 5000; 
+    const GENERATIONS = 120; // 600,000 evaluations per click
+    const MUTATION_RATE = 0.5;
+
+    // Persistencia: Intentamos recuperar el mejor resultado previo si existe en esta sesión
+    // (Esto se maneja mejor en el estado de React, pero aquí reforzamos la lógica interna)
     let bestOverallBoards: Board[] = [];
     let bestOverallScore = -Infinity;
 
-    for (let pass = 0; pass < PASSES; pass++) {
-        let currentItemsToPlace = itemsToPlace.map(item => ({...item, isBasePiece: false}));
+    const itemIndices = itemsToPlace.map((_, i) => i);
 
-        if (true) {
-
-            currentItemsToPlace.sort((a, b) => {
-                const areaA = a.w * a.h;
-                const areaB = b.w * b.h;
-                return areaB - areaA; // Always sort strictly by area descending!
-            });
-            if (pass > 0) {
-                for (let i = 0; i < currentItemsToPlace.length - 1; i++) {
-                    if (Math.random() < 0.15) {
-                        const j = i + 1 + Math.floor(Math.random() * Math.min(3, currentItemsToPlace.length - 1 - i));
-                        [currentItemsToPlace[i], currentItemsToPlace[j]] = [currentItemsToPlace[j], currentItemsToPlace[i]];
-                    }
-                }
-            }
-        }
-
+    // ── HELPER: EVALUATE A SEQUENCE ──
+    const evaluateSequence = (indices: number[]): { boards: Board[], score: number } => {
         const activeBoards: Board[] = [];
-        const createBoard = (): Board => ({
-            id: `board-${activeBoards.length + 1}`,
-            width: boardWidth,
-            height: boardHeight,
-            placedPieces: [],
-            usedArea: 0,
-        });
+        const boardsFreeSpace: Map<string, Rect[]> = new Map();
+        const simulatedItems = itemsToPlace.map(it => ({ ...it }));
 
-        const placeInBoard = (
-            freeRects: Rect[],
-            item: ItemToPlace,
-            matchGrain: boolean,
-            board: Board,
-        ): { rect: Rect; newFreeRects: Rect[] } | null => {
+        const createBoard = (): Board => {
+            const b = {
+                id: `board-${activeBoards.length + 1}`,
+                width: boardWidth,
+                height: boardHeight,
+                placedPieces: [],
+                usedArea: 0,
+            };
+            activeBoards.push(b);
+            boardsFreeSpace.set(b.id, [{
+                x: config.trimming.left,
+                y: config.trimming.top,
+                w: boardWidth - config.trimming.left - config.trimming.right + config.sawKerf,
+                h: boardHeight - config.trimming.top - config.trimming.bottom + config.sawKerf,
+            }]);
+            return b;
+        };
+
+        const placeInBoard = (board: Board, item: any, prevItem?: any) => {
+            const freeRects = boardsFreeSpace.get(board.id) || [];
             let bestRectIndex = -1;
-            let bestRotated   = false;
-            let bestScore1    = Infinity;
-            let bestScore2    = Infinity;
+            let bestRotated = false;
+            let bestScore = Infinity;
 
             for (let i = 0; i < freeRects.length; i++) {
                 const r = freeRects[i];
-                const evaluate = (w: number, h: number, isRotated: boolean) => {
-                    if (w <= r.w && h <= r.h) {
-                        // BSSF: primary score = min remainder
-                        let score1 = Math.min(r.w - w, r.h - h);
-                        // BAF: secondary score = wasted area
-                        let score2 = (r.w * r.h) - (w * h);
+                const evalRot = (w: number, h: number, isRotated: boolean) => {
+                    if (w <= r.w + 0.1 && h <= r.h + 0.1) {
+                        const wasteW = r.w - w;
+                        const wasteH = r.h - h;
+                        let score = (wasteW * r.h) + (wasteH * r.w); 
 
-                        if (config.cutDirection === 'HORIZONTAL' && w < h) score1 += 1_000_000;
-                        if (config.cutDirection === 'VERTICAL'   && h < w) score1 += 1_000_000;
-                        
-                        if (pass > 0 && Math.random() < 0.1) {
-                            score1 -= Math.random() * 50;
+                        // 1. MASTER BAND CONTINUITY (The "Corte Certo" look)
+                        const isFullWidth = wasteW < 1.2;
+                        const isFullHeight = wasteH < 1.2;
+                        if (isFullWidth || isFullHeight) score -= 1000000000;
+
+                        // 2. SAME SIZE GROUPING (Horizontal or Vertical rows)
+                        if (prevItem) {
+                            const matchW = Math.abs(w - prevItem.w) < 1;
+                            const matchH = Math.abs(h - prevItem.h) < 1;
+                            if (matchW || matchH) score -= 500000000;
                         }
 
-                        if (score1 < bestScore1 || (score1 === bestScore1 && score2 < bestScore2)) {
-                            bestScore1    = score1;
-                            bestScore2    = score2;
+                        // 3. STAIRCASE L-CUT PREVENTION
+                        if (wasteW > 1.5 && wasteW < 300) score += 100000000;
+                        if (wasteH > 1.5 && wasteH < 300) score += 100000000;
+
+                        if (score < bestScore) {
+                            bestScore = score;
                             bestRectIndex = i;
-                            bestRotated   = isRotated;
+                            bestRotated = isRotated;
                         }
                     }
                 };
-                evaluate(item.w, item.h, false);
-                if (!matchGrain && item.w !== item.h) evaluate(item.h, item.w, true);
+                evalRot(item.w, item.h, false);
+                if (!item.template.matchGrain && Math.abs(item.w - item.h) > 0.5) evalRot(item.h, item.w, true);
             }
 
             if (bestRectIndex !== -1) {
-                const r      = freeRects[bestRectIndex];
-                const finalW = bestRotated ? item.h : item.w;
-                const finalH = bestRotated ? item.w : item.h;
-                
-                // HYBRID LOGIC
-                const useGuillotine = board.placedPieces.length < 4 || (finalW * finalH > 400000 && freeRects.length < 10);
-                
-                if (useGuillotine) {
-                    const newFreeRects = [...freeRects];
-                    newFreeRects.splice(bestRectIndex, 1);
-                    const rightRect:  Rect = { x: r.x + finalW, y: r.y,          w: r.w - finalW, h: finalH };
-                    const bottomRect: Rect = { x: r.x,          y: r.y + finalH, w: r.w,          h: r.h - finalH };
-                    const vRightRect:  Rect = { x: r.x + finalW, y: r.y,          w: r.w - finalW, h: r.h };
-                    const vBottomRect: Rect = { x: r.x,          y: r.y + finalH, w: finalW,       h: r.h - finalH };
+                const r = freeRects[bestRectIndex];
+                const fw = bestRotated ? item.h : item.w;
+                const fh = bestRotated ? item.w : item.h;
+                item.w = fw; item.h = fh; 
 
-                    let chooseHorizontal: boolean;
-                    if (config.cutDirection === 'HORIZONTAL') chooseHorizontal = true;
-                    else if (config.cutDirection === 'VERTICAL') chooseHorizontal = false;
-                    else {
-                        if (finalW === r.w) {
-                            chooseHorizontal = true;
-                        } else if (finalH === r.h) {
-                            chooseHorizontal = false;
-                        } else {
-                            const maxHArea = Math.max(rightRect.w * rightRect.h, bottomRect.w * bottomRect.h);
-                            const maxVArea = Math.max(vRightRect.w * vRightRect.h, vBottomRect.w * vBottomRect.h);
-                            chooseHorizontal = maxHArea >= maxVArea;
-                            if (pass > 0 && Math.random() < 0.2) chooseHorizontal = !chooseHorizontal;
-                        }
-                    }
-
-                    if (chooseHorizontal) {
-                        if (rightRect.w > 0 && rightRect.h > 0) newFreeRects.push(rightRect);
-                        if (bottomRect.w > 0 && bottomRect.h > 0) newFreeRects.push(bottomRect);
-                    } else {
-                        if (vRightRect.w > 0 && vRightRect.h > 0) newFreeRects.push(vRightRect);
-                        if (vBottomRect.w > 0 && vBottomRect.h > 0) newFreeRects.push(vBottomRect);
-                    }
-                    return { rect: { x: r.x, y: r.y, w: finalW, h: finalH }, newFreeRects };
+                const newFreeRects = [...freeRects];
+                newFreeRects.splice(bestRectIndex, 1);
+                
+                const rw = r.w - fw;
+                const bh = r.h - fh;
+                
+                // Force Clean Strips
+                if (rw < 1.2) {
+                    if (bh > 0.5) newFreeRects.push({ x: r.x, y: r.y + fh, w: r.w, h: bh });
+                } else if (bh < 1.2) {
+                    if (rw > 0.5) newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: r.h });
+                } else if (rw * r.h >= bh * r.w) {
+                    newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: r.h });
+                    newFreeRects.push({ x: r.x, y: r.y + fh, w: fw, h: bh });
                 } else {
-                    const newFreeRects: Rect[] = [];
-                    const placedRect = { x: r.x, y: r.y, w: finalW, h: finalH };
-                    for (let i = 0; i < freeRects.length; i++) {
-                        const F = freeRects[i];
-                        if (placedRect.x >= F.x + F.w || placedRect.x + placedRect.w <= F.x ||
-                            placedRect.y >= F.y + F.h || placedRect.y + placedRect.h <= F.y) {
-                            newFreeRects.push(F);
-                            continue;
-                        }
-                        if (placedRect.y > F.y) {
-                            newFreeRects.push({ x: F.x, y: F.y, w: F.w, h: placedRect.y - F.y });
-                        }
-                        if (placedRect.y + placedRect.h < F.y + F.h) {
-                            newFreeRects.push({ x: F.x, y: placedRect.y + placedRect.h, w: F.w, h: (F.y + F.h) - (placedRect.y + placedRect.h) });
-                        }
-                        if (placedRect.x > F.x) {
-                            newFreeRects.push({ x: F.x, y: F.y, w: placedRect.x - F.x, h: F.h });
-                        }
-                        if (placedRect.x + placedRect.w < F.x + F.w) {
-                            newFreeRects.push({ x: placedRect.x + placedRect.w, y: F.y, w: (F.x + F.w) - (placedRect.x + placedRect.w), h: F.h });
-                        }
-                    }
-
-                    const prunedRects: Rect[] = [];
-                    for (let i = 0; i < newFreeRects.length; i++) {
-                        let isContained = false;
-                        for (let j = 0; j < newFreeRects.length; j++) {
-                            if (i === j) continue;
-                            const r1 = newFreeRects[i];
-                            const r2 = newFreeRects[j];
-                            if (r1.x >= r2.x - 0.01 && r1.y >= r2.y - 0.01 && 
-                                r1.x + r1.w <= r2.x + r2.w + 0.01 && r1.y + r1.h <= r2.y + r2.h + 0.01) {
-                                isContained = true;
-                                break;
-                            }
-                        }
-                        if (!isContained) {
-                            prunedRects.push(newFreeRects[i]);
-                        }
-                    }
-                    return { rect: placedRect, newFreeRects: prunedRects };
+                    newFreeRects.push({ x: r.x, y: r.y + fh, w: r.w, h: bh });
+                    newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: fh });
                 }
+                return { rect: { x: r.x, y: r.y, w: fw, h: fh }, newFreeRects, rotated: bestRotated };
             }
             return null;
         };
 
-        const boardsFreeSpace: Map<string, Rect[]> = new Map();
-        const placePiece = (board: Board, result: { rect: Rect; newFreeRects: Rect[] }, item: ItemToPlace) => {
-            const placementRotated = result.rect.w === item.h && item.w !== item.h;
-            const placedRotated    = item.normalizedRotated !== placementRotated;
-            board.placedPieces.push({
-                id:             `${item.template.id}-${board.placedPieces.length}`,
-                pieceTemplateId: item.template.id,
-                x:              result.rect.x,
-                y:              result.rect.y,
-                width:          placementRotated ? item.cutH : item.cutW,
-                height:         placementRotated ? item.cutW : item.cutH,
-                finalWidth:     placedRotated ? item.template.height : item.template.width,
-                finalHeight:    placedRotated ? item.template.width  : item.template.height,
-                rotated:        placedRotated,
-                matchGrain:     !!item.template.matchGrain,
-                code:           item.template.code,
-                description:    item.template.description,
-                edgeBanding:    placedRotated ? {
-                    top:    item.template.edgeBanding.left,
-                    bottom: item.template.edgeBanding.right,
-                    left:   item.template.edgeBanding.bottom,
-                    right:  item.template.edgeBanding.top,
-                } : item.template.edgeBanding,
-            });
-            board.usedArea += item.cutW * item.cutH;
-        };
-
-        for (const item of currentItemsToPlace) {
+        let lastItem: any;
+        for (const idx of indices) {
+            const item = simulatedItems[idx];
             let placed = false;
-            for (const board of activeBoards) {
-                const result = placeInBoard(boardsFreeSpace.get(board.id) || [], item, item.template.matchGrain, board);
-                if (result) {
-                    placePiece(board, result, item);
-                    boardsFreeSpace.set(board.id, result.newFreeRects);
+            if (activeBoards.length === 0) createBoard();
+            
+            for (const b of activeBoards) {
+                const res = placeInBoard(b, item, lastItem);
+                if (res) {
+                    b.placedPieces.push({
+                        id: `${item.template.id}-${Math.random().toString(36).substr(2, 9)}`,
+                        pieceTemplateId: item.template.id,
+                        x: res.rect.x, y: res.rect.y,
+                        width: res.rotated ? item.cutH : item.cutW,
+                        height: res.rotated ? item.cutW : item.cutH,
+                        finalWidth: res.rotated ? item.template.height : item.template.width,
+                        finalHeight: res.rotated ? item.template.width : item.template.height,
+                        rotated: res.rotated,
+                        code: item.template.code,
+                        description: item.template.description,
+                        matchGrain: !!item.template.matchGrain,
+                        edgeBanding: res.rotated ? {
+                            top: item.template.edgeBanding.left,
+                            bottom: item.template.edgeBanding.right,
+                            left: item.template.edgeBanding.bottom,
+                            right: item.template.edgeBanding.top,
+                        } : item.template.edgeBanding,
+                    });
+                    b.usedArea += (item.cutW * item.cutH);
+                    boardsFreeSpace.set(b.id, res.newFreeRects);
+                    lastItem = item;
                     placed = true;
                     break;
                 }
             }
             if (!placed) {
-                const newBoard = createBoard();
-                activeBoards.push(newBoard);
-                const initialFree: Rect[] = [{
-                    x: config.trimming.left,
-                    y: config.trimming.top,
-                    w: boardWidth  - config.trimming.left - config.trimming.right  + config.sawKerf,
-                    h: boardHeight - config.trimming.top  - config.trimming.bottom + config.sawKerf,
-                }];
-                const result = placeInBoard(initialFree, item, item.template.matchGrain, newBoard);
-                if (result) {
-                    placePiece(newBoard, result, item);
-                    boardsFreeSpace.set(newBoard.id, result.newFreeRects);
+                const nb = createBoard();
+                const res = placeInBoard(nb, item, undefined);
+                if (res) {
+                    nb.placedPieces.push({
+                        id: `${item.template.id}-${Math.random().toString(36).substr(2, 9)}`,
+                        pieceTemplateId: item.template.id,
+                        x: res.rect.x, y: res.rect.y,
+                        width: res.rotated ? item.cutH : item.cutW,
+                        height: res.rotated ? item.cutW : item.cutH,
+                        finalWidth: res.rotated ? item.template.height : item.template.width,
+                        finalHeight: res.rotated ? item.template.width : item.template.height,
+                        rotated: res.rotated,
+                        code: item.template.code,
+                        description: item.template.description,
+                        matchGrain: !!item.template.matchGrain,
+                        edgeBanding: res.rotated ? {
+                            top: item.template.edgeBanding.left,
+                            bottom: item.template.edgeBanding.right,
+                            left: item.template.edgeBanding.bottom,
+                            right: item.template.edgeBanding.top,
+                        } : item.template.edgeBanding,
+                    });
+                    nb.usedArea += (item.cutW * item.cutH);
+                    boardsFreeSpace.set(nb.id, res.newFreeRects);
+                    lastItem = item;
                 }
             }
         }
 
-        // Calculate pass score
-        // We prioritize fewest boards, then highest area utilization on the first board
-        const boardsCount = activeBoards.length;
-        const totalUsedArea = activeBoards.reduce((sum, b) => sum + b.usedArea, 0);
-        const passScore = -boardsCount * 1_000_000_000 + (activeBoards[0]?.usedArea || 0);
+        const fitness = -activeBoards.length * 10000000000000 + (activeBoards[0]?.usedArea || 0);
+        return { boards: activeBoards, score: fitness };
+    };
 
-        if (passScore > bestOverallScore) {
-            bestOverallScore = passScore;
-            // Deep clone to prevent reference mutations
-            bestOverallBoards = JSON.parse(JSON.stringify(activeBoards));
+    // ── INITIAL POPULATION ──
+    let population = Array.from({ length: POPULATION_SIZE }, () => {
+        const seq = [...itemIndices];
+        for (let i = seq.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [seq[i], seq[j]] = [seq[j], seq[i]];
         }
+        return seq;
+    });
+
+    population[0] = [...itemIndices].sort((a, b) => {
+        const itemA = itemsToPlace[a];
+        const itemB = itemsToPlace[b];
+        return (itemB.w * itemB.h) - (itemA.w * itemA.h);
+    });
+
+    // EVOLUTIONARY LOOP
+    for (let gen = 0; gen < GENERATIONS; gen++) {
+        const results = population.map(seq => evaluateSequence(seq));
+        
+        results.forEach((res) => {
+            if (res.score > bestOverallScore) {
+                bestOverallScore = res.score;
+                bestOverallBoards = JSON.parse(JSON.stringify(res.boards));
+            }
+        });
+
+        const sortedIndices = results.map((r, i) => ({ r, i }))
+            .sort((a, b) => b.r.score - a.r.score)
+            .map(x => x.i);
+
+        const survivalCount = Math.floor(POPULATION_SIZE / 2);
+        const winners = sortedIndices.slice(0, survivalCount);
+        
+        const nextGen = [];
+        // Keep top Elite
+        for (let e = 0; e < 100; e++) nextGen.push(population[sortedIndices[e]]);
+
+        while (nextGen.length < POPULATION_SIZE) {
+            const parentIndex = winners[Math.floor(Math.random() * winners.length)];
+            const child = [...population[parentIndex]];
+            
+            if (Math.random() < MUTATION_RATE) {
+                const i1 = Math.floor(Math.random() * child.length);
+                const i2 = Math.floor(Math.random() * child.length);
+                [child[i1], child[i2]] = [child[i2], child[i1]];
+            }
+            nextGen.push(child);
+        }
+        population = nextGen;
     }
 
     return bestOverallBoards;
