@@ -203,8 +203,8 @@ function runStripPacking(
 }
 
 /**
- * Guillotine 2D Bin Packing — used by MAX_SAVINGS strategy.
  * Scores placements by leftover area (Best Area Fit) to maximise material utilisation.
+ * Implementation: Genetic Algorithm for global sequence optimization.
  */
 export function optimizeCuttingMap(
     pieces: Piece[],
@@ -212,6 +212,7 @@ export function optimizeCuttingMap(
     boardHeight: number,
     config: OptimizationConfig
 ): Board[] {
+    const kerf = config.sawKerf;
 
     // ── STEP 1: PREPARE ITEMS ──
     const itemsToPlace: ItemToPlace[] = [];
@@ -227,8 +228,8 @@ export function optimizeCuttingMap(
         for (let i = 0; i < p.quantity; i++) {
             itemsToPlace.push({
                 template: p,
-                w: initialW + config.sawKerf,
-                h: initialH + config.sawKerf,
+                w: initialW + kerf,
+                h: initialH + kerf,
                 cutW: initialW,
                 cutH: initialH,
                 index: idx,
@@ -239,7 +240,6 @@ export function optimizeCuttingMap(
     // Route SIMPLE_CUTS immediately
     if (config.strategy === 'SIMPLE_CUTS') {
         itemsToPlace.sort((a, b) => {
-            // Group by code first for families
             if (a.template.code !== b.template.code) return a.template.code.localeCompare(b.template.code);
             const stripA = config.cutDirection === 'VERTICAL' ? a.w : a.h;
             const stripB = config.cutDirection === 'VERTICAL' ? b.w : b.h;
@@ -251,26 +251,11 @@ export function optimizeCuttingMap(
         return runStripPacking(itemsToPlace, boardWidth, boardHeight, config);
     }
 
-    // ── STEP 2: FAMILY-BASED SORTING ──
-    const sortItems = (arr: ItemToPlace[]) => {
-        arr.sort((a, b) => {
-            // Priority 1: Large items first (crucial for guillotine)
-            const areaA = a.w * a.h;
-            const areaB = b.w * b.h;
-            if (Math.abs(areaB - areaA) > 1000) return areaB - areaA;
-
-            // Priority 2: Family (Code)
-            return 0;
-        });
-    };
-
     // ── GENETIC ALGORITHM PARAMETERS (Eternal Search) ──
     const POPULATION_SIZE = 5000; 
     const GENERATIONS = 120; // 600,000 evaluations per click
     const MUTATION_RATE = 0.5;
 
-    // Persistencia: Intentamos recuperar el mejor resultado previo si existe en esta sesión
-    // (Esto se maneja mejor en el estado de React, pero aquí reforzamos la lógica interna)
     let bestOverallBoards: Board[] = [];
     let bestOverallScore = -Infinity;
 
@@ -294,8 +279,8 @@ export function optimizeCuttingMap(
             boardsFreeSpace.set(b.id, [{
                 x: config.trimming.left,
                 y: config.trimming.top,
-                w: boardWidth - config.trimming.left - config.trimming.right + config.sawKerf,
-                h: boardHeight - config.trimming.top - config.trimming.bottom + config.sawKerf,
+                w: boardWidth - config.trimming.left - config.trimming.right + kerf,
+                h: boardHeight - config.trimming.top - config.trimming.bottom + kerf,
             }]);
             return b;
         };
@@ -449,10 +434,18 @@ export function optimizeCuttingMap(
         return seq;
     });
 
+    // Strategy 1: Sorting by Area
     population[0] = [...itemIndices].sort((a, b) => {
         const itemA = itemsToPlace[a];
         const itemB = itemsToPlace[b];
         return (itemB.w * itemB.h) - (itemA.w * itemA.h);
+    });
+
+    // Strategy 2: Sorting by Dimension (Height/Width)
+    population[1] = [...itemIndices].sort((a, b) => {
+        const itemA = itemsToPlace[a];
+        const itemB = itemsToPlace[b];
+        return Math.max(itemB.w, itemB.h) - Math.max(itemA.w, itemA.h);
     });
 
     // EVOLUTIONARY LOOP
