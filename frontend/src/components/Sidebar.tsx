@@ -14,6 +14,7 @@ export function Sidebar() {
         { to: '/', label: 'Resumen Proyecto', icon: 'dashboard_customize' },
         { to: '/presupuestador', label: 'Presupuestador', icon: 'calculate' },
         { to: '/optimizacion', label: 'Optimización', icon: 'grid_on' },
+        { to: '/cotizaciones', label: 'Cotizaciones', icon: 'receipt_long' },
         { to: '/solicitudes', label: 'Solicitudes', icon: 'request_quote' },
         { to: '/sales-treasury', label: 'Ventas y Tesorería', icon: 'account_balance_wallet' },
         { to: '/inventory', label: 'Inventario', icon: 'inventory_2' },

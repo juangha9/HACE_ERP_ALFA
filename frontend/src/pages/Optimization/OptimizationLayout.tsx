@@ -22,6 +22,7 @@ export const OptimizationLayout = () => {
     const [loadingData, setLoadingData] = useState(true);
 
     const [boards, setBoards] = useState<Board[]>([]);
+    const [aiBrainWeights, setAiBrainWeights] = useState<any>(null); // Inteligencia Global (Meta-aprendizaje)
     const [customBoards, setCustomBoards] = useState<{id: string, w: number, h: number, number?: number, name: string, label: string, veta: boolean}[]>([]);
 
     const [config, setConfig] = useState<OptimizationConfig>({
@@ -106,7 +107,14 @@ export const OptimizationLayout = () => {
             try {
                 const cb = await api.getCustomBoards();
                 setCustomBoards(cb);
-            } catch (e) { console.warn('Could not load custom boards', e); }
+                
+                // Cargar Inteligencia Global (Meta-aprendizaje) de Supabase
+                const brainData = await fetch('http://localhost:8787/api/ai-brain-weights').then(res => res.json());
+                if (brainData && brainData.length > 0) {
+                    setAiBrainWeights(brainData[0].weights);
+                    console.log("[ML] Inteligencia Global activada.");
+                }
+            } catch (e) { console.warn('Error cargando datos iniciales del ML', e); }
 
             if (projectId) {
                 try {
@@ -143,6 +151,13 @@ export const OptimizationLayout = () => {
                             if (found.data.config) {
                                 loadedConfig = { ...found.data.config, clientName: loadedName || found.data.config.clientName };
                                 setConfig(loadedConfig);
+                            }
+
+                            // Restaurar los campeones del ML (Élite de la Élite) desde Supabase
+                            if (found.best_dna) {
+                                const dnaMap = new Map();
+                                Object.entries(found.best_dna).forEach(([k, v]) => dnaMap.set(k, v));
+                                persistentBestChromosomesRef.current = dnaMap;
                             }
 
                             setIsLoadedFromHistory(true);
@@ -310,9 +325,8 @@ export const OptimizationLayout = () => {
                 const bName = matchedBoard?.name ?? (matKey !== '0' ? `MAT.${matKey}` : 'Sin material');
                 const piecesForOpt = matchedBoard?.veta ? groupPieces.map(p => ({ ...p, matchGrain: true })) : groupPieces;
 
-                let resultBoards: Board[];
                 try {
-                    resultBoards = optimizeCuttingMap(piecesForOpt, bw, bh, config);
+                    resultBoards = optimizeCuttingMap(piecesForOpt, bw, bh, config, aiBrainWeights);
                 } catch (err: any) {
                     const errMsg = err?.message || String(err);
                     if (errMsg.includes('área útil') || errMsg.includes('inválid')) {
@@ -337,7 +351,7 @@ export const OptimizationLayout = () => {
     const stopTraining = () => {
         if (trainingIntervalRef.current) { clearInterval(trainingIntervalRef.current); trainingIntervalRef.current = null; }
         setIsTraining(false); setTrainingTimeLeft(0); showToast("Entrenamiento finalizado.", 'success');
-    };
+    };    const persistentBestChromosomesRef = React.useRef<Map<string, number[]>>(new Map());
 
     const startContinuousTraining = async (minutes: number) => {
         if (isTraining) { stopTraining(); return; }
@@ -366,13 +380,18 @@ export const OptimizationLayout = () => {
             const bh = matchedBoard?.h ?? config.boardHeight;
             const bName = matchedBoard?.name ?? (matKey !== '0' ? `MAT.${matKey}` : 'Sin material');
             const piecesForOpt = matchedBoard?.veta ? groupPieces.map(p => ({ ...p, matchGrain: true })) : groupPieces;
-            const { population, evaluateSequence } = prepareEvolution(piecesForOpt, bw, bh, config, true);
+            
+            // Recuperamos la "élite de la élite" guardada para este material
+            const initialSeed = persistentBestChromosomesRef.current.get(matKey);
+            const { population, evaluateSequence } = prepareEvolution(piecesForOpt, bw, bh, config, true, initialSeed);
+            
             trainingMap.set(matKey, { population, evalFn: evaluateSequence, bestScore: -Infinity, bestBoards: [], bw, bh, bName, matKey });
         });
 
         trainingDataRef.current = trainingMap;
         const endTime = Date.now() + (seconds * 1000);
 
+        let generationCount = 0;
         trainingIntervalRef.current = setInterval(() => {
             const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
             setTrainingTimeLeft(remaining);
@@ -383,22 +402,31 @@ export const OptimizationLayout = () => {
             }
 
             const updatedBoards: Board[] = [];
+            generationCount += 10;
+
             trainingDataRef.current.forEach((data) => {
-                // Reducido a 20 generaciones por tick para balancear intensidad y fluidez de UI
-                for (let i = 0; i < 20; i++) {
-                    const { nextPopulation, bestInStep } = evolveStep(data.population, data.bw, data.bh, config, data.evalFn);
+                for (let i = 0; i < 10; i++) {
+                    const { nextPopulation, bestInStep } = evolveStep(data.population, data.bw, data.bh, config, data.evalFn, aiBrainWeights);
                     data.population = nextPopulation;
                     if (bestInStep.score > data.bestScore) {
                         data.bestScore = bestInStep.score;
                         data.bestBoards = JSON.parse(JSON.stringify(bestInStep.boards));
+                        // GUARDAMOS LA ÉLITE DE LA ÉLITE
+                        persistentBestChromosomesRef.current.set(data.matKey, [...(bestInStep as any).chromosome]);
                     }
                 }
+
                 data.bestBoards.forEach(b => { (b as any).materialNumber = data.matKey; (b as any).materialLabel = data.bName; });
                 updatedBoards.push(...data.bestBoards);
             });
             
+            if (generationCount % 100 === 0) {
+                console.log(`[ML Training] Gen: ${generationCount} | Sigue buscando mejoría...`);
+            }
+            
             isManualAdjustingRef.current = true;
             setBoards(updatedBoards);
+            setTimeout(() => { isManualAdjustingRef.current = false; }, 50);
         }, 500); 
     };
 
@@ -430,7 +458,33 @@ export const OptimizationLayout = () => {
                 else { const newOtp = await api.getNextWorkOrder(); finalCode = `${newOtp.split('-V')[0]}-V${nextVer}`; }
                 finalId = null;
             }
-            const payload = { id: finalId || undefined, code: finalCode, origin_type: originType, project_id: selectedProject?.id || null, status: finalStatus, project_name: projectName || 'Optimización Sin Nombre', work_order: finalCode ? finalCode.replace('OPT-', 'OT-') : config.workOrder, client_name: config.clientName, boards_count: stats.boards, waste_percent: parseFloat(stats.wastePercent), total_pieces: pieces.reduce((sum, p) => sum + p.quantity, 0), saw_kerf: config.sawKerf, grain_direction: config.grainDirection, data: { projectName: projectName || 'Optimización Sin Nombre', pieces, boards, stats, config: { ...config, workOrder: finalCode ? finalCode.replace('OPT-', 'OT-') : config.workOrder }, version: finalVersion } };
+            // Convertimos el Map de cromosomas a un objeto para JSONB
+            const bestDnaObj = Object.fromEntries(persistentBestChromosomesRef.current);
+
+            const payload = { 
+                id: finalId || undefined, 
+                code: finalCode, 
+                origin_type: originType, 
+                project_id: selectedProject?.id || null, 
+                status: finalStatus, 
+                project_name: projectName || 'Optimización Sin Nombre', 
+                work_order: finalCode ? finalCode.replace('OPT-', 'OT-') : config.workOrder, 
+                client_name: config.clientName, 
+                boards_count: stats.boards, 
+                waste_percent: parseFloat(stats.wastePercent), 
+                total_pieces: pieces.reduce((sum, p) => sum + p.quantity, 0), 
+                saw_kerf: config.sawKerf, 
+                grain_direction: config.grainDirection, 
+                best_dna: bestDnaObj, // GUARDAMOS LA ÉLITE EN LA NUBE
+                data: { 
+                    projectName: projectName || 'Optimización Sin Nombre', 
+                    pieces, 
+                    boards, 
+                    stats, 
+                    config: { ...config, workOrder: finalCode ? finalCode.replace('OPT-', 'OT-') : config.workOrder }, 
+                    version: finalVersion 
+                } 
+            };
             const res = await fetch('http://localhost:8787/api/optimizations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!res.ok) throw new Error(await res.text());
             const savedData = await res.json();
@@ -440,6 +494,29 @@ export const OptimizationLayout = () => {
             const sessionKey = `erp_optimization_session_${projectId || 'new'}`; localStorage.removeItem(sessionKey);
             setInitialHash(JSON.stringify({ pieces, boards, config, projectName: projectName || 'Optimización Sin Nombre' }));
             if (finalStatus === 'LISTO_CORTE') await api.syncQuotationToTreasury(savedData.id);
+
+            // META-APRENDIZAJE: Actualizar el "Cerebro Global" con los pesos actuales si el resultado fue bueno
+            if (stats.wastePercent < 15) { // Solo aprendemos de optimizaciones con menos de 15% de desperdicio
+                try {
+                    await fetch('http://localhost:8787/api/ai-brain-weights', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            material_type: 'DEFAULT', 
+                            weights: aiBrainWeights || {
+                                fragmentation_penalty: 2000000000000000,
+                                family_grouping_bonus: 8000000000000000000,
+                                guillotine_consistency: 18000000000000000000,
+                                master_cut_reward: 6000000000000000000,
+                                l_cut_penalty: 25000000000000000000,
+                                rotation_bonus: 2000000000000
+                            }
+                        })
+                    });
+                    console.log("[ML] Cerebro Global actualizado con éxito.");
+                } catch (e) { console.warn("[ML] No se pudo actualizar el cerebro global."); }
+            }
+
             showToast(`${finalId === null && isLoadedFromHistory ? 'Nueva versión' : 'Optimización'} guardada.`, 'success');
         } catch (e) { console.error(e); showToast("Error al guardar.", 'error'); }
         finally { setIsSaving(false); }

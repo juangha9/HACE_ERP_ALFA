@@ -13,6 +13,7 @@ import PresupuestadorWizard from './pages/Presupuestador/PresupuestadorWizard';
 import PresupuestadorDashboard from './pages/Presupuestador/PresupuestadorDashboard';
 import { SalesTreasuryPage } from './pages/SalesTreasuryPage';
 import { SolicitudesPage } from './pages/SolicitudesPage';
+import { CotizacionesPage } from './pages/CotizacionesPage';
 
 
 // Optimization
@@ -42,6 +43,7 @@ const App = () => {
           <Route path="configuracion-almacen" element={<WarehouseConfigurationPage />} />
           <Route path="base-de-datos" element={<DatabaseExportPage />} />
           <Route path="sales-treasury" element={<SalesTreasuryPage />} />
+          <Route path="cotizaciones" element={<CotizacionesPage />} />
           <Route path="solicitudes" element={<SolicitudesPage />} />
 
 

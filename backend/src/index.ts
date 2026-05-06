@@ -605,6 +605,22 @@ export default {
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
+      // --- NEW: AI BRAIN WEIGHTS (Meta-Learning) ---
+      // 24. GET /api/ai-brain-weights -> Get global intelligence
+      if (request.method === 'GET' && url.pathname === '/api/ai-brain-weights') {
+        const { data, error } = await supabase.from('ai_brain_weights').select('*');
+        if (error) throw error;
+        return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 25. POST /api/ai-brain-weights -> Update global intelligence
+      if (request.method === 'POST' && url.pathname === '/api/ai-brain-weights') {
+        const body = await request.json(); // { material_type, weights }
+        const { data, error } = await supabase.from('ai_brain_weights').upsert(body).select();
+        if (error) throw error;
+        return new Response(JSON.stringify(data[0]), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       // 404 Route Not Found
       return new Response('Not Found', { status: 404, headers: corsHeaders });
 

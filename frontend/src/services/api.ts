@@ -1016,8 +1016,17 @@ export const api = {
             }
         });
 
+        // Include ventas from standalone cotizaciones (COT-XXXXXX).
+        // These are created by cotizacion_to_venta() and have no optimization_id,
+        // so the opts loop above never picks them up.
+        allVentas.forEach((v: any) => {
+            if (!finalVentasMap.has(v.id) && v.codigo_cotizacion?.startsWith('COT-')) {
+                finalVentasMap.set(v.id, v as VentaCabecera);
+            }
+        });
+
         // Convert map to array and sort by date descending
-        return Array.from(finalVentasMap.values()).sort((a, b) => 
+        return Array.from(finalVentasMap.values()).sort((a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         );
     },
