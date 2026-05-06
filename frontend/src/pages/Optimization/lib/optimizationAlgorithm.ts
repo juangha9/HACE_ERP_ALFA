@@ -193,7 +193,22 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
                 const evalRot = (w: number, h: number, isRotated: boolean) => {
                     if (w <= r.w + 0.1 && h <= r.h + 0.1) {
                         const wasteW = r.w - w, wasteH = r.h - h;
+                        
+                        // --- BASE SCORE: Minimizamos desperdicio local ---
                         let score = (wasteW * r.h) + (wasteH * r.w); 
+
+                        // --- RECOMPENSA POR ROTACIÓN ---
+                        // Premiamos la rotación para explorar orientaciones que puedan desbloquear 
+                        // mejores agrupaciones de espacio, especialmente en piezas rectangulares.
+                        if (isRotated) {
+                            score -= 2000000000000; // Bono de exploración de rotación
+                        }
+
+                        // --- BIAS POSICIONAL: Esquina Inferior Izquierda ---
+                        // Queremos Y máximo (abajo) y X mínimo (izquierda)
+                        // Invertimos Y en el score: a mayor Y, menor score.
+                        score += (boardHeight - (r.y + h)) * 2000000; 
+                        score += r.x * 100000;
 
                         if (!ignoreQuality) {
                             if (trainingMode) {
@@ -207,35 +222,41 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
                                 const isBlockMasterV = wasteH < 0.5;
 
                                 // 1. RECOMPENSA: Corte Maestro Global (Atraviesa todo el tablero)
+                                // Priorizamos Cortes Horizontales para crear "Bloques" tipo Certo
                                 if (isGlobalMasterH || isGlobalMasterV) {
-                                    score -= 2000000000000000000; // 2,000,000T (Recompensa base masiva)
+                                    score -= 5000000000000000000; // 5,000,000T (Recompensa base masiva)
                                     
-                                    // RECOMPENSA EXTRA: Consistencia de dirección global
+                                    // RECOMPENSA EXTRA: Consistencia de dirección global (Preferimos H para Bloques)
                                     if (masterDir) {
                                         if ((masterDir === 'H' && isGlobalMasterH) || (masterDir === 'V' && isGlobalMasterV)) {
-                                            score -= 8000000000000000000; // 8,000,000T (Bono por alineación perfecta)
+                                            score -= 10000000000000000000; // 10,000,000T (Bono por alineación perfecta)
                                         } else {
-                                            score += 5000000000000000000; // 5,000,000T (Castigo por romper el sentido del tablero)
+                                            score += 8000000000000000000; // 8,000,000T (Castigo por romper el sentido del tablero)
                                         }
+                                    } else if (isGlobalMasterH) {
+                                        score -= 2000000000000000000; // Bono extra por empezar con bloque horizontal
                                     }
                                 } else if (isBlockMasterH || isBlockMasterV) {
                                     // 2. RECOMPENSA: Corte Maestro de Bloque (Local)
-                                    score -= 500000000000000000; // 500,000T
+                                    score -= 1000000000000000000; // 1,000,000T
                                 }
 
-                                // 3. RECOMPENSA: Agrupar piezas idénticas
-                                if (prevItem && (Math.abs(h - prevItem.h) < 1 || Math.abs(w - prevItem.w) < 1)) {
-                                    score -= 200000000000000000; // 200,000T
+                                // 3. RECOMPENSA: Agrupar piezas idénticas o de la misma altura (Formación de Tiras)
+                                if (prevItem && (Math.abs(h - prevItem.h) < 0.5)) {
+                                    score -= 4000000000000000000; // 4,000,000T (Muy alto para forzar tiras)
                                 }
 
                                 // 4. CASTIGO EXTREMO: Corte en L (Dispersión)
-                                if (wasteW > 2 && wasteH > 2) score += 9000000000000000000; // Casi infinito
+                                // Si desperdiciamos en ambas direcciones, no es un corte recto/bloque
+                                if (wasteW > 2 && wasteH > 2) {
+                                    score += 20000000000000000000; // 20,000,000T (Casi prohibitivo)
+                                }
                             } else {
-                                // Lógica estándar
+                                // Lógica estándar (pero reforzada para Bottom-Left)
                                 if (wasteW < 1) score -= 100000000000000;
-                                if (wasteH < 1) score -= 100000000000000;
-                                if (prevItem && (Math.abs(w - prevItem.w) < 1 || Math.abs(h - prevItem.h) < 1)) score -= 50000000000000;
-                                if (wasteW > 1 && wasteH > 1) score += 500000000000000;
+                                if (wasteH < 1) score -= 200000000000000; // Preferimos tiras horizontales
+                                if (prevItem && Math.abs(h - prevItem.h) < 1) score -= 150000000000000;
+                                if (wasteW > 1 && wasteH > 1) score += 800000000000000;
                             }
                         }
 
@@ -260,11 +281,25 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
                 item.w = fw; item.h = fh; 
                 const newFreeRects = [...freeRects];
                 newFreeRects.splice(bestRectIndex, 1);
+                
                 const rw = r.w - fw, bh = r.h - fh;
-                if (rw < 1) { if (bh > 0.5) newFreeRects.push({ x: r.x, y: r.y + fh, w: r.w, h: bh }); }
-                else if (bh < 1) { if (rw > 0.5) newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: r.h }); }
-                else if (rw * r.h >= bh * r.w) { newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: r.h }); newFreeRects.push({ x: r.x, y: r.y + fh, w: fw, h: bh }); }
-                else { newFreeRects.push({ x: r.x, y: r.y + fh, w: r.w, h: bh }); newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: fh }); }
+                // --- LÓGICA DE CORTE GUILLOTINA / BLOQUES ---
+                // Si el desperdicio es despreciable en una dimensión, heredamos la otra.
+                if (rw < 0.5) { 
+                    // Tira horizontal completa (Bloque)
+                    if (bh > 0.5) newFreeRects.push({ x: r.x, y: r.y + fh, w: r.w, h: bh }); 
+                }
+                else if (bh < 0.5) { 
+                    // Tira vertical completa
+                    if (rw > 0.5) newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: r.h }); 
+                }
+                else {
+                    // Si hay desperdicio en ambos lados, DEBEMOS elegir un sentido de corte (Guillotina)
+                    // Para favorecer BLOQUES horizontales (Certo), preferimos el corte horizontal primero.
+                    // Esto significa que la pieza ocupa todo el ancho del bloque y el sobrante queda arriba.
+                    newFreeRects.push({ x: r.x, y: r.y + fh, w: r.w, h: bh }); // Resto del bloque arriba
+                    newFreeRects.push({ x: r.x + fw, y: r.y, w: rw, h: fh }); // Resto de la tira a la derecha
+                }
                 return { rect: { x: r.x, y: r.y, w: fw, h: fh }, newFreeRects, rotated: bestRotated, score: bestScore };
             }
             return null;
@@ -340,7 +375,7 @@ export function prepareEvolution(pieces: Piece[], boardWidth: number, boardHeigh
         return { boards: activeBoards, score: fitness };
     };
 
-    let population = Array.from({ length: 10000 }, () => {
+    let population = Array.from({ length: 2000 }, () => {
         const seq = [...itemIndices];
         for (let i = seq.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));

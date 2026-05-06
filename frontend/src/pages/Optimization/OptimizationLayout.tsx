@@ -342,7 +342,12 @@ export const OptimizationLayout = () => {
     const startContinuousTraining = async (minutes: number) => {
         if (isTraining) { stopTraining(); return; }
         const seconds = minutes * 60;
-        setTrainingTimeLeft(seconds); setTrainingTotalTime(seconds); setIsTraining(true); setShowTrainingMenu(false);
+        
+        // Estado inmediato para feedback visual
+        setTrainingTimeLeft(seconds); 
+        setTrainingTotalTime(seconds); 
+        setIsTraining(true); 
+        setShowTrainingMenu(false);
 
         const activePieces = pieces.filter(p => p.enabled !== false);
         const materialGroups = new Map<string, Piece[]>();
@@ -371,12 +376,16 @@ export const OptimizationLayout = () => {
         trainingIntervalRef.current = setInterval(() => {
             const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
             setTrainingTimeLeft(remaining);
-            if (remaining <= 0) { stopTraining(); return; }
+            
+            if (remaining <= 0) { 
+                stopTraining(); 
+                return; 
+            }
 
             const updatedBoards: Board[] = [];
             trainingDataRef.current.forEach((data) => {
-                // Perform 100 generations per tick for ULTRA-HIGH-INTENSITY training
-                for (let i = 0; i < 100; i++) {
+                // Reducido a 20 generaciones por tick para balancear intensidad y fluidez de UI
+                for (let i = 0; i < 20; i++) {
                     const { nextPopulation, bestInStep } = evolveStep(data.population, data.bw, data.bh, config, data.evalFn);
                     data.population = nextPopulation;
                     if (bestInStep.score > data.bestScore) {
@@ -387,9 +396,10 @@ export const OptimizationLayout = () => {
                 data.bestBoards.forEach(b => { (b as any).materialNumber = data.matKey; (b as any).materialLabel = data.bName; });
                 updatedBoards.push(...data.bestBoards);
             });
+            
             isManualAdjustingRef.current = true;
             setBoards(updatedBoards);
-        }, 100); 
+        }, 500); 
     };
 
     const stats = React.useMemo(() => {
