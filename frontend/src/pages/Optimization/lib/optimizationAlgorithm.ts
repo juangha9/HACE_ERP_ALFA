@@ -117,13 +117,13 @@ export function evolveStep(
             childFlag = p1Flag;
         }
 
-        // DIVERSE MUTATIONS (Aumentado al 60% para romper estancamientos)
-        if (Math.random() < 0.60) {
+        // DIVERSE MUTATIONS (Aumentado al 85% para romper estancamientos agresivamente)
+        if (Math.random() < 0.85) {
             const mutType = Math.random();
             const len = childIndices.length;
-            if (mutType < 0.35) {
-                // 1. SWAP (Multiple swaps for more disruption)
-                for (let k = 0; k < 2; k++) {
+            if (mutType < 0.40) {
+                // 1. MULTI-SWAP (Más disrupción)
+                for (let k = 0; k < 4; k++) {
                     const i1 = Math.floor(Math.random() * len);
                     const i2 = Math.floor(Math.random() * len);
                     [childIndices[i1], childIndices[i2]] = [childIndices[i2], childIndices[i1]];
@@ -150,8 +150,8 @@ export function evolveStep(
     }
 
     // 3. ENTROPY (Injection of new random individuals)
-    // Aumentado a 40% para el entrenamiento para asegurar que NUNCA se detenga la variación
-    const entropyCount = Math.floor(POPULATION_SIZE * 0.40); 
+    // Aumentado a 50% para asegurar que NUNCA se detenga la variación y exploración
+    const entropyCount = Math.floor(POPULATION_SIZE * 0.50); 
     for (let i = 0; i < entropyCount; i++) {
         const seq = [...population[0]];
         // Shuffle indices completely
@@ -216,14 +216,14 @@ export function prepareEvolution(
         const boardsMasterCutDir: Map<string, 'H' | 'V' | null> = new Map(); 
         const simulatedItems = itemsToPlace.map(it => ({ ...it }));
 
-        // Pesos dinámicos del cerebro (Meta-Aprendizaje)
+        // Pesos dinámicos del cerebro (Meta-Aprendizaje) REFORZADOS
         const W = customWeights || {
             fragmentation_penalty: 2000000000000000,
             family_grouping_bonus: 8000000000000000000,
-            guillotine_consistency: 18000000000000000000,
-            master_cut_reward: 6000000000000000000,
-            l_cut_penalty: 25000000000000000000,
-            rotation_bonus: 2000000000000
+            guillotine_consistency: 35000000000000000000, // Incrementado de 18T a 35T
+            master_cut_reward: 15000000000000000000,      // Incrementado de 6T a 15T
+            l_cut_penalty: 50000000000000000000,          // Incrementado para mayor rigor
+            rotation_bonus: 5000000000000
         };
 
         const createBoard = (): Board => {
@@ -250,48 +250,39 @@ export function prepareEvolution(
                         let score = (wasteW * r.h) + (wasteH * r.w); 
 
                         // --- RECOMPENSA POR ROTACIÓN ---
-                        // Premiamos la rotación para explorar orientaciones que puedan desbloquear 
-                        // mejores agrupaciones de espacio, especialmente en piezas rectangulares.
                         if (isRotated) {
                             score -= W.rotation_bonus; 
                         }
 
                         // --- BIAS POSICIONAL: Esquina Inferior Izquierda ---
-                        // Queremos Y máximo (abajo) y X mínimo (izquierda)
-                        // Invertimos Y en el score: a mayor Y, menor score.
                         score += (boardHeight - (r.y + h)) * 2000000; 
                         score += r.x * 100000;
 
                         if (!ignoreQuality) {
                             if (trainingMode) {
                                 // --- LÓGICA CERTO ULTRA (SOLO ENTRENAMIENTO) ---
-                                // Detectamos si el corte atraviesa el tablero COMPLETO (Global Master Cut)
                                 const isGlobalMasterH = Math.abs(r.w - (boardWidth - config.trimming.left - config.trimming.right + kerf)) < 1 && wasteW < 0.5;
                                 const isGlobalMasterV = Math.abs(r.h - (boardHeight - config.trimming.top - config.trimming.bottom + kerf)) < 1 && wasteH < 0.5;
                                 
-                                // Detectamos si es un corte maestro dentro de su bloque actual
                                 const isBlockMasterH = wasteW < 0.5;
                                 const isBlockMasterV = wasteH < 0.5;
 
                                 // 1. RECOMPENSA: Corte Maestro Global (Atraviesa todo el tablero)
-                                // Ahora permitimos que sea H o V dinámicamente para "jugar" con la dirección
                                 if (isGlobalMasterH || isGlobalMasterV) {
                                     score -= W.master_cut_reward; 
                                     
-                                    // RECOMPENSA EXTRA: Consistencia de dirección global
-                                    // Aumentamos la flexibilidad: un pequeño porcentaje (5%) ignora el patrón 
-                                    // para "ir contra corriente" y explorar layouts disruptivos.
-                                    const goesAgainstFlow = trainingMode && Math.random() < 0.05;
+                                    // Aumentamos la flexibilidad para "ir contra corriente" al 15% (antes 5%)
+                                    const goesAgainstFlow = trainingMode && Math.random() < 0.15;
 
                                     if (masterDir && !goesAgainstFlow) {
                                         if ((masterDir === 'H' && isGlobalMasterH) || (masterDir === 'V' && isGlobalMasterV)) {
                                             score -= W.guillotine_consistency; 
                                         } else {
-                                            score += (W.guillotine_consistency * 0.8); 
+                                            score += (W.guillotine_consistency * 0.5); // Castigo menor para permitir cambios de eje
                                         }
                                     } else if (goesAgainstFlow) {
-                                        // Bonus por "exploración disruptiva"
-                                        score -= 2000000000000000000;
+                                        // SUPER BONO por "exploración disruptiva exitosa"
+                                        score -= 10000000000000000000; // 10,000,000T
                                     }
                                 } else if (isBlockMasterH || isBlockMasterV) {
                                     // 2. RECOMPENSA: Corte Maestro de Bloque (Local)
@@ -417,6 +408,8 @@ export function prepareEvolution(
         // --- PHASE 3: Compactness & Leftover Consolidation ---
         let fitness: number;
         let compactnessBonus = 0;
+        let totalUsedArea = 0;
+        activeBoards.forEach(b => totalUsedArea += b.usedArea);
 
         if (trainingMode) {
             // Evaluamos la calidad del "sobrante". Queremos que el espacio no usado sea un solo bloque grande.
@@ -426,29 +419,35 @@ export function prepareEvolution(
                     const maxFreeArea = Math.max(...freeRects.map(r => r.w * r.h));
                     const totalFreeArea = (boardWidth * boardHeight) - b.usedArea;
                     
-                    // RECOMPENSA MASIVA por consolidación de sobrantes
                     if (maxFreeArea > totalFreeArea * 0.85) {
-                        compactnessBonus += 5000000000000000; // 5,000,000,000T
+                        compactnessBonus += 10000000000000000; 
                     }
-                    compactnessBonus += maxFreeArea * 5000000;
+                    compactnessBonus += maxFreeArea * 10000000;
                 }
-                // PENALIZACIÓN EXTREMA por fragmentación (cada rectángulo libre extra resta mucho)
                 compactnessBonus -= (freeRects.length * W.fragmentation_penalty); 
             });
 
-            // PRIORIDAD ENTRENAMIENTO: APROVECHAMIENTO MÁXIMO + CERTO + COMPACIDAD
-            const boardPenalty = activeBoards.length * 1000000000000000000000000000; 
-            let totalUsedArea = 0;
-            activeBoards.forEach(b => totalUsedArea += b.usedArea);
+            // PRIORIDAD ENTRENAMIENTO: CASTIGO EXPONENCIAL POR TABLEROS
+            // Usamos un multiplicador masivo para que 1 tablero menos sea SIEMPRE mejor que cualquier optimización local
+            const boardPenalty = Math.pow(activeBoards.length, 3) * 1000000000000000000000000; 
             
-            const qualityScore = totalLayoutScore / 5000; 
-            fitness = (-boardPenalty) + (totalUsedArea * 10000000) - qualityScore + compactnessBonus;
+            const qualityScore = totalLayoutScore / 1000; 
+            fitness = (-boardPenalty) + (totalUsedArea * 20000000) - qualityScore + compactnessBonus;
         } else {
-            if (activeBoards.length > 1) {
-                fitness = (-activeBoards.length * 1000000000000000000) + (activeBoards[0]?.usedArea || 0);
-            } else {
-                fitness = (-activeBoards.length * 1000000000000000000) - totalLayoutScore;
-            }
+            // MODO PRODUCCIÓN REFORZADO:
+            // 1. El factor más importante es la cantidad de tableros (Castigo masivo)
+            const boardPenalty = activeBoards.length * 5000000000000000000000;
+            
+            // 2. Recompensamos el aprovechamiento total (suma de áreas de todas las piezas)
+            // 3. Recompensamos específicamente que los primeros tableros estén lo más llenos posible
+            let densityBonus = 0;
+            activeBoards.forEach((b, i) => {
+                const utilization = b.usedArea / (boardWidth * boardHeight);
+                // Los primeros tableros tienen un multiplicador de densidad más alto
+                densityBonus += (utilization * 100000000000000) / (i + 1);
+            });
+
+            fitness = (-boardPenalty) + densityBonus - (totalLayoutScore / 1000);
         }
 
         return { boards: activeBoards, score: fitness };

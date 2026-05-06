@@ -139,10 +139,358 @@ const StatusBadge = ({ estado }: { estado: 'BORRADOR' | 'LISTO' }) =>
         </span>
     );
 
+// ─── Editor Modal ─────────────────────────────────────────────────────────────
+
+interface EditorModalProps {
+    isOpen: boolean;
+    editingCode: string;
+    form: FormState;
+    businessInfo: BusinessInfo | null;
+    saveStatus: 'idle' | 'saving' | 'success' | 'error';
+    onClose: () => void;
+    onSaveBorrador: () => void;
+    onSaveListo: () => void;
+    onFormChange: (f: FormState) => void;
+    onUpdateItem: (id: string, field: keyof LineItem, raw: string) => void;
+    onAddRow: () => void;
+    onRemoveRow: (id: string) => void;
+    onDescuentoChange: (val: string) => void;
+    onAdelantoChange: (val: string) => void;
+    onTipoDocumento: (tipo: TipoDoc) => void;
+}
+
+const EditorModal: React.FC<EditorModalProps> = ({
+    isOpen, editingCode, form, businessInfo, saveStatus,
+    onClose, onSaveBorrador, onSaveListo, onFormChange,
+    onUpdateItem, onAddRow, onRemoveRow, onDescuentoChange,
+    onAdelantoChange, onTipoDocumento,
+}) => {
+    if (!isOpen) return null;
+
+    return createPortal(
+        <div
+            className="fixed inset-0 z-[2000] flex items-center justify-center p-4 overflow-hidden"
+            style={{ backdropFilter: 'blur(10px)', background: 'rgba(15, 23, 30, 0.35)' }}
+            onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        >
+            <div className="bg-white/88 backdrop-blur-[24px] rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-white/50">
+
+                {/* Top highlight edge */}
+                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent z-10 pointer-events-none" />
+
+                {/* Save status overlay */}
+                {saveStatus !== 'idle' && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-[32px]">
+                        <div className="text-center p-8 bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-4">
+                            {saveStatus === 'saving' && (
+                                <>
+                                    <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin" />
+                                    <p className="text-sm font-bold text-slate-600">Guardando cotización...</p>
+                                </>
+                            )}
+                            {saveStatus === 'success' && (
+                                <>
+                                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                                        <span className="material-icons-round text-4xl">check</span>
+                                    </div>
+                                    <h3 className="text-xl font-black tracking-tight text-slate-800">¡Cotización Guardada!</h3>
+                                    <p className="text-sm text-slate-500 font-medium">La cotización se ha registrado exitosamente.</p>
+                                </>
+                            )}
+                            {saveStatus === 'error' && (
+                                <>
+                                    <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
+                                        <span className="material-icons-round text-4xl">error_outline</span>
+                                    </div>
+                                    <h3 className="text-xl font-black tracking-tight text-slate-800">Error al Guardar</h3>
+                                    <p className="text-sm text-slate-500 font-medium">Ocurrió un problema. Inténtalo de nuevo.</p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Header */}
+                <div className="px-8 py-5 border-b border-white/30 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-4">
+                        <span className="material-icons-round text-[36px] text-slate-700 drop-shadow-sm">request_quote</span>
+                        <div>
+                            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Presupuestador / Cotización</h2>
+                            <p className="text-[11px] font-bold text-slate-400 font-mono">{editingCode || 'Nueva Cotización'}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="flex bg-slate-100/60 rounded-2xl p-1 shadow-sm border border-white/40">
+                            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:bg-rose-50/80 transition-all font-bold text-xs">
+                                <span className="material-icons-round text-sm">picture_as_pdf</span>
+                                PDF
+                            </button>
+                            <div className="w-px bg-slate-200 mx-1 self-stretch" />
+                            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-emerald-600 hover:bg-emerald-50/80 transition-all font-bold text-xs">
+                                <span className="material-icons-round text-sm">description</span>
+                                EXCEL
+                            </button>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="w-10 h-10 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/60 flex items-center justify-center transition-all"
+                        >
+                            <span className="material-icons-round">close</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Scrollable body */}
+                <div className="flex-1 overflow-y-auto p-8 space-y-6">
+
+                    {/* 1. Business info + Client form */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
+                        {/* Business info */}
+                        <div className="space-y-3">
+                            <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest pl-1">Información de la Empresa</h3>
+                            <div className="space-y-1">
+                                <p className="text-lg font-black text-slate-800">{businessInfo?.company_name || '—'}</p>
+                                <p className="text-xs text-slate-500 font-medium">RUC: {businessInfo?.ruc || '—'}</p>
+                                <p className="text-xs text-slate-500 font-medium">{businessInfo?.address || '—'}</p>
+                            </div>
+                        </div>
+
+                        {/* Client form */}
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="col-span-2">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
+                                <input
+                                    type="text"
+                                    value={form.cliente_nombre}
+                                    onChange={e => onFormChange({ ...form, cliente_nombre: e.target.value })}
+                                    className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white/80 transition-all"
+                                    placeholder="Nombre o Razón Social..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
+                                <input
+                                    type="text"
+                                    value={form.cliente_doi}
+                                    onChange={e => onFormChange({ ...form, cliente_doi: e.target.value })}
+                                    className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white/80 transition-all"
+                                    placeholder="RUC / DNI..."
+                                />
+                            </div>
+                            <div className="flex items-center justify-center gap-4 bg-white/40 border border-white/50 rounded-xl px-4 py-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        checked={form.tipo_documento === 'BOLETA'}
+                                        onChange={() => onTipoDocumento('BOLETA')}
+                                        className="accent-indigo-600"
+                                    />
+                                    <span className="text-xs font-bold text-slate-600">Boleta</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        checked={form.tipo_documento === 'FACTURA'}
+                                        onChange={() => onTipoDocumento('FACTURA')}
+                                        className="accent-indigo-600"
+                                    />
+                                    <span className="text-xs font-bold text-slate-600">Factura</span>
+                                </label>
+                            </div>
+                            <div className="col-span-2 grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Emisión</label>
+                                    <div className="w-full bg-white/30 border border-white/40 rounded-xl px-4 py-3 text-xs font-bold text-slate-500">
+                                        {form.fecha_emision
+                                            ? format(new Date(form.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy')
+                                            : new Date().toLocaleDateString()}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 pl-1">Fecha de Entrega</label>
+                                    <input
+                                        type="date"
+                                        value={form.fecha_entrega || ''}
+                                        onChange={e => onFormChange({ ...form, fecha_entrega: e.target.value || null })}
+                                        className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500/20 focus:bg-white/80 transition-all"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 2. Items table */}
+                    <div className="border border-white/40 rounded-3xl overflow-hidden shadow-sm bg-white/30">
+                        <table className="w-full border-collapse">
+                            <thead>
+                                <tr className="bg-white/40 text-slate-500 text-[10px] font-black uppercase tracking-widest">
+                                    <th className="px-4 py-4 text-left border-r border-white/50 w-20">Cant.</th>
+                                    <th className="px-4 py-4 text-left border-r border-white/50 w-24">Unidad</th>
+                                    <th className="px-4 py-4 text-left border-r border-white/50">Descripción del Producto</th>
+                                    <th className="px-4 py-4 text-right border-r border-white/50 w-32">P. Unit</th>
+                                    <th className="px-4 py-4 text-right w-32">Total</th>
+                                    <th className="px-4 py-4 w-12"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/40">
+                                {form.items.map((item, idx) => (
+                                    <tr key={item.id} className="group hover:bg-white/40 transition-colors">
+                                        <td className="px-4 py-3 border-r border-white/30">
+                                            <input
+                                                type="number"
+                                                value={item.cantidad || ''}
+                                                onChange={e => onUpdateItem(item.id, 'cantidad', e.target.value)}
+                                                className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
+                                                placeholder="0"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-white/30">
+                                            <select
+                                                value={item.unidad}
+                                                onChange={e => onUpdateItem(item.id, 'unidad', e.target.value)}
+                                                className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[11px] uppercase cursor-pointer"
+                                            >
+                                                {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                                            </select>
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-white/30">
+                                            <input
+                                                type="text"
+                                                value={item.descripcion}
+                                                onChange={e => onUpdateItem(item.id, 'descripcion', e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) onAddRow(); }}
+                                                className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
+                                                placeholder="Descripción del producto o servicio..."
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-white/30">
+                                            <div className="flex items-center justify-end gap-1">
+                                                <span className="text-slate-400 text-[10px] font-bold">S/</span>
+                                                <input
+                                                    type="number"
+                                                    value={item.precio_unitario || ''}
+                                                    onChange={e => onUpdateItem(item.id, 'precio_unitario', e.target.value)}
+                                                    className="w-20 bg-transparent border-none font-black text-indigo-600 text-right outline-none text-sm focus:bg-indigo-50/60 transition-colors rounded-lg"
+                                                    placeholder="0.00"
+                                                />
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-black text-sm text-slate-800">
+                                            S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button
+                                                onClick={() => onRemoveRow(item.id)}
+                                                disabled={form.items.length === 1}
+                                                className="w-8 h-8 rounded-full flex items-center justify-center text-rose-300 hover:text-rose-600 hover:bg-rose-50/60 transition-all disabled:opacity-0 disabled:pointer-events-none"
+                                            >
+                                                <span className="material-icons-round text-sm">delete</span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <button
+                            onClick={onAddRow}
+                            className="w-full py-4 border-t border-white/40 text-xs font-bold text-slate-400 hover:text-indigo-600 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
+                        >
+                            <span className="material-icons-round text-sm">add</span>
+                            AGREGAR FILA PERSONALIZADA
+                        </button>
+                    </div>
+
+                    {/* 3. Totals */}
+                    <div className="flex justify-end">
+                        <div className="w-full md:w-80 space-y-3 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
+                            <div className="flex justify-between items-center text-xs text-slate-500 font-bold uppercase tracking-wider">
+                                <span>Sub Total</span>
+                                <span className="text-slate-700">S/ {form.subtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-rose-500 font-bold uppercase tracking-wider">
+                                <span>Descuento</span>
+                                <div className="flex items-center gap-1 border-b border-rose-200">
+                                    <span className="text-[10px]">- S/</span>
+                                    <input
+                                        type="number"
+                                        value={form.descuento || ''}
+                                        onChange={e => onDescuentoChange(e.target.value)}
+                                        className="w-16 bg-transparent border-none text-right font-black outline-none text-rose-500"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                            </div>
+                            {form.tipo_documento === 'FACTURA' && (
+                                <div className="flex justify-between items-center text-xs text-indigo-600 font-bold uppercase tracking-wider">
+                                    <span>IGV (18%)</span>
+                                    <span className="font-black">S/ {form.igv.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="pt-3 border-t border-white/50 flex justify-between items-center">
+                                <span className="text-xs font-black tracking-widest uppercase text-slate-400">Total</span>
+                                <span className="text-2xl font-black text-indigo-600">
+                                    S/ {form.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs text-emerald-600 font-bold uppercase tracking-wider pt-4">
+                                <span>Adelanto</span>
+                                <div className="flex items-center gap-1 bg-white/50 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
+                                    <span className="text-[10px]">S/</span>
+                                    <input
+                                        type="number"
+                                        value={form.adelanto || ''}
+                                        onChange={e => onAdelantoChange(e.target.value)}
+                                        className="w-16 bg-transparent border-none text-right font-black outline-none text-emerald-600"
+                                        placeholder="0.00"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center pt-3 mt-2 border-t-2 border-dashed border-white/50">
+                                <span className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Saldo Pendiente</span>
+                                <span className="text-lg font-black tracking-tighter text-amber-600">
+                                    S/ {(form.saldo_pendiente || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="px-8 py-5 border-t border-white/30 flex justify-between items-center shrink-0">
+                    <StatusBadge estado={form.estado} />
+                    <div className="flex gap-3">
+                        <button
+                            onClick={onClose}
+                            className="px-6 py-3 rounded-2xl text-sm font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
+                        >
+                            Descartar
+                        </button>
+                        <button
+                            onClick={onSaveBorrador}
+                            disabled={saveStatus !== 'idle'}
+                            className="px-6 py-3 rounded-2xl border border-slate-200/60 bg-white/50 text-sm font-black text-slate-600 hover:bg-white/80 uppercase tracking-widest transition-all disabled:opacity-50"
+                        >
+                            Guardar Borrador
+                        </button>
+                        <button
+                            onClick={onSaveListo}
+                            disabled={saveStatus !== 'idle'}
+                            className="px-10 py-3 bg-indigo-600 text-white font-black text-sm rounded-2xl hover:bg-indigo-700 shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all uppercase tracking-widest disabled:opacity-50"
+                        >
+                            Guardar Cotización
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function CotizacionesPage() {
-    const [mode, setMode] = useState<'list' | 'editor'>('list');
+    const [editorOpen, setEditorOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingCode, setEditingCode] = useState('');
 
@@ -176,10 +524,16 @@ export function CotizacionesPage() {
 
     // Business info when editor opens
     useEffect(() => {
-        if (mode === 'editor') {
+        if (editorOpen) {
             api.getBusinessInfo().then(setBusinessInfo).catch(() => {});
         }
-    }, [mode]);
+    }, [editorOpen]);
+
+    // Lock scroll when editor is open
+    useEffect(() => {
+        document.body.style.overflow = editorOpen ? 'hidden' : '';
+        return () => { document.body.style.overflow = ''; };
+    }, [editorOpen]);
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
@@ -238,7 +592,7 @@ export function CotizacionesPage() {
         setForm(emptyForm());
         setEditingId(null);
         setEditingCode('');
-        setMode('editor');
+        setEditorOpen(true);
     };
 
     const openEdit = (c: Cotizacion) => {
@@ -267,8 +621,10 @@ export function CotizacionesPage() {
         });
         setEditingId(c.id);
         setEditingCode(c.codigo || '');
-        setMode('editor');
+        setEditorOpen(true);
     };
+
+    const closeEditor = () => setEditorOpen(false);
 
     const updateItem = (id: string, field: keyof LineItem, raw: string) => {
         setForm(prev => {
@@ -358,19 +714,17 @@ export function CotizacionesPage() {
                 cotizacionId = inserted.id;
             }
 
-            // Sync relational items table on every save
             if (cotizacionId) {
                 await syncItemsTable(cotizacionId, form.items);
             }
 
-            // Promote to ventas when LISTO
             if (estadoOverride === 'LISTO' && cotizacionId) {
                 await supabase.rpc('cotizacion_to_venta', { p_cotizacion_id: cotizacionId }).maybeSingle();
             }
 
             setSaveStatus('success');
             await fetchData();
-            setTimeout(() => { setSaveStatus('idle'); setMode('list'); }, 1500);
+            setTimeout(() => { setSaveStatus('idle'); closeEditor(); }, 1500);
         } catch (e) {
             console.error(e);
             setSaveStatus('error');
@@ -390,521 +744,222 @@ export function CotizacionesPage() {
     };
 
     // ─────────────────────────────────────────────────────────────────────────
-    // EDITOR VIEW
-    // ─────────────────────────────────────────────────────────────────────────
-
-    if (mode === 'editor') {
-        return (
-            <div className="min-h-screen flex flex-col bg-[#f2f5f4] animate-premium-fade relative">
-
-                {/* Save status overlay */}
-                {saveStatus !== 'idle' && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
-                        <div className="text-center p-8 bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-4">
-                            {saveStatus === 'saving' && (
-                                <>
-                                    <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin" />
-                                    <p className="text-sm font-bold text-slate-600">Guardando cotización...</p>
-                                </>
-                            )}
-                            {saveStatus === 'success' && (
-                                <>
-                                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
-                                        <span className="material-icons-round text-4xl">check</span>
-                                    </div>
-                                    <h3 className="text-xl font-black tracking-tight text-slate-800">¡Cotización Guardada!</h3>
-                                    <p className="text-sm text-slate-500 font-medium">La cotización se ha registrado exitosamente.</p>
-                                </>
-                            )}
-                            {saveStatus === 'error' && (
-                                <>
-                                    <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
-                                        <span className="material-icons-round text-4xl">error_outline</span>
-                                    </div>
-                                    <h3 className="text-xl font-black tracking-tight text-slate-800">Error al Guardar</h3>
-                                    <p className="text-sm text-slate-500 font-medium">Ocurrió un problema. Inténtalo de nuevo.</p>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Header */}
-                <div className="px-8 py-5 border-b border-slate-200/30 flex items-center justify-between bg-white/60 backdrop-blur-sm shrink-0">
-                    <div className="flex items-center gap-4">
-                        <span className="material-icons-round text-[36px] text-slate-800">request_quote</span>
-                        <div>
-                            <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Presupuestador / Cotización</h2>
-                            <p className="text-sm font-bold text-slate-400 font-mono">{editingCode || 'Nueva Cotización'}</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <div className="flex bg-[#e9efee]/60 rounded-2xl p-1 shadow-sm border border-slate-200/30">
-                            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-all font-bold text-xs">
-                                <span className="material-icons-round text-sm">picture_as_pdf</span>
-                                PDF
-                            </button>
-                            <div className="w-px bg-slate-200 mx-1 self-stretch" />
-                            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all font-bold text-xs">
-                                <span className="material-icons-round text-sm">description</span>
-                                EXCEL
-                            </button>
-                        </div>
-                        <button
-                            onClick={() => setMode('list')}
-                            className="w-10 h-10 rounded-full text-slate-400 hover:text-slate-600 hover:bg-[#e9efee]/60 flex items-center justify-center transition-all"
-                        >
-                            <span className="material-icons-round">close</span>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Scrollable body */}
-                <div className="flex-1 overflow-y-auto p-8 space-y-8">
-
-                    {/* 1. Business info + Client form */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-[#e9efee]/40 p-6 rounded-3xl border border-slate-200/20">
-                        {/* Business info */}
-                        <div className="space-y-4">
-                            <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest pl-1">Información de la Empresa</h3>
-                            <div className="space-y-1">
-                                <p className="text-lg font-black text-slate-800">{businessInfo?.company_name || '—'}</p>
-                                <p className="text-xs text-slate-500 font-medium">RUC: {businessInfo?.ruc || '—'}</p>
-                                <p className="text-xs text-slate-500 font-medium">{businessInfo?.address || '—'}</p>
-                            </div>
-                        </div>
-
-                        {/* Client form */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
-                                <input
-                                    type="text"
-                                    value={form.cliente_nombre}
-                                    onChange={e => setForm(p => ({ ...p, cliente_nombre: e.target.value }))}
-                                    className="w-full bg-[#e9efee]/50 border-none rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white/80 transition-all"
-                                    placeholder="Nombre o Razón Social..."
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
-                                <input
-                                    type="text"
-                                    value={form.cliente_doi}
-                                    onChange={e => setForm(p => ({ ...p, cliente_doi: e.target.value }))}
-                                    className="w-full bg-[#e9efee]/50 border-none rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white/80 transition-all"
-                                    placeholder="RUC / DNI..."
-                                />
-                            </div>
-                            <div className="flex items-center justify-center gap-4 bg-[#e9efee]/50 rounded-xl px-4 py-3">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        checked={form.tipo_documento === 'BOLETA'}
-                                        onChange={() => setTipoDocumento('BOLETA')}
-                                        className="accent-indigo-600"
-                                    />
-                                    <span className="text-xs font-bold text-slate-600">Boleta</span>
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        checked={form.tipo_documento === 'FACTURA'}
-                                        onChange={() => setTipoDocumento('FACTURA')}
-                                        className="accent-indigo-600"
-                                    />
-                                    <span className="text-xs font-bold text-slate-600">Factura</span>
-                                </label>
-                            </div>
-                            <div className="col-span-2 grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Emisión</label>
-                                    <div className="w-full bg-[#e9efee]/40 rounded-xl px-4 py-3 text-xs font-bold text-slate-500">
-                                        {form.fecha_emision
-                                            ? format(new Date(form.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy')
-                                            : new Date().toLocaleDateString()}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 pl-1">Fecha de Entrega</label>
-                                    <input
-                                        type="date"
-                                        value={form.fecha_entrega || ''}
-                                        onChange={e => setForm(p => ({ ...p, fecha_entrega: e.target.value || null }))}
-                                        className="w-full bg-[#e9efee]/50 border-none rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500/20 focus:bg-white/80 transition-all"
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 2. Items table */}
-                    <div className="border border-slate-200/20 rounded-3xl overflow-hidden shadow-sm bg-[#e9efee]/30">
-                        <table className="w-full border-collapse">
-                            <thead>
-                                <tr className="bg-[#e9efee]/50 text-slate-500 text-[10px] font-black uppercase tracking-widest">
-                                    <th className="px-4 py-4 text-left border-r border-slate-200 w-20">Cant.</th>
-                                    <th className="px-4 py-4 text-left border-r border-slate-200 w-24">Unidad</th>
-                                    <th className="px-4 py-4 text-left border-r border-slate-200">Descripción del Producto</th>
-                                    <th className="px-4 py-4 text-right border-r border-slate-200 w-32">P. Unit</th>
-                                    <th className="px-4 py-4 text-right w-32">Total</th>
-                                    <th className="px-4 py-4 w-12"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {form.items.map((item, idx) => (
-                                    <tr key={item.id} className="group hover:bg-[#e9efee]/40 transition-colors">
-                                        <td className="px-4 py-3 border-r border-slate-100">
-                                            <input
-                                                type="number"
-                                                value={item.cantidad || ''}
-                                                onChange={e => updateItem(item.id, 'cantidad', e.target.value)}
-                                                className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-slate-50 transition-colors rounded-lg px-1"
-                                                placeholder="0"
-                                            />
-                                        </td>
-                                        <td className="px-4 py-3 border-r border-slate-100">
-                                            <select
-                                                value={item.unidad}
-                                                onChange={e => updateItem(item.id, 'unidad', e.target.value)}
-                                                className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[11px] uppercase cursor-pointer"
-                                            >
-                                                {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-                                            </select>
-                                        </td>
-                                        <td className="px-4 py-3 border-r border-slate-100">
-                                            <input
-                                                type="text"
-                                                value={item.descripcion}
-                                                onChange={e => updateItem(item.id, 'descripcion', e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) addRow(); }}
-                                                className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-slate-50 transition-colors rounded-lg px-1"
-                                                placeholder="Descripción del producto o servicio..."
-                                            />
-                                        </td>
-                                        <td className="px-4 py-3 border-r border-slate-100">
-                                            <div className="flex items-center justify-end gap-1">
-                                                <span className="text-slate-400 text-[10px] font-bold">S/</span>
-                                                <input
-                                                    type="number"
-                                                    value={item.precio_unitario || ''}
-                                                    onChange={e => updateItem(item.id, 'precio_unitario', e.target.value)}
-                                                    className="w-20 bg-transparent border-none font-black text-indigo-600 text-right outline-none text-sm focus:bg-indigo-50 transition-colors rounded-lg"
-                                                    placeholder="0.00"
-                                                />
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-right font-black text-sm text-slate-800">
-                                            S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <button
-                                                onClick={() => removeRow(item.id)}
-                                                disabled={form.items.length === 1}
-                                                className="w-8 h-8 rounded-full flex items-center justify-center text-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all disabled:opacity-0 disabled:pointer-events-none"
-                                            >
-                                                <span className="material-icons-round text-sm">delete</span>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        <button
-                            onClick={addRow}
-                            className="w-full py-4 border-t border-slate-100 text-xs font-bold text-slate-400 hover:text-indigo-600 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
-                        >
-                            <span className="material-icons-round text-sm">add</span>
-                            AGREGAR FILA PERSONALIZADA
-                        </button>
-                    </div>
-
-                    {/* 3. Totals */}
-                    <div className="flex justify-end">
-                        <div className="w-full md:w-80 space-y-3 bg-[#e9efee]/40 p-6 rounded-3xl border border-slate-200/20 shadow-sm">
-                            <div className="flex justify-between items-center text-xs text-slate-500 font-bold uppercase tracking-wider">
-                                <span>Sub Total</span>
-                                <span className="text-slate-700">S/ {form.subtotal.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs text-rose-500 font-bold uppercase tracking-wider">
-                                <span>Descuento</span>
-                                <div className="flex items-center gap-1 border-b border-rose-200">
-                                    <span className="text-[10px]">- S/</span>
-                                    <input
-                                        type="number"
-                                        value={form.descuento || ''}
-                                        onChange={e => setDescuento(e.target.value)}
-                                        className="w-16 bg-transparent border-none text-right font-black outline-none text-rose-500"
-                                        placeholder="0.00"
-                                    />
-                                </div>
-                            </div>
-                            {form.tipo_documento === 'FACTURA' && (
-                                <div className="flex justify-between items-center text-xs text-indigo-600 font-bold uppercase tracking-wider">
-                                    <span>IGV (18%)</span>
-                                    <span className="font-black">S/ {form.igv.toFixed(2)}</span>
-                                </div>
-                            )}
-                            <div className="pt-3 border-t border-slate-200 flex justify-between items-center">
-                                <span className="text-xs font-black tracking-widest uppercase text-slate-400">Total</span>
-                                <span className="text-2xl font-black text-indigo-600">
-                                    S/ {form.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs text-emerald-600 font-bold uppercase tracking-wider pt-4">
-                                <span>Adelanto</span>
-                                <div className="flex items-center gap-1 bg-white/20 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
-                                    <span className="text-[10px]">S/</span>
-                                    <input
-                                        type="number"
-                                        value={form.adelanto || ''}
-                                        onChange={e => setAdelanto(e.target.value)}
-                                        className="w-16 bg-transparent border-none text-right font-black outline-none text-emerald-600"
-                                        placeholder="0.00"
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex justify-between items-center pt-3 mt-2 border-t-2 border-dashed border-slate-200">
-                                <span className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Saldo Pendiente</span>
-                                <span className="text-lg font-black tracking-tighter text-amber-600">
-                                    S/ {(form.saldo_pendiente || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Footer */}
-                <div className="px-8 py-5 border-t border-slate-200/20 flex justify-between items-center bg-white/60 backdrop-blur-sm shrink-0">
-                    <StatusBadge estado={form.estado} />
-                    <div className="flex gap-3">
-                        <button
-                            onClick={() => setMode('list')}
-                            className="px-6 py-3 rounded-2xl text-sm font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
-                        >
-                            Descartar
-                        </button>
-                        <button
-                            onClick={() => save('BORRADOR')}
-                            disabled={saveStatus !== 'idle'}
-                            className="px-6 py-3 rounded-2xl border border-slate-200 text-sm font-black text-slate-600 hover:bg-slate-50 uppercase tracking-widest transition-all disabled:opacity-50"
-                        >
-                            Guardar Borrador
-                        </button>
-                        <button
-                            onClick={() => save('LISTO')}
-                            disabled={saveStatus !== 'idle'}
-                            className="px-10 py-3 bg-indigo-600 text-white font-black text-sm rounded-2xl hover:bg-indigo-700 shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all uppercase tracking-widest disabled:opacity-50"
-                        >
-                            Guardar Cotización
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // LIST VIEW
+    // LIST VIEW (always rendered)
     // ─────────────────────────────────────────────────────────────────────────
 
     return (
-        <div className="min-h-screen flex flex-col animate-premium-fade">
-            {/* Header */}
-            <div className="p-8 pb-0 flex items-center justify-between flex-wrap gap-4 shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-[#366480]/10 flex items-center justify-center">
-                        <Receipt className="w-5 h-5 text-[#366480]" />
+        <>
+            {/* Editor as transparent glassmorphism modal */}
+            <EditorModal
+                isOpen={editorOpen}
+                editingCode={editingCode}
+                form={form}
+                businessInfo={businessInfo}
+                saveStatus={saveStatus}
+                onClose={closeEditor}
+                onSaveBorrador={() => save('BORRADOR')}
+                onSaveListo={() => save('LISTO')}
+                onFormChange={setForm}
+                onUpdateItem={updateItem}
+                onAddRow={addRow}
+                onRemoveRow={removeRow}
+                onDescuentoChange={setDescuento}
+                onAdelantoChange={setAdelanto}
+                onTipoDocumento={setTipoDocumento}
+            />
+
+            <div className="min-h-screen flex flex-col animate-premium-fade">
+                {/* Header */}
+                <div className="p-8 pb-0 flex items-center justify-between flex-wrap gap-4 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-[#366480]/10 flex items-center justify-center">
+                            <Receipt className="w-5 h-5 text-[#366480]" />
+                        </div>
+                        <div>
+                            <h1 className="text-[18px] font-black text-[#2c3434] tracking-tight">Cotizaciones</h1>
+                            <p className="text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest">
+                                {filtered.length} registro{filtered.length !== 1 ? 's' : ''}
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-[18px] font-black text-[#2c3434] tracking-tight">Cotizaciones</h1>
-                        <p className="text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest">
-                            {filtered.length} registro{filtered.length !== 1 ? 's' : ''}
-                        </p>
-                    </div>
-                </div>
-                <button
-                    onClick={openNew}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#366480] text-white text-[11px] font-black uppercase tracking-widest hover:bg-[#2c5268] transition-all shadow-md"
-                >
-                    <Plus className="w-4 h-4" /> Nueva Cotización
-                </button>
-            </div>
-
-            {/* Filter bar */}
-            <div className="px-8 py-5 flex flex-wrap items-center gap-3 shrink-0 border-b border-[#f0f5f4]">
-                {/* Search */}
-                <div className="relative flex-1 min-w-[260px]">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8b9ba5]" />
-                    <SearchInput
-                        value={searchTerm}
-                        onSearch={setSearchTerm}
-                        placeholder="Buscar por código, cliente, DOI..."
-                        className="w-full pl-11 pr-5 py-3 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none placeholder:text-[#8b9ba5] placeholder:font-normal"
-                    />
-                </div>
-
-                {/* Estado filter */}
-                <div className="relative">
-                    <select
-                        value={filterEstado}
-                        onChange={e => setFilterEstado(e.target.value as any)}
-                        className="bg-[#f8faf9] border-none px-5 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-9"
+                    <button
+                        onClick={openNew}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#366480] text-white text-[11px] font-black uppercase tracking-widest hover:bg-[#2c5268] transition-all shadow-md"
                     >
-                        <option value="TODOS">Todos los estados</option>
-                        <option value="BORRADOR">Borrador</option>
-                        <option value="LISTO">Listo</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
+                        <Plus className="w-4 h-4" /> Nueva Cotización
+                    </button>
                 </div>
 
-                {/* Quick date filter */}
-                <div className="relative">
-                    <select
-                        value={quickFilter}
-                        onChange={e => {
-                            const v = e.target.value as typeof quickFilter;
-                            if (v === 'PERSONALIZADO') { setQuickFilter('PERSONALIZADO'); setShowDatePicker(true); }
-                            else applyQuickFilter(v);
-                        }}
-                        className="bg-[#f8faf9] border-none px-5 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-9"
-                    >
-                        <option value="HOY">Hoy</option>
-                        <option value="ULTIMOS_7">Últimos 7 días</option>
-                        <option value="MES_ACTUAL">Este mes</option>
-                        <option value="PERSONALIZADO">Personalizado</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
-                </div>
-
-                {/* RangeDatePicker — always mounted when PERSONALIZADO, uses isOpen for animation */}
-                {quickFilter === 'PERSONALIZADO' && (
-                    <div className="relative" ref={datePickerRef}>
-                        <button
-                            onClick={() => setShowDatePicker(v => !v)}
-                            className="flex items-center gap-3 px-6 py-3 bg-[#f8faf9] text-[#366480] rounded-full text-[12px] font-bold hover:bg-[#eef4f7] transition-all"
-                        >
-                            <Calendar className="w-4 h-4 text-[#4A90E2]" />
-                            {startDate
-                                ? `${format(new Date(startDate + 'T12:00:00'), 'dd MMM', { locale: es })} - ${format(new Date(endDate + 'T12:00:00'), 'dd MMM', { locale: es })}`
-                                : 'Seleccionar Rango'}
-                            <ChevronDown className={`w-3 h-3 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} />
-                        </button>
-                        <RangeDatePicker
-                            isOpen={showDatePicker}
-                            startDate={startDate}
-                            endDate={endDate}
-                            onApply={(start, end) => {
-                                setStartDate(start);
-                                setEndDate(end);
-                                setShowDatePicker(false);
-                            }}
-                            onCancel={() => setShowDatePicker(false)}
+                {/* Filter bar */}
+                <div className="px-8 py-5 flex flex-wrap items-center gap-3 shrink-0 border-b border-[#f0f5f4]">
+                    <div className="relative flex-1 min-w-[260px]">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8b9ba5]" />
+                        <SearchInput
+                            value={searchTerm}
+                            onSearch={setSearchTerm}
+                            placeholder="Buscar por código, cliente, DOI..."
+                            className="w-full pl-11 pr-5 py-3 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none placeholder:text-[#8b9ba5] placeholder:font-normal"
                         />
                     </div>
-                )}
 
-                {/* Refresh */}
-                <button
-                    onClick={() => { setSearchTerm(''); fetchData(); }}
-                    className="w-10 h-10 flex items-center justify-center rounded-full bg-[#f8faf9] text-[#8b9ba5] hover:bg-[#eef4f7] hover:text-[#366480] transition-all"
-                >
-                    <RefreshCw className="w-4 h-4" />
-                </button>
-            </div>
+                    <div className="relative">
+                        <select
+                            value={filterEstado}
+                            onChange={e => setFilterEstado(e.target.value as any)}
+                            className="bg-[#f8faf9] border-none px-5 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-9"
+                        >
+                            <option value="TODOS">Todos los estados</option>
+                            <option value="BORRADOR">Borrador</option>
+                            <option value="LISTO">Listo</option>
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
+                    </div>
 
-            {/* Cards grid */}
-            <div className="flex-1 overflow-y-auto p-8">
-                {loading ? (
-                    <div className="flex items-center justify-center h-40">
-                        <div className="w-8 h-8 border-2 border-[#366480] border-t-transparent rounded-full animate-spin" />
+                    <div className="relative">
+                        <select
+                            value={quickFilter}
+                            onChange={e => {
+                                const v = e.target.value as typeof quickFilter;
+                                if (v === 'PERSONALIZADO') { setQuickFilter('PERSONALIZADO'); setShowDatePicker(true); }
+                                else applyQuickFilter(v);
+                            }}
+                            className="bg-[#f8faf9] border-none px-5 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-9"
+                        >
+                            <option value="HOY">Hoy</option>
+                            <option value="ULTIMOS_7">Últimos 7 días</option>
+                            <option value="MES_ACTUAL">Este mes</option>
+                            <option value="PERSONALIZADO">Personalizado</option>
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
                     </div>
-                ) : filtered.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-60 gap-4 text-[#8b9ba5]">
-                        <Receipt className="w-12 h-12 opacity-30" />
-                        <p className="text-[12px] font-bold uppercase tracking-widest">Sin cotizaciones</p>
-                        <button onClick={openNew} className="text-[11px] font-black text-[#366480] underline underline-offset-2">
-                            Crear la primera
-                        </button>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                        {filtered.map(c => (
-                            <div
-                                key={c.id}
-                                onClick={() => openEdit(c)}
-                                className="bg-white/40 backdrop-blur-[16px] rounded-[28px] p-5 border border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 cursor-pointer transition-all group"
+
+                    {quickFilter === 'PERSONALIZADO' && (
+                        <div className="relative" ref={datePickerRef}>
+                            <button
+                                onClick={() => setShowDatePicker(v => !v)}
+                                className="flex items-center gap-3 px-6 py-3 bg-[#f8faf9] text-[#366480] rounded-full text-[12px] font-bold hover:bg-[#eef4f7] transition-all"
                             >
-                                <div className="flex items-start justify-between mb-3">
-                                    <div>
-                                        <p className="text-[10px] font-black text-[#366480] uppercase tracking-widest">{c.codigo}</p>
-                                        <p className="text-[13px] font-black text-[#2c3434] mt-0.5 line-clamp-1">
-                                            {c.cliente_nombre || '—'}
-                                        </p>
-                                    </div>
-                                    <StatusBadge estado={c.estado} />
-                                </div>
-                                <p className="text-[10px] font-bold text-[#8b9ba5] mb-4">
-                                    {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
-                                </p>
-                                <div className="bg-[#f0f7fb] rounded-2xl px-4 py-2.5 mb-4">
-                                    <p className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Total</p>
-                                    <p className="text-[16px] font-black text-[#366480] tabular-nums">{fmtSol(c.total)}</p>
-                                </div>
+                                <Calendar className="w-4 h-4 text-[#4A90E2]" />
+                                {startDate
+                                    ? `${format(new Date(startDate + 'T12:00:00'), 'dd MMM', { locale: es })} - ${format(new Date(endDate + 'T12:00:00'), 'dd MMM', { locale: es })}`
+                                    : 'Seleccionar Rango'}
+                                <ChevronDown className={`w-3 h-3 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} />
+                            </button>
+                            <RangeDatePicker
+                                isOpen={showDatePicker}
+                                startDate={startDate}
+                                endDate={endDate}
+                                onApply={(start, end) => {
+                                    setStartDate(start);
+                                    setEndDate(end);
+                                    setShowDatePicker(false);
+                                }}
+                                onCancel={() => setShowDatePicker(false)}
+                            />
+                        </div>
+                    )}
+
+                    <button
+                        onClick={() => { setSearchTerm(''); fetchData(); }}
+                        className="w-10 h-10 flex items-center justify-center rounded-full bg-[#f8faf9] text-[#8b9ba5] hover:bg-[#eef4f7] hover:text-[#366480] transition-all"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                    </button>
+                </div>
+
+                {/* Cards grid */}
+                <div className="flex-1 overflow-y-auto p-8">
+                    {loading ? (
+                        <div className="flex items-center justify-center h-40">
+                            <div className="w-8 h-8 border-2 border-[#366480] border-t-transparent rounded-full animate-spin" />
+                        </div>
+                    ) : filtered.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-60 gap-4 text-[#8b9ba5]">
+                            <Receipt className="w-12 h-12 opacity-30" />
+                            <p className="text-[12px] font-bold uppercase tracking-widest">Sin cotizaciones</p>
+                            <button onClick={openNew} className="text-[11px] font-black text-[#366480] underline underline-offset-2">
+                                Crear la primera
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                            {filtered.map(c => (
                                 <div
-                                    className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                                    onClick={e => e.stopPropagation()}
+                                    key={c.id}
+                                    onClick={() => openEdit(c)}
+                                    className="bg-white/40 backdrop-blur-[16px] rounded-[28px] p-5 border border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 cursor-pointer transition-all group"
                                 >
-                                    <button
-                                        onClick={() => duplicate(c)}
-                                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-[#f8faf9] text-[10px] font-black text-[#8b9ba5] hover:text-[#366480] hover:bg-[#eef4f7] transition-all uppercase tracking-wider"
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div>
+                                            <p className="text-[10px] font-black text-[#366480] uppercase tracking-widest">{c.codigo}</p>
+                                            <p className="text-[13px] font-black text-[#2c3434] mt-0.5 line-clamp-1">
+                                                {c.cliente_nombre || '—'}
+                                            </p>
+                                        </div>
+                                        <StatusBadge estado={c.estado} />
+                                    </div>
+                                    <p className="text-[10px] font-bold text-[#8b9ba5] mb-4">
+                                        {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
+                                    </p>
+                                    <div className="bg-[#f0f7fb] rounded-2xl px-4 py-2.5 mb-4">
+                                        <p className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Total</p>
+                                        <p className="text-[16px] font-black text-[#366480] tabular-nums">{fmtSol(c.total)}</p>
+                                    </div>
+                                    <div
+                                        className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={e => e.stopPropagation()}
                                     >
-                                        <Copy className="w-3 h-3" /> Duplicar
-                                    </button>
-                                    <button
-                                        onClick={() => setDeleteConfirmId(c.id)}
-                                        className="w-7 h-7 flex items-center justify-center rounded-xl bg-[#f8faf9] text-[#c5d0d4] hover:text-red-400 hover:bg-red-50 transition-all"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                        <button
+                                            onClick={() => duplicate(c)}
+                                            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-[#f8faf9] text-[10px] font-black text-[#8b9ba5] hover:text-[#366480] hover:bg-[#eef4f7] transition-all uppercase tracking-wider"
+                                        >
+                                            <Copy className="w-3 h-3" /> Duplicar
+                                        </button>
+                                        <button
+                                            onClick={() => setDeleteConfirmId(c.id)}
+                                            className="w-7 h-7 flex items-center justify-center rounded-xl bg-[#f8faf9] text-[#c5d0d4] hover:text-red-400 hover:bg-red-50 transition-all"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Delete confirmation modal */}
+                {deleteConfirmId && createPortal(
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-sm">
+                        <div className="bg-white/80 backdrop-blur-[24px] rounded-[32px] p-8 border border-white/50 shadow-2xl max-w-sm w-full mx-4">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
+                                    <Trash2 className="w-5 h-5 text-red-500" />
+                                </div>
+                                <div>
+                                    <p className="text-[14px] font-black text-[#2c3434]">Eliminar cotización</p>
+                                    <p className="text-[11px] font-bold text-[#8b9ba5]">Esta acción no se puede deshacer</p>
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                            <div className="flex gap-3 mt-6">
+                                <button
+                                    onClick={() => setDeleteConfirmId(null)}
+                                    className="flex-1 py-2.5 rounded-full bg-[#f8faf9] text-[11px] font-black text-[#8b9ba5] uppercase tracking-widest hover:bg-[#eef4f7] transition-all"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={() => deleteCot(deleteConfirmId)}
+                                    className="flex-1 py-2.5 rounded-full bg-red-500 text-white text-[11px] font-black uppercase tracking-widest hover:bg-red-600 transition-all"
+                                >
+                                    Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
                 )}
             </div>
-
-            {/* Delete confirmation modal */}
-            {deleteConfirmId && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 backdrop-blur-sm">
-                    <div className="bg-white/80 backdrop-blur-[24px] rounded-[32px] p-8 border border-white/50 shadow-2xl max-w-sm w-full mx-4">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
-                                <Trash2 className="w-5 h-5 text-red-500" />
-                            </div>
-                            <div>
-                                <p className="text-[14px] font-black text-[#2c3434]">Eliminar cotización</p>
-                                <p className="text-[11px] font-bold text-[#8b9ba5]">Esta acción no se puede deshacer</p>
-                            </div>
-                        </div>
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                onClick={() => setDeleteConfirmId(null)}
-                                className="flex-1 py-2.5 rounded-full bg-[#f8faf9] text-[11px] font-black text-[#8b9ba5] uppercase tracking-widest hover:bg-[#eef4f7] transition-all"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                onClick={() => deleteCot(deleteConfirmId)}
-                                className="flex-1 py-2.5 rounded-full bg-red-500 text-white text-[11px] font-black uppercase tracking-widest hover:bg-red-600 transition-all"
-                            >
-                                Eliminar
-                            </button>
-                        </div>
-                    </div>
-                </div>,
-                document.body
-            )}
-        </div>
+        </>
     );
 }
