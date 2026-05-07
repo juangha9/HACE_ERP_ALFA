@@ -11,6 +11,8 @@ import {
     RefreshCw, FileText, CheckCircle2, Calendar, Receipt,
     Copy,
 } from 'lucide-react';
+import { generateQuotePDF } from '../services/pdfExport';
+import { exportToExcel } from '../services/excelExport';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -72,7 +74,7 @@ interface FormState {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const UNIDADES = ['UND', 'PLN', 'JGO', 'SET', 'PZA', 'M2', 'ML', 'MTS', 'KG', 'GLN', 'HRS', 'SERV'];
+const UNIDADES = ['UND', 'PLN', 'PLS', 'JGO', 'SET', 'PZA', 'M2', 'ML', 'MTS', 'KG', 'GLN', 'HRS', 'SERV'];
 const IGV_RATE = 0.18;
 
 const emptyForm = (): FormState => ({
@@ -102,7 +104,7 @@ const SearchInput = React.memo(({ value, onSearch, placeholder, className }: {
     value: string; onSearch: (v: string) => void; placeholder: string; className: string;
 }) => {
     const [local, setLocal] = React.useState(value);
-    const timer = useRef<ReturnType<typeof setTimeout>>();
+    const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     React.useEffect(() => { setLocal(value); }, [value]);
     const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setLocal(e.target.value);
@@ -110,6 +112,30 @@ const SearchInput = React.memo(({ value, onSearch, placeholder, className }: {
         timer.current = setTimeout(() => onSearch(e.target.value), 250);
     };
     return <input type="text" value={local} onChange={onChange} placeholder={placeholder} className={className} />;
+});
+
+// Combobox for unit field: clears on focus so datalist shows ALL options, then
+// restores to last typed/selected value on blur.
+const UnitCombobox = React.memo(({ value, onChange, listId, className }: {
+    value: string; onChange: (v: string) => void; listId: string; className: string;
+}) => {
+    const [display, setDisplay] = React.useState(value);
+    const lastRef = React.useRef(value);
+    const focusedRef = React.useRef(false);
+    React.useEffect(() => {
+        if (!focusedRef.current) { setDisplay(value); lastRef.current = value; }
+    }, [value]);
+    return (
+        <input
+            type="text"
+            list={listId}
+            value={display}
+            onFocus={() => { focusedRef.current = true; setDisplay(''); }}
+            onChange={e => { const v = e.target.value.toUpperCase(); setDisplay(v); lastRef.current = v; onChange(v); }}
+            onBlur={() => { focusedRef.current = false; setDisplay(lastRef.current || value); }}
+            className={className}
+        />
+    );
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -157,6 +183,9 @@ interface EditorModalProps {
     onDescuentoChange: (val: string) => void;
     onAdelantoChange: (val: string) => void;
     onTipoDocumento: (tipo: TipoDoc) => void;
+    onExportPDF: () => void;
+    onExportExcel: () => void;
+    isReadOnly: boolean;
 }
 
 const EditorModal: React.FC<EditorModalProps> = ({
@@ -164,325 +193,394 @@ const EditorModal: React.FC<EditorModalProps> = ({
     onClose, onSaveBorrador, onSaveListo, onFormChange,
     onUpdateItem, onAddRow, onRemoveRow, onDescuentoChange,
     onAdelantoChange, onTipoDocumento,
+    onExportPDF, onExportExcel, isReadOnly,
 }) => {
+    const [showProcesarConfirm, setShowProcesarConfirm] = useState(false);
+
     if (!isOpen) return null;
 
     return createPortal(
-        <div
-            className="fixed inset-0 z-[2000] flex items-center justify-center p-4 overflow-hidden"
-            style={{ backdropFilter: 'blur(10px)', background: 'rgba(15, 23, 30, 0.35)' }}
-            onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-        >
-            <div className="bg-white/88 backdrop-blur-[24px] rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-white/50">
+        <>
+            <div
+                className="fixed inset-0 z-[2000] flex items-center justify-center p-4 overflow-hidden"
+                style={{ backdropFilter: 'blur(10px)', background: 'rgba(15, 23, 30, 0.35)' }}
+                onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+            >
+                <div className="bg-white/88 backdrop-blur-[24px] rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-white/50">
 
-                {/* Top highlight edge */}
-                <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent z-10 pointer-events-none" />
+                    {/* Top highlight edge */}
+                    <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent z-10 pointer-events-none" />
 
-                {/* Save status overlay */}
-                {saveStatus !== 'idle' && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-[32px]">
-                        <div className="text-center p-8 bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-4">
-                            {saveStatus === 'saving' && (
-                                <>
-                                    <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin" />
-                                    <p className="text-sm font-bold text-slate-600">Guardando cotización...</p>
-                                </>
-                            )}
-                            {saveStatus === 'success' && (
-                                <>
-                                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
-                                        <span className="material-icons-round text-4xl">check</span>
-                                    </div>
-                                    <h3 className="text-xl font-black tracking-tight text-slate-800">¡Cotización Guardada!</h3>
-                                    <p className="text-sm text-slate-500 font-medium">La cotización se ha registrado exitosamente.</p>
-                                </>
-                            )}
-                            {saveStatus === 'error' && (
-                                <>
-                                    <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
-                                        <span className="material-icons-round text-4xl">error_outline</span>
-                                    </div>
-                                    <h3 className="text-xl font-black tracking-tight text-slate-800">Error al Guardar</h3>
-                                    <p className="text-sm text-slate-500 font-medium">Ocurrió un problema. Inténtalo de nuevo.</p>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Header */}
-                <div className="px-8 py-5 border-b border-white/30 flex items-center justify-between shrink-0">
-                    <div className="flex items-center gap-4">
-                        <span className="material-icons-round text-[36px] text-slate-700 drop-shadow-sm">request_quote</span>
-                        <div>
-                            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Presupuestador / Cotización</h2>
-                            <p className="text-[11px] font-bold text-slate-400 font-mono">{editingCode || 'Nueva Cotización'}</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <div className="flex bg-slate-100/60 rounded-2xl p-1 shadow-sm border border-white/40">
-                            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:bg-rose-50/80 transition-all font-bold text-xs">
-                                <span className="material-icons-round text-sm">picture_as_pdf</span>
-                                PDF
-                            </button>
-                            <div className="w-px bg-slate-200 mx-1 self-stretch" />
-                            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-emerald-600 hover:bg-emerald-50/80 transition-all font-bold text-xs">
-                                <span className="material-icons-round text-sm">description</span>
-                                EXCEL
-                            </button>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className="w-10 h-10 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/60 flex items-center justify-center transition-all"
-                        >
-                            <span className="material-icons-round">close</span>
-                        </button>
-                    </div>
-                </div>
-
-                {/* Scrollable body */}
-                <div className="flex-1 overflow-y-auto p-8 space-y-6">
-
-                    {/* 1. Business info + Client form */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
-                        {/* Business info */}
-                        <div className="space-y-3">
-                            <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest pl-1">Información de la Empresa</h3>
-                            <div className="space-y-1">
-                                <p className="text-lg font-black text-slate-800">{businessInfo?.company_name || '—'}</p>
-                                <p className="text-xs text-slate-500 font-medium">RUC: {businessInfo?.ruc || '—'}</p>
-                                <p className="text-xs text-slate-500 font-medium">{businessInfo?.address || '—'}</p>
+                    {/* Save status overlay */}
+                    {saveStatus !== 'idle' && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm rounded-[32px]">
+                            <div className="text-center p-8 bg-white rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-4">
+                                {saveStatus === 'saving' && (
+                                    <>
+                                        <div className="w-12 h-12 border-4 border-[#d1dfe3] border-t-[#366480] rounded-full animate-spin" />
+                                        <p className="text-sm font-bold text-slate-600">Procesando cotización...</p>
+                                    </>
+                                )}
+                                {saveStatus === 'success' && (
+                                    <>
+                                        <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                                            <span className="material-icons-round text-4xl">check</span>
+                                        </div>
+                                        <h3 className="text-xl font-black tracking-tight text-slate-800">¡Cotización Procesada!</h3>
+                                        <p className="text-sm text-slate-500 font-medium">La venta se registró en Gestión de Ventas y Tesorería.</p>
+                                    </>
+                                )}
+                                {saveStatus === 'error' && (
+                                    <>
+                                        <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
+                                            <span className="material-icons-round text-4xl">error_outline</span>
+                                        </div>
+                                        <h3 className="text-xl font-black tracking-tight text-slate-800">Error al Guardar</h3>
+                                        <p className="text-sm text-slate-500 font-medium">Ocurrió un problema. Inténtalo de nuevo.</p>
+                                    </>
+                                )}
                             </div>
                         </div>
+                    )}
 
-                        {/* Client form */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="col-span-2">
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
-                                <input
-                                    type="text"
-                                    value={form.cliente_nombre}
-                                    onChange={e => onFormChange({ ...form, cliente_nombre: e.target.value })}
-                                    className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white/80 transition-all"
-                                    placeholder="Nombre o Razón Social..."
-                                />
-                            </div>
+                    {/* Header */}
+                    <div className="px-8 py-5 border-b border-white/30 flex items-center justify-between shrink-0">
+                        <div className="flex items-center gap-4">
+                            <span className="material-icons-round text-[36px] text-slate-700 drop-shadow-sm">request_quote</span>
                             <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
-                                <input
-                                    type="text"
-                                    value={form.cliente_doi}
-                                    onChange={e => onFormChange({ ...form, cliente_doi: e.target.value })}
-                                    className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:bg-white/80 transition-all"
-                                    placeholder="RUC / DNI..."
-                                />
+                                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Presupuestador / Cotización</h2>
+                                <p className="text-[11px] font-bold text-slate-400 font-mono">{editingCode || 'Nueva Cotización'}</p>
                             </div>
-                            <div className="flex items-center justify-center gap-4 bg-white/40 border border-white/50 rounded-xl px-4 py-3">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        checked={form.tipo_documento === 'BOLETA'}
-                                        onChange={() => onTipoDocumento('BOLETA')}
-                                        className="accent-indigo-600"
-                                    />
-                                    <span className="text-xs font-bold text-slate-600">Boleta</span>
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        checked={form.tipo_documento === 'FACTURA'}
-                                        onChange={() => onTipoDocumento('FACTURA')}
-                                        className="accent-indigo-600"
-                                    />
-                                    <span className="text-xs font-bold text-slate-600">Factura</span>
-                                </label>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <div className="flex bg-slate-100/60 rounded-2xl p-1 shadow-sm border border-white/40">
+                                <button
+                                    onClick={onExportPDF}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-rose-500 hover:bg-rose-50/80 transition-all font-bold text-xs"
+                                >
+                                    <span className="material-icons-round text-sm">picture_as_pdf</span>
+                                    PDF
+                                </button>
+                                <div className="w-px bg-slate-200 mx-1 self-stretch" />
+                                <button
+                                    onClick={onExportExcel}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-emerald-600 hover:bg-emerald-50/80 transition-all font-bold text-xs"
+                                >
+                                    <span className="material-icons-round text-sm">description</span>
+                                    EXCEL
+                                </button>
                             </div>
-                            <div className="col-span-2 grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Emisión</label>
-                                    <div className="w-full bg-white/30 border border-white/40 rounded-xl px-4 py-3 text-xs font-bold text-slate-500">
-                                        {form.fecha_emision
-                                            ? format(new Date(form.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy')
-                                            : new Date().toLocaleDateString()}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 pl-1">Fecha de Entrega</label>
-                                    <input
-                                        type="date"
-                                        value={form.fecha_entrega || ''}
-                                        onChange={e => onFormChange({ ...form, fecha_entrega: e.target.value || null })}
-                                        className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500/20 focus:bg-white/80 transition-all"
-                                    />
-                                </div>
-                            </div>
+                            <button
+                                onClick={onClose}
+                                className="w-10 h-10 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/60 flex items-center justify-center transition-all"
+                            >
+                                <span className="material-icons-round">close</span>
+                            </button>
                         </div>
                     </div>
 
-                    {/* 2. Items table */}
-                    <div className="border border-white/40 rounded-3xl overflow-hidden shadow-sm bg-white/30">
-                        <table className="w-full border-collapse">
-                            <thead>
-                                <tr className="bg-white/40 text-slate-500 text-[10px] font-black uppercase tracking-widest">
-                                    <th className="px-4 py-4 text-left border-r border-white/50 w-20">Cant.</th>
-                                    <th className="px-4 py-4 text-left border-r border-white/50 w-24">Unidad</th>
-                                    <th className="px-4 py-4 text-left border-r border-white/50">Descripción del Producto</th>
-                                    <th className="px-4 py-4 text-right border-r border-white/50 w-32">P. Unit</th>
-                                    <th className="px-4 py-4 text-right w-32">Total</th>
-                                    <th className="px-4 py-4 w-12"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/40">
-                                {form.items.map((item, idx) => (
-                                    <tr key={item.id} className="group hover:bg-white/40 transition-colors">
-                                        <td className="px-4 py-3 border-r border-white/30">
-                                            <input
-                                                type="number"
-                                                value={item.cantidad || ''}
-                                                onChange={e => onUpdateItem(item.id, 'cantidad', e.target.value)}
-                                                className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
-                                                placeholder="0"
-                                            />
-                                        </td>
-                                        <td className="px-4 py-3 border-r border-white/30">
-                                            <select
-                                                value={item.unidad}
-                                                onChange={e => onUpdateItem(item.id, 'unidad', e.target.value)}
-                                                className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[11px] uppercase cursor-pointer"
-                                            >
-                                                {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
-                                            </select>
-                                        </td>
-                                        <td className="px-4 py-3 border-r border-white/30">
-                                            <input
-                                                type="text"
-                                                value={item.descripcion}
-                                                onChange={e => onUpdateItem(item.id, 'descripcion', e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) onAddRow(); }}
-                                                className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
-                                                placeholder="Descripción del producto o servicio..."
-                                            />
-                                        </td>
-                                        <td className="px-4 py-3 border-r border-white/30">
-                                            <div className="flex items-center justify-end gap-1">
-                                                <span className="text-slate-400 text-[10px] font-bold">S/</span>
+                    {/* Scrollable body */}
+                    <div className="flex-1 overflow-y-auto p-8 space-y-6">
+
+                        {/* Read-only notice */}
+                        {isReadOnly && (
+                            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700">
+                                <span className="material-icons-round text-sm">lock</span>
+                                <p className="text-xs font-bold">Esta cotización está procesada y solo puede visualizarse.</p>
+                            </div>
+                        )}
+
+                        {/* 1. Business info + Client form */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
+                            {/* Business info */}
+                            <div className="space-y-3">
+                                <h3 className="text-[10px] font-black text-[#366480] uppercase tracking-widest pl-1">Información de la Empresa</h3>
+                                <div className="space-y-1">
+                                    <p className="text-lg font-black text-slate-800">{businessInfo?.company_name || '—'}</p>
+                                    <p className="text-xs text-slate-500 font-medium">RUC: {businessInfo?.ruc || '—'}</p>
+                                    <p className="text-xs text-slate-500 font-medium">{businessInfo?.address || '—'}</p>
+                                </div>
+                            </div>
+
+                            {/* Client form */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="col-span-2">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
+                                    <input
+                                        type="text"
+                                        value={form.cliente_nombre}
+                                        onChange={e => onFormChange({ ...form, cliente_nombre: e.target.value })}
+                                        readOnly={isReadOnly}
+                                        className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
+                                        placeholder="Nombre o Razón Social..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
+                                    <input
+                                        type="text"
+                                        value={form.cliente_doi}
+                                        onChange={e => onFormChange({ ...form, cliente_doi: e.target.value })}
+                                        readOnly={isReadOnly}
+                                        className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
+                                        placeholder="RUC / DNI..."
+                                    />
+                                </div>
+                                <div className="flex items-center justify-center gap-4 bg-white/40 border border-white/50 rounded-xl px-4 py-3">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            checked={form.tipo_documento === 'BOLETA'}
+                                            onChange={() => onTipoDocumento('BOLETA')}
+                                            disabled={isReadOnly}
+                                            className="accent-[#366480]"
+                                        />
+                                        <span className="text-xs font-bold text-slate-600">Boleta</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            checked={form.tipo_documento === 'FACTURA'}
+                                            onChange={() => onTipoDocumento('FACTURA')}
+                                            disabled={isReadOnly}
+                                            className="accent-[#366480]"
+                                        />
+                                        <span className="text-xs font-bold text-slate-600">Factura</span>
+                                    </label>
+                                </div>
+                                <div className="col-span-2 grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Emisión</label>
+                                        <div className="w-full bg-white/30 border border-white/40 rounded-xl px-4 py-3 text-xs font-bold text-slate-500">
+                                            {form.fecha_emision
+                                                ? format(new Date(form.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy')
+                                                : new Date().toLocaleDateString()}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 pl-1">Fecha de Entrega</label>
+                                        <input
+                                            type="date"
+                                            value={form.fecha_entrega || ''}
+                                            onChange={e => onFormChange({ ...form, fecha_entrega: e.target.value || null })}
+                                            readOnly={isReadOnly}
+                                            className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500/20 focus:bg-white/80 transition-all"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 2. Items table */}
+                        <datalist id="cot-unidades">
+                            {UNIDADES.map(u => <option key={u} value={u} />)}
+                        </datalist>
+                        <div className="border border-white/40 rounded-3xl overflow-auto shadow-sm bg-white/30">
+                            <table className="w-full min-w-[640px] border-collapse">
+                                <thead>
+                                    <tr className="bg-white/40 text-slate-500 text-[10px] font-black uppercase tracking-widest">
+                                        <th className="px-4 py-4 text-left border-r border-white/50 w-20">Cant.</th>
+                                        <th className="px-4 py-4 text-left border-r border-white/50 w-24">Unidad</th>
+                                        <th className="px-4 py-4 text-left border-r border-white/50 min-w-[220px]">Descripción</th>
+                                        <th className="px-4 py-4 text-center border-r border-white/50 w-32">P. Unit</th>
+                                        <th className="px-4 py-4 text-center w-32">Total</th>
+                                        <th className="px-4 py-4 w-12"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/40">
+                                    {form.items.map((item, idx) => (
+                                        <tr key={item.id} className="group hover:bg-white/40 transition-colors">
+                                            <td className="px-4 py-3 border-r border-white/30">
                                                 <input
                                                     type="number"
-                                                    value={item.precio_unitario || ''}
-                                                    onChange={e => onUpdateItem(item.id, 'precio_unitario', e.target.value)}
-                                                    className="w-20 bg-transparent border-none font-black text-indigo-600 text-right outline-none text-sm focus:bg-indigo-50/60 transition-colors rounded-lg"
-                                                    placeholder="0.00"
+                                                    value={item.cantidad || ''}
+                                                    onChange={e => onUpdateItem(item.id, 'cantidad', e.target.value)}
+                                                    readOnly={isReadOnly}
+                                                    className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
+                                                    placeholder="0"
                                                 />
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-right font-black text-sm text-slate-800">
-                                            S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <button
-                                                onClick={() => onRemoveRow(item.id)}
-                                                disabled={form.items.length === 1}
-                                                className="w-8 h-8 rounded-full flex items-center justify-center text-rose-300 hover:text-rose-600 hover:bg-rose-50/60 transition-all disabled:opacity-0 disabled:pointer-events-none"
-                                            >
-                                                <span className="material-icons-round text-sm">delete</span>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        <button
-                            onClick={onAddRow}
-                            className="w-full py-4 border-t border-white/40 text-xs font-bold text-slate-400 hover:text-indigo-600 hover:bg-white/30 transition-all flex items-center justify-center gap-2"
-                        >
-                            <span className="material-icons-round text-sm">add</span>
-                            AGREGAR FILA PERSONALIZADA
-                        </button>
-                    </div>
-
-                    {/* 3. Totals */}
-                    <div className="flex justify-end">
-                        <div className="w-full md:w-80 space-y-3 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
-                            <div className="flex justify-between items-center text-xs text-slate-500 font-bold uppercase tracking-wider">
-                                <span>Sub Total</span>
-                                <span className="text-slate-700">S/ {form.subtotal.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs text-rose-500 font-bold uppercase tracking-wider">
-                                <span>Descuento</span>
-                                <div className="flex items-center gap-1 border-b border-rose-200">
-                                    <span className="text-[10px]">- S/</span>
-                                    <input
-                                        type="number"
-                                        value={form.descuento || ''}
-                                        onChange={e => onDescuentoChange(e.target.value)}
-                                        className="w-16 bg-transparent border-none text-right font-black outline-none text-rose-500"
-                                        placeholder="0.00"
-                                    />
-                                </div>
-                            </div>
-                            {form.tipo_documento === 'FACTURA' && (
-                                <div className="flex justify-between items-center text-xs text-indigo-600 font-bold uppercase tracking-wider">
-                                    <span>IGV (18%)</span>
-                                    <span className="font-black">S/ {form.igv.toFixed(2)}</span>
-                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 border-r border-white/30">
+                                                {isReadOnly ? (
+                                                    <span className="font-bold text-slate-500 text-[11px] uppercase">{item.unidad}</span>
+                                                ) : (
+                                                    <UnitCombobox
+                                                        value={item.unidad}
+                                                        onChange={v => onUpdateItem(item.id, 'unidad', v)}
+                                                        listId="cot-unidades"
+                                                        className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[11px] uppercase cursor-pointer"
+                                                    />
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 border-r border-white/30 min-w-[220px]">
+                                                <input
+                                                    type="text"
+                                                    value={item.descripcion}
+                                                    onChange={e => onUpdateItem(item.id, 'descripcion', e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) onAddRow(); }}
+                                                    readOnly={isReadOnly}
+                                                    className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
+                                                    placeholder="Descripción del producto o servicio..."
+                                                    title={item.descripcion}
+                                                />
+                                            </td>
+                                            <td className="px-4 py-3 border-r border-white/30">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <span className="text-slate-400 text-[10px] font-bold">S/</span>
+                                                    <input
+                                                        type="number"
+                                                        value={item.precio_unitario || ''}
+                                                        onChange={e => onUpdateItem(item.id, 'precio_unitario', e.target.value)}
+                                                        readOnly={isReadOnly}
+                                                        className="w-20 bg-transparent border-none font-black text-[#366480] text-right outline-none text-sm focus:bg-[#f0f5f4]/60 transition-colors rounded-lg"
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-black text-sm text-slate-800">
+                                                S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {!isReadOnly && (
+                                                    <button
+                                                        onClick={() => onRemoveRow(item.id)}
+                                                        disabled={form.items.length === 1}
+                                                        className="w-8 h-8 rounded-full flex items-center justify-center text-rose-300 hover:text-rose-600 hover:bg-rose-50/60 transition-all disabled:opacity-0 disabled:pointer-events-none"
+                                                    >
+                                                        <span className="material-icons-round text-sm">delete</span>
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {!isReadOnly && (
+                                <button
+                                    onClick={onAddRow}
+                                    className="w-full py-4 border-t border-white/40 text-xs font-bold text-slate-400 hover:text-[#366480] hover:bg-white/30 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <span className="material-icons-round text-sm">add</span>
+                                    AGREGAR FILA PERSONALIZADA
+                                </button>
                             )}
-                            <div className="pt-3 border-t border-white/50 flex justify-between items-center">
-                                <span className="text-xs font-black tracking-widest uppercase text-slate-400">Total</span>
-                                <span className="text-2xl font-black text-indigo-600">
-                                    S/ {form.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                </span>
-                            </div>
-                            <div className="flex justify-between items-center text-xs text-emerald-600 font-bold uppercase tracking-wider pt-4">
-                                <span>Adelanto</span>
-                                <div className="flex items-center gap-1 bg-white/50 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
-                                    <span className="text-[10px]">S/</span>
-                                    <input
-                                        type="number"
-                                        value={form.adelanto || ''}
-                                        onChange={e => onAdelantoChange(e.target.value)}
-                                        className="w-16 bg-transparent border-none text-right font-black outline-none text-emerald-600"
-                                        placeholder="0.00"
-                                    />
+                        </div>
+
+                        {/* 3. Totals */}
+                        <div className="flex justify-end">
+                            <div className="w-full md:w-80 space-y-3 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
+                                <div className="flex justify-between items-center text-xs text-slate-500 font-bold uppercase tracking-wider">
+                                    <span>Sub Total</span>
+                                    <span className="text-slate-700">S/ {form.subtotal.toFixed(2)}</span>
                                 </div>
-                            </div>
-                            <div className="flex justify-between items-center pt-3 mt-2 border-t-2 border-dashed border-white/50">
-                                <span className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Saldo Pendiente</span>
-                                <span className="text-lg font-black tracking-tighter text-amber-600">
-                                    S/ {(form.saldo_pendiente || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                </span>
+                                <div className="flex justify-between items-center text-xs text-rose-500 font-bold uppercase tracking-wider">
+                                    <span>Descuento</span>
+                                    <div className="flex items-center gap-1 border-b border-rose-200">
+                                        <span className="text-[10px]">- S/</span>
+                                        <input
+                                            type="number"
+                                            value={form.descuento || ''}
+                                            onChange={e => onDescuentoChange(e.target.value)}
+                                            readOnly={isReadOnly}
+                                            className="w-16 bg-transparent border-none text-right font-black outline-none text-rose-500"
+                                            placeholder="0.00"
+                                        />
+                                    </div>
+                                </div>
+                                {form.tipo_documento === 'FACTURA' && (
+                                    <div className="flex justify-between items-center text-xs text-[#366480] font-bold uppercase tracking-wider">
+                                        <span>IGV (18%)</span>
+                                        <span className="font-black">S/ {form.igv.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                <div className="pt-3 border-t border-white/50 flex justify-between items-center">
+                                    <span className="text-xs font-black tracking-widest uppercase text-slate-400">Total</span>
+                                    <span className="text-2xl font-black text-[#366480]">
+                                        S/ {form.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs text-emerald-600 font-bold uppercase tracking-wider pt-4">
+                                    <span>Adelanto</span>
+                                    <div className="flex items-center gap-1 bg-white/50 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
+                                        <span className="text-[10px]">S/</span>
+                                        <input
+                                            type="number"
+                                            value={form.adelanto || ''}
+                                            onChange={e => onAdelantoChange(e.target.value)}
+                                            readOnly={isReadOnly}
+                                            className="w-16 bg-transparent border-none text-right font-black outline-none text-emerald-600"
+                                            placeholder="0.00"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex justify-between items-center pt-3 mt-2 border-t-2 border-dashed border-white/50">
+                                    <span className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Saldo Pendiente</span>
+                                    <span className="text-lg font-black tracking-tighter text-amber-600">
+                                        S/ {(form.saldo_pendiente || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Footer */}
-                <div className="px-8 py-5 border-t border-white/30 flex justify-between items-center shrink-0">
-                    <StatusBadge estado={form.estado} />
-                    <div className="flex gap-3">
-                        <button
-                            onClick={onClose}
-                            className="px-6 py-3 rounded-2xl text-sm font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
-                        >
-                            Descartar
-                        </button>
-                        <button
-                            onClick={onSaveBorrador}
-                            disabled={saveStatus !== 'idle'}
-                            className="px-6 py-3 rounded-2xl border border-slate-200/60 bg-white/50 text-sm font-black text-slate-600 hover:bg-white/80 uppercase tracking-widest transition-all disabled:opacity-50"
-                        >
-                            Guardar Borrador
-                        </button>
-                        <button
-                            onClick={onSaveListo}
-                            disabled={saveStatus !== 'idle'}
-                            className="px-10 py-3 bg-indigo-600 text-white font-black text-sm rounded-2xl hover:bg-indigo-700 shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all uppercase tracking-widest disabled:opacity-50"
-                        >
-                            Guardar Cotización
-                        </button>
+                    {/* Footer */}
+                    <div className="px-8 py-5 border-t border-white/30 flex justify-between items-center shrink-0">
+                        <StatusBadge estado={form.estado} />
+                        <div className="flex gap-3">
+                            <button
+                                onClick={onClose}
+                                className="px-6 py-3 rounded-2xl text-sm font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
+                            >
+                                {isReadOnly ? 'Cerrar' : 'Descartar'}
+                            </button>
+                            {!isReadOnly && (
+                                <>
+                                    <button
+                                        onClick={onSaveBorrador}
+                                        disabled={saveStatus !== 'idle'}
+                                        className="px-6 py-3 rounded-2xl border border-slate-200/60 bg-white/50 text-sm font-black text-slate-600 hover:bg-white/80 uppercase tracking-widest transition-all disabled:opacity-50"
+                                    >
+                                        Guardar Borrador
+                                    </button>
+                                    <button
+                                        onClick={() => setShowProcesarConfirm(true)}
+                                        disabled={saveStatus !== 'idle'}
+                                        className="px-10 py-3 bg-[#366480] text-white font-black text-sm rounded-2xl hover:bg-[#2c5268] shadow-xl shadow-[#366480]/20 active:scale-[0.98] transition-all uppercase tracking-widest disabled:opacity-50"
+                                    >
+                                        Procesar Cotización
+                                    </button>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>,
+
+            {/* Confirmation modal */}
+            {showProcesarConfirm && (
+                <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/20 backdrop-blur-[4px]">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center text-center">
+                        <span className="material-icons-round text-amber-500 text-4xl mb-4">warning</span>
+                        <h3 className="text-lg font-black mb-2 text-slate-800">¿Procesar Cotización?</h3>
+                        <p className="text-sm text-slate-500 mb-6">Esta acción no puede revertirse. La cotización quedará bloqueada y ya no se podrá editar, solo visualizar.</p>
+                        <div className="flex gap-3 w-full">
+                            <button
+                                onClick={() => setShowProcesarConfirm(false)}
+                                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-all"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => { setShowProcesarConfirm(false); onSaveListo(); }}
+                                className="flex-1 px-4 py-2.5 rounded-xl bg-[#366480] text-white font-black text-sm hover:bg-[#2c5268] transition-all"
+                            >
+                                Procesar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>,
         document.body
     );
 };
@@ -511,6 +609,7 @@ export function CotizacionesPage() {
     const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [fetchError, setFetchError] = useState<string | null>(null);
 
     // Click outside date picker
     useEffect(() => {
@@ -539,19 +638,21 @@ export function CotizacionesPage() {
 
     const fetchData = useCallback(async () => {
         setLoading(true);
+        setFetchError(null);
         try {
             let q = supabase
                 .from('cotizaciones')
                 .select('*')
-                .gte('created_at', startDate + 'T00:00:00')
-                .lte('created_at', endDate + 'T23:59:59')
+                .gte('fecha_emision', startDate)
+                .lte('fecha_emision', endDate)
                 .order('created_at', { ascending: false });
             if (filterEstado !== 'TODOS') q = q.eq('estado', filterEstado);
             const { data, error } = await q;
             if (error) throw error;
             setCotizaciones((data as Cotizacion[]) || []);
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
+            setFetchError(e?.message || 'Error desconocido al cargar cotizaciones');
         } finally {
             setLoading(false);
         }
@@ -677,6 +778,65 @@ export function CotizacionesPage() {
         }));
     };
 
+    const handleExportPDF = () => {
+        const exportData = {
+            items: form.items.map(it => ({
+                quantity: it.cantidad,
+                unit: it.unidad,
+                type: 'PRODUCTO',
+                description: it.descripcion,
+                unitPrice: it.precio_unitario,
+                total: it.total
+            })),
+            totals: {
+                subtotal: form.subtotal,
+                discount: form.descuento,
+                igv: form.igv,
+                total: form.total,
+                advance: form.adelanto,
+                balance: form.saldo_pendiente
+            },
+            code: editingCode || 'NUEVA',
+            clientData: {
+                name: form.cliente_nombre,
+                doi: form.cliente_doi,
+                address: form.cliente_direccion,
+                deliveryDate: form.fecha_entrega
+            },
+            businessInfo: businessInfo
+        };
+        generateQuotePDF(exportData, `Cotizacion_${editingCode || 'Nueva'}`);
+    };
+
+    const handleExportExcel = () => {
+        exportToExcel({
+            items: form.items.map(it => ({
+                quantity: it.cantidad,
+                unit: it.unidad,
+                type: 'PRODUCTO',
+                description: it.descripcion,
+                unitPrice: it.precio_unitario,
+                total: it.total,
+            })),
+            totals: {
+                subtotal: form.subtotal,
+                discount: form.descuento,
+                igv: form.igv,
+                total: form.total,
+                advance: form.adelanto,
+                balance: form.saldo_pendiente,
+            },
+            code: editingCode || 'NUEVA',
+            clientData: {
+                name: form.cliente_nombre,
+                address: form.cliente_direccion,
+                doi: form.cliente_doi,
+                deliveryDate: form.fecha_entrega,
+            },
+            businessInfo,
+        }, `Cotizacion_${editingCode || 'Nueva'}`);
+    };
+
     const syncItemsTable = async (cotizacionId: string, items: LineItem[]) => {
         await supabase.from('cotizaciones_items').delete().eq('cotizacion_id', cotizacionId);
         const rows = items
@@ -723,6 +883,7 @@ export function CotizacionesPage() {
             }
 
             setSaveStatus('success');
+            if (estadoOverride === 'LISTO') setFilterEstado('TODOS');
             await fetchData();
             setTimeout(() => { setSaveStatus('idle'); closeEditor(); }, 1500);
         } catch (e) {
@@ -766,6 +927,9 @@ export function CotizacionesPage() {
                 onDescuentoChange={setDescuento}
                 onAdelantoChange={setAdelanto}
                 onTipoDocumento={setTipoDocumento}
+                onExportPDF={handleExportPDF}
+                onExportExcel={handleExportExcel}
+                isReadOnly={form.estado === 'LISTO'}
             />
 
             <div className="min-h-screen flex flex-col animate-premium-fade">
@@ -869,11 +1033,23 @@ export function CotizacionesPage() {
 
                 {/* Cards grid */}
                 <div className="flex-1 overflow-y-auto p-8">
+                    {fetchError && (
+                        <div className="mb-6 flex items-start gap-3 px-5 py-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700">
+                            <span className="material-icons-round text-sm mt-0.5">error_outline</span>
+                            <div>
+                                <p className="text-xs font-black uppercase tracking-widest mb-0.5">Error al cargar cotizaciones</p>
+                                <p className="text-xs font-medium">{fetchError}</p>
+                                <button onClick={fetchData} className="mt-2 text-xs font-black text-rose-600 underline underline-offset-2">
+                                    Reintentar
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {loading ? (
                         <div className="flex items-center justify-center h-40">
                             <div className="w-8 h-8 border-2 border-[#366480] border-t-transparent rounded-full animate-spin" />
                         </div>
-                    ) : filtered.length === 0 ? (
+                    ) : !fetchError && filtered.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-60 gap-4 text-[#8b9ba5]">
                             <Receipt className="w-12 h-12 opacity-30" />
                             <p className="text-[12px] font-bold uppercase tracking-widest">Sin cotizaciones</p>

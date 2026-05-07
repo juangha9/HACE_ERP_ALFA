@@ -24,17 +24,19 @@ export const exportToExcel = async (exportData: any, filename: string) => {
     worksheet.mergeCells('A1:F1');
     const titleCell = worksheet.getCell('A1');
     titleCell.value = companyName;
-    titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+    titleCell.font = { bold: true, size: 16, color: { argb: 'FF2D3748' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F7FA' } };
+    titleCell.border = { bottom: { style: 'thin', color: { argb: 'FFDCE0E6' } } };
     worksheet.getRow(1).height = 30;
 
     worksheet.mergeCells('A2:F2');
     const subtitleCell = worksheet.getCell('A2');
     subtitleCell.value = `COTIZACIÓN ${quoteNumber}`;
-    subtitleCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    subtitleCell.font = { bold: true, size: 12, color: { argb: 'FF475569' } };
     subtitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    subtitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    subtitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F7FA' } };
+    subtitleCell.border = { bottom: { style: 'thin', color: { argb: 'FFDCE0E6' } } };
     worksheet.getRow(2).height = 22;
 
     worksheet.addRow([]); // Gap
@@ -62,18 +64,18 @@ export const exportToExcel = async (exportData: any, filename: string) => {
     worksheet.addRow([]); // Gap
 
     // 3. Items Table Header
-    const tableHeader = ['CANT.', 'UNIDAD', 'TIPO', 'DESCRIPCIÓN DEL PRODUCTO', 'P. UNIT', 'TOTAL'];
+    const tableHeader = ['CANT.', 'UNIDAD', 'TIPO', 'DESCRIPCIÓN', 'P. UNIT', 'TOTAL'];
     const headerRow = worksheet.addRow(tableHeader);
     headerRow.height = 20;
     headerRow.eachCell((cell) => {
-        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        cell.font = { bold: true, color: { argb: 'FF475569' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8ECF2' } };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
         cell.border = {
-            top: { style: 'thin' },
-            left: { style: 'thin' },
-            bottom: { style: 'thin' },
-            right: { style: 'thin' }
+            top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
         };
     });
 

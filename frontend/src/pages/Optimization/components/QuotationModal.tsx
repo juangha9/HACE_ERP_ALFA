@@ -4,6 +4,30 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { exportToExcel } from '../../../services/excelExport';
 import type { BusinessInfo } from '../../../services/types';
 
+// Combobox for unit field: clears on focus so datalist shows ALL options, then
+// restores to last typed/selected value on blur.
+const UnitCombobox = React.memo(({ value, onChange, listId, className }: {
+    value: string; onChange: (v: string) => void; listId: string; className: string;
+}) => {
+    const [display, setDisplay] = React.useState(value);
+    const lastRef = React.useRef(value);
+    const focusedRef = React.useRef(false);
+    React.useEffect(() => {
+        if (!focusedRef.current) { setDisplay(value); lastRef.current = value; }
+    }, [value]);
+    return (
+        <input
+            type="text"
+            list={listId}
+            value={display}
+            onFocus={() => { focusedRef.current = true; setDisplay(''); }}
+            onChange={e => { const v = e.target.value.toUpperCase(); setDisplay(v); lastRef.current = v; onChange(v); }}
+            onBlur={() => { focusedRef.current = false; setDisplay(lastRef.current || value); }}
+            className={className}
+        />
+    );
+});
+
 interface QuotationModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -54,6 +78,7 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
 
     const [lockedCount, setLockedCount] = useState(3);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+    const [showProcesarConfirm, setShowProcesarConfirm] = useState(false);
 
     const [quotationCode, setQuotationCode] = useState('COT-XXXXXX');
 
@@ -179,7 +204,7 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
         setItems(newItems);
     };
 
-    const handleSave = async () => {
+    const handleSave = async (proceso: boolean = false) => {
         try {
             setSaveStatus('saving');
             let finalCode = quotationCode;
@@ -232,6 +257,11 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
             if (clientData.deliveryDate)    quotation.delivery_date  = clientData.deliveryDate;
 
             await api.saveQuotation(quotation);
+
+            if (proceso && optimizationData.optimizationId) {
+                await api.syncQuotationToTreasury(optimizationData.optimizationId);
+            }
+
             setSaveStatus('success');
 
             if (onSaveSuccess) {
@@ -286,25 +316,25 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                         <div className="text-center p-8 bg-white dark:bg-slate-800 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-700 flex flex-col items-center gap-4 transform transition-all scale-100">
                             {saveStatus === 'saving' && (
                                 <>
-                                    <div className="w-12 h-12 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin"></div>
-                                    <p className="text-sm font-bold text-slate-600 dark:text-slate-300">Guardando cotización...</p>
+                                    <div className="w-12 h-12 border-4 border-[#d1dfe3] border-t-[#366480] rounded-full animate-spin"></div>
+                                    <p className="text-sm font-bold text-slate-600">Procesando cotización...</p>
                                 </>
                             )}
                             {saveStatus === 'success' && (
                                 <>
-                                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 rounded-full flex items-center justify-center">
+                                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
                                         <span className="material-icons-round text-4xl">check</span>
                                     </div>
-                                    <h3 className="text-xl font-black tracking-tight text-slate-800 dark:text-white">¡Cotización Guardada!</h3>
-                                    <p className="text-sm text-slate-500 font-medium">La cotización se ha registrado exitosamente.</p>
+                                    <h3 className="text-xl font-black tracking-tight text-slate-800">¡Cotización Procesada!</h3>
+                                    <p className="text-sm text-slate-500 font-medium">La venta se registró en Gestión de Ventas y Tesorería.</p>
                                 </>
                             )}
                             {saveStatus === 'error' && (
                                 <>
-                                    <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/40 text-rose-600 rounded-full flex items-center justify-center">
+                                    <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
                                         <span className="material-icons-round text-4xl">error_outline</span>
                                     </div>
-                                    <h3 className="text-xl font-black tracking-tight text-slate-800 dark:text-white">Error al Guardar</h3>
+                                    <h3 className="text-xl font-black tracking-tight text-slate-800">Error al Guardar</h3>
                                     <p className="text-sm text-slate-500 font-medium">Ocurrió un problema de conexión. Inténtalo de nuevo.</p>
                                 </>
                             )}
@@ -346,7 +376,7 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-[#e9efee]/40 p-6 rounded-3xl border border-slate-200/20">
                         {/* Business Info (ReadOnly-ish) */}
                         <div className="space-y-4">
-                            <h3 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest pl-1">Información de la Empresa</h3>
+                            <h3 className="text-[10px] font-black text-[#366480] uppercase tracking-widest pl-1">Información de la Empresa</h3>
                             <div className="space-y-1">
                                 <p className="text-lg font-black text-slate-800 dark:text-white">{businessInfo?.company_name}</p>
                                 <p className="text-xs text-slate-500 font-medium">RUC: {businessInfo?.ruc}</p>
@@ -405,16 +435,19 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                     </div>
 
                     {/* 2. Spreadsheet Table */}
-                    <div className="border border-slate-200/20 rounded-3xl overflow-hidden shadow-sm bg-[#e9efee]/30">
-                        <table className="w-full border-collapse">
+                    <datalist id="quot-unidades">
+                        {['UND', 'PLN', 'PLS', 'JGO', 'SET', 'PZA', 'M2', 'ML', 'MTS', 'KG', 'GLN', 'HRS', 'SERV'].map(u => <option key={u} value={u} />)}
+                    </datalist>
+                    <div className="border border-slate-200/20 rounded-3xl overflow-auto shadow-sm bg-[#e9efee]/30">
+                        <table className="w-full min-w-[680px] border-collapse">
                             <thead>
                                 <tr className="bg-[#e9efee]/50 text-slate-500 text-[10px] font-black uppercase tracking-widest">
                                     <th className="px-4 py-4 text-left border-r border-slate-200 dark:border-slate-700 w-20">Cant.</th>
                                     <th className="px-4 py-4 text-left border-r border-slate-200 dark:border-slate-700 w-24">Unidad</th>
                                     <th className="px-4 py-4 text-left border-r border-slate-200 dark:border-slate-700 w-32">Tipo</th>
-                                    <th className="px-4 py-4 text-left border-r border-slate-200 dark:border-slate-700">Descripción del Producto</th>
-                                    <th className="px-4 py-4 text-right border-r border-slate-200 dark:border-slate-700 w-28">P. Unit</th>
-                                    <th className="px-4 py-4 text-right w-28">Total</th>
+                                    <th className="px-4 py-4 text-left border-r border-slate-200 dark:border-slate-700 min-w-[200px]">Descripción</th>
+                                    <th className="px-4 py-4 text-center border-r border-slate-200 dark:border-slate-700 w-28">P. Unit</th>
+                                    <th className="px-4 py-4 text-center w-28">Total</th>
                                     <th className="px-4 py-4 text-center w-12 text-slate-300"></th>
                                 </tr>
                             </thead>
@@ -430,13 +463,16 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                                             />
                                         </td>
                                         <td className="px-4 py-3 border-r border-slate-100 dark:border-slate-800">
-                                            <input
-                                                type="text"
-                                                value={item.unit}
-                                                onChange={e => handleUpdateItem(idx, 'unit', e.target.value)}
-                                                className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[10px] uppercase"
-                                                readOnly={idx < lockedCount}
-                                            />
+                                            {idx < lockedCount ? (
+                                                <span className="font-bold text-slate-500 text-[10px] uppercase">{item.unit}</span>
+                                            ) : (
+                                                <UnitCombobox
+                                                    value={item.unit}
+                                                    onChange={v => handleUpdateItem(idx, 'unit', v)}
+                                                    listId="quot-unidades"
+                                                    className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[10px] uppercase"
+                                                />
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 border-r border-slate-100 dark:border-slate-800">
                                             {idx < lockedCount - 2 ? (
@@ -463,25 +499,24 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                                                 </select>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 border-r border-slate-100 dark:border-slate-800">
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="text" 
-                                                    value={item.description} 
-                                                    onChange={e => handleUpdateItem(idx, 'description', e.target.value)}
-                                                    className="w-full bg-transparent border-none font-bold text-slate-700 dark:text-slate-200 outline-none text-sm focus:bg-slate-50 transition-colors rounded-lg px-1"
-                                                    placeholder={item.type === 'MELAMINA' || item.type === 'MEDELACK' ? "Ej: Pelikano 18mm..." : item.type === 'TAPACANTO' ? "Ancho, espesor..." : "Descripción..."}
-                                                />
-                                            </div>
+                                        <td className="px-4 py-3 border-r border-slate-100 dark:border-slate-800 min-w-[200px]">
+                                            <input
+                                                type="text"
+                                                value={item.description}
+                                                onChange={e => handleUpdateItem(idx, 'description', e.target.value)}
+                                                className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-slate-50 transition-colors rounded-lg px-1"
+                                                placeholder={item.type === 'MELAMINA' || item.type === 'MEDELACK' ? "Ej: Pelikano 18mm..." : item.type === 'TAPACANTO' ? "Ancho, espesor..." : "Descripción..."}
+                                                title={item.description}
+                                            />
                                         </td>
                                         <td className="px-4 py-3 border-r border-slate-100 dark:border-slate-800">
                                             <div className="flex items-center justify-end gap-1">
                                                 <span className="text-slate-400 text-xs text-[10px] font-bold">S/</span>
-                                                <input 
-                                                    type="number" 
-                                                    value={item.unitPrice || ''} 
+                                                <input
+                                                    type="number"
+                                                    value={item.unitPrice || ''}
                                                     onChange={e => handleUpdateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
-                                                    className="w-20 bg-transparent border-none font-black text-indigo-600 dark:text-indigo-400 text-right outline-none text-sm focus:bg-indigo-50 transition-colors rounded-lg"
+                                                    className="w-20 bg-transparent border-none font-black text-[#366480] text-right outline-none text-sm focus:bg-[#f0f5f4] transition-colors rounded-lg"
                                                     placeholder="0.00"
                                                 />
                                             </div>
@@ -543,7 +578,7 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                             )}
                             <div className="pt-3 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center">
                                 <span className="text-xs font-black tracking-widest uppercase text-slate-400">TOTAL</span>
-                                <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">S/ {totals.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                <span className="text-2xl font-black text-[#366480]">S/ {totals.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
                             </div>
                             <div className="flex justify-between items-center text-xs text-emerald-600 font-bold uppercase tracking-wider pt-4">
                                 <span>ADELANTO</span>
@@ -576,14 +611,39 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                         Descartar
                     </button>
                     <button
-                        onClick={handleSave}
+                        onClick={() => setShowProcesarConfirm(true)}
                         disabled={saveStatus !== 'idle'}
-                        className="px-12 py-3 bg-indigo-600 text-white font-black text-sm rounded-2xl hover:bg-indigo-700 shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-12 py-3 bg-[#366480] text-white font-black text-sm rounded-2xl hover:bg-[#2c5268] shadow-xl shadow-[#366480]/20 active:scale-[0.98] transition-all uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        Guardar Cotización
+                        Procesar Cotización
                     </button>
                 </div>
             </div>
+
+            {/* Confirmation modal */}
+            {showProcesarConfirm && (
+                <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/20 backdrop-blur-[4px]">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center text-center">
+                        <span className="material-icons-round text-amber-500 text-4xl mb-4">warning</span>
+                        <h3 className="text-lg font-black mb-2 text-slate-800">¿Procesar Cotización?</h3>
+                        <p className="text-sm text-slate-500 mb-6">Esta acción no puede revertirse. La cotización quedará bloqueada y ya no se podrá editar, solo visualizar.</p>
+                        <div className="flex gap-3 w-full">
+                            <button
+                                onClick={() => setShowProcesarConfirm(false)}
+                                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-all"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => { setShowProcesarConfirm(false); handleSave(true); }}
+                                className="flex-1 px-4 py-2.5 rounded-xl bg-[#366480] text-white font-black text-sm hover:bg-[#2c5268] transition-all"
+                            >
+                                Procesar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
