@@ -11,8 +11,7 @@ import {
     RefreshCw, FileText, CheckCircle2, Calendar, Receipt,
     Copy,
 } from 'lucide-react';
-import { generateQuotePDF } from '../services/pdfExport';
-import { exportToExcel } from '../services/excelExport';
+import { generateQuotePDF, printQuotePDF } from '../services/pdfExport';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -28,7 +27,7 @@ interface LineItem {
 interface Cotizacion {
     id: string;
     codigo: string;
-    estado: 'BORRADOR' | 'LISTO';
+    estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO';
     tipo_documento: 'COTIZACION' | 'BOLETA' | 'FACTURA';
     cliente_nombre: string;
     cliente_doi: string;
@@ -52,7 +51,7 @@ interface Cotizacion {
 type TipoDoc = 'BOLETA' | 'FACTURA';
 
 interface FormState {
-    estado: 'BORRADOR' | 'LISTO';
+    estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO';
     tipo_documento: TipoDoc;
     cliente_nombre: string;
     cliente_doi: string;
@@ -74,7 +73,7 @@ interface FormState {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const UNIDADES = ['UND', 'PLN', 'PLS', 'JGO', 'SET', 'PZA', 'M2', 'ML', 'MTS', 'KG', 'GLN', 'HRS', 'SERV'];
+const UNIDADES = ['PLS', 'MTS', 'SERV', 'UND', 'PLN', 'JGO', 'SET', 'PZA', 'M2', 'ML', 'KG', 'GLN', 'HRS'];
 const IGV_RATE = 0.18;
 
 const emptyForm = (): FormState => ({
@@ -87,7 +86,7 @@ const emptyForm = (): FormState => ({
     cliente_email: '',
     fecha_emision: format(new Date(), 'yyyy-MM-dd'),
     fecha_entrega: null,
-    items: [{ id: crypto.randomUUID(), cantidad: 1, unidad: 'UND', descripcion: '', precio_unitario: 0, total: 0 }],
+    items: [{ id: crypto.randomUUID(), cantidad: 1, unidad: 'PLS', descripcion: '', precio_unitario: 0, total: 0 }],
     subtotal: 0,
     descuento: 0,
     igv: 0,
@@ -114,29 +113,70 @@ const SearchInput = React.memo(({ value, onSearch, placeholder, className }: {
     return <input type="text" value={local} onChange={onChange} placeholder={placeholder} className={className} />;
 });
 
-// Combobox for unit field: clears on focus so datalist shows ALL options, then
-// restores to last typed/selected value on blur.
-const UnitCombobox = React.memo(({ value, onChange, listId, className }: {
-    value: string; onChange: (v: string) => void; listId: string; className: string;
+// Unit selector using native <select> for reliable cross-browser option picking
+const UnitSelect = React.memo(({ value, onChange, className }: {
+    value: string; onChange: (v: string) => void; className: string;
+}) => (
+    <select
+        value={UNIDADES.includes(value) ? value : UNIDADES[0]}
+        onChange={e => onChange(e.target.value)}
+        className={`${className} appearance-none`}
+    >
+        {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+    </select>
+));
+
+// Debounced input: local state for instant display, syncs to parent after 80 ms
+// (or immediately on blur). Prevents parent re-renders from blocking the cursor.
+const CellInput = React.memo(({ value, onChange, type = 'text', className, placeholder, readOnly, onKeyDown, title, inputRef }: {
+    value: string | number;
+    onChange: (v: string) => void;
+    type?: string;
+    className?: string;
+    placeholder?: string;
+    readOnly?: boolean;
+    onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+    title?: string;
+    inputRef?: React.Ref<HTMLInputElement>;
 }) => {
-    const [display, setDisplay] = React.useState(value);
-    const lastRef = React.useRef(value);
+    const [local, setLocal] = React.useState(String(value || ''));
+    const debounceRef = React.useRef<ReturnType<typeof setTimeout>>();
     const focusedRef = React.useRef(false);
+
     React.useEffect(() => {
-        if (!focusedRef.current) { setDisplay(value); lastRef.current = value; }
+        if (!focusedRef.current) setLocal(String(value || ''));
     }, [value]);
+
     return (
         <input
-            type="text"
-            list={listId}
-            value={display}
-            onFocus={() => { focusedRef.current = true; setDisplay(''); }}
-            onChange={e => { const v = e.target.value.toUpperCase(); setDisplay(v); lastRef.current = v; onChange(v); }}
-            onBlur={() => { focusedRef.current = false; setDisplay(lastRef.current || value); }}
+            ref={inputRef}
+            type={type}
+            value={local}
+            onFocus={() => { focusedRef.current = true; }}
+            onChange={e => {
+                const v = e.target.value;
+                setLocal(v);
+                clearTimeout(debounceRef.current);
+                debounceRef.current = setTimeout(() => onChange(v), 80);
+            }}
+            onBlur={() => {
+                focusedRef.current = false;
+                clearTimeout(debounceRef.current);
+                onChange(local);
+            }}
+            readOnly={readOnly}
             className={className}
+            placeholder={placeholder}
+            onKeyDown={onKeyDown}
+            title={title}
         />
     );
 });
+
+// Blocks non-numeric keys on price/amount inputs (scientific notation, sign, enter)
+const blockNumericKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (['-', '+', 'e', 'E', 'Enter'].includes(e.key)) e.preventDefault();
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -154,10 +194,14 @@ function recalc(items: LineItem[], descuento: number, tipo: TipoDoc, adelanto: n
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
-const StatusBadge = ({ estado }: { estado: 'BORRADOR' | 'LISTO' }) =>
+const StatusBadge = ({ estado }: { estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO' }) =>
     estado === 'LISTO' ? (
         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-widest">
             <CheckCircle2 className="w-3 h-3" /> Listo
+        </span>
+    ) : estado === 'ELIMINADO' ? (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+            <Trash2 className="w-3 h-3" /> Eliminado
         </span>
     ) : (
         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">
@@ -173,6 +217,7 @@ interface EditorModalProps {
     form: FormState;
     businessInfo: BusinessInfo | null;
     saveStatus: 'idle' | 'saving' | 'success' | 'error';
+    isDirty: boolean;
     onClose: () => void;
     onSaveBorrador: () => void;
     onSaveListo: () => void;
@@ -184,29 +229,81 @@ interface EditorModalProps {
     onAdelantoChange: (val: string) => void;
     onTipoDocumento: (tipo: TipoDoc) => void;
     onExportPDF: () => void;
-    onExportExcel: () => void;
+    onPrint: () => void;
+    onDuplicate?: () => void;
     isReadOnly: boolean;
+    pendingFocusRowId?: string | null;
 }
 
 const EditorModal: React.FC<EditorModalProps> = ({
-    isOpen, editingCode, form, businessInfo, saveStatus,
+    isOpen, editingCode, form, businessInfo, saveStatus, isDirty,
     onClose, onSaveBorrador, onSaveListo, onFormChange,
     onUpdateItem, onAddRow, onRemoveRow, onDescuentoChange,
     onAdelantoChange, onTipoDocumento,
-    onExportPDF, onExportExcel, isReadOnly,
+    onExportPDF, onPrint, onDuplicate, isReadOnly, pendingFocusRowId,
 }) => {
     const [showProcesarConfirm, setShowProcesarConfirm] = useState(false);
+    const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+    const [mounted, setMounted] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
+    const [isAnimating, setIsAnimating] = useState(false);
+    const wasOpenRef = useRef(false);
+    const quantityRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+            setMounted(true);
+            setIsClosing(false);
+            setIsAnimating(true);
+            wasOpenRef.current = true;
+        } else if (wasOpenRef.current) {
+            wasOpenRef.current = false;
+            setIsClosing(true);
+        }
+    }, [isOpen]);
+
+    useEffect(() => () => { document.body.style.overflow = ''; }, []);
+
+    useEffect(() => {
+        if (!pendingFocusRowId) return;
+        const input = quantityRefs.current.get(pendingFocusRowId);
+        if (input) { input.focus(); input.select(); }
+    }, [pendingFocusRowId]);
+
+    const handleClose = () => {
+        if (isClosing) return;
+        if (isDirty && !isReadOnly) {
+            setShowCloseConfirm(true);
+            return;
+        }
+        setIsClosing(true);
+    };
+
+    const handlePanelAnimEnd = (e: React.AnimationEvent) => {
+        if (e.target !== e.currentTarget) return;
+        if (isClosing) {
+            document.body.style.overflow = '';
+            setMounted(false);
+            setIsClosing(false);
+            onClose();
+        } else {
+            setIsAnimating(false);
+        }
+    };
+
+    if (!mounted) return null;
 
     return createPortal(
         <>
             <div
-                className="fixed inset-0 z-[2000] flex items-center justify-center p-4 overflow-hidden"
+                className={`${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'} fixed inset-0 z-[2000] flex items-center justify-center p-4 overflow-hidden`}
                 style={{ backdropFilter: 'blur(10px)', background: 'rgba(15, 23, 30, 0.35)' }}
-                onClick={e => { if (e.target === e.currentTarget) onClose(); }}
             >
-                <div className="bg-white/88 backdrop-blur-[24px] rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-white/50">
+                <div
+                    className={`${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'} bg-white/88 backdrop-blur-[24px] rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-white/50${(isAnimating || isClosing) ? ' pointer-events-none' : ''}`}
+                    onAnimationEnd={handlePanelAnimEnd}
+                >
 
                     {/* Top highlight edge */}
                     <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent z-10 pointer-events-none" />
@@ -248,8 +345,8 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         <div className="flex items-center gap-4">
                             <span className="material-icons-round text-[36px] text-slate-700 drop-shadow-sm">request_quote</span>
                             <div>
-                                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Presupuestador / Cotización</h2>
-                                <p className="text-[11px] font-bold text-slate-400 font-mono">{editingCode || 'Nueva Cotización'}</p>
+                                <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Cotización</h2>
+                                <p className="text-[11px] font-bold text-slate-400 font-mono">{editingCode || '— Sin asignar —'}</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -263,15 +360,27 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                 </button>
                                 <div className="w-px bg-slate-200 mx-1 self-stretch" />
                                 <button
-                                    onClick={onExportExcel}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-emerald-600 hover:bg-emerald-50/80 transition-all font-bold text-xs"
+                                    onClick={onPrint}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-[#366480] hover:bg-[#eef4f7]/80 transition-all font-bold text-xs"
                                 >
-                                    <span className="material-icons-round text-sm">description</span>
-                                    EXCEL
+                                    <span className="material-icons-round text-sm">print</span>
+                                    Imprimir
                                 </button>
+                                {onDuplicate && (
+                                    <>
+                                        <div className="w-px bg-slate-200 mx-1 self-stretch" />
+                                        <button
+                                            onClick={onDuplicate}
+                                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-[#366480] hover:bg-[#eef4f7]/80 transition-all font-bold text-xs"
+                                        >
+                                            <Copy className="w-3.5 h-3.5" />
+                                            Duplicar
+                                        </button>
+                                    </>
+                                )}
                             </div>
                             <button
-                                onClick={onClose}
+                                onClick={handleClose}
                                 className="w-10 h-10 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/60 flex items-center justify-center transition-all"
                             >
                                 <span className="material-icons-round">close</span>
@@ -306,10 +415,10 @@ const EditorModal: React.FC<EditorModalProps> = ({
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="col-span-2">
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
-                                    <input
+                                    <CellInput
                                         type="text"
                                         value={form.cliente_nombre}
-                                        onChange={e => onFormChange({ ...form, cliente_nombre: e.target.value })}
+                                        onChange={v => onFormChange({ ...form, cliente_nombre: v })}
                                         readOnly={isReadOnly}
                                         className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
                                         placeholder="Nombre o Razón Social..."
@@ -317,10 +426,10 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
-                                    <input
+                                    <CellInput
                                         type="text"
                                         value={form.cliente_doi}
-                                        onChange={e => onFormChange({ ...form, cliente_doi: e.target.value })}
+                                        onChange={v => onFormChange({ ...form, cliente_doi: v })}
                                         readOnly={isReadOnly}
                                         className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
                                         placeholder="RUC / DNI..."
@@ -372,9 +481,6 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         </div>
 
                         {/* 2. Items table */}
-                        <datalist id="cot-unidades">
-                            {UNIDADES.map(u => <option key={u} value={u} />)}
-                        </datalist>
                         <div className="border border-white/40 rounded-3xl overflow-auto shadow-sm bg-white/30">
                             <table className="w-full min-w-[640px] border-collapse">
                                 <thead>
@@ -391,11 +497,16 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     {form.items.map((item, idx) => (
                                         <tr key={item.id} className="group hover:bg-white/40 transition-colors">
                                             <td className="px-4 py-3 border-r border-white/30">
-                                                <input
+                                                <CellInput
                                                     type="number"
                                                     value={item.cantidad || ''}
-                                                    onChange={e => onUpdateItem(item.id, 'cantidad', e.target.value)}
+                                                    onChange={v => onUpdateItem(item.id, 'cantidad', v)}
+                                                    onKeyDown={blockNumericKeys}
                                                     readOnly={isReadOnly}
+                                                    inputRef={el => {
+                                                        if (el) quantityRefs.current.set(item.id, el);
+                                                        else quantityRefs.current.delete(item.id);
+                                                    }}
                                                     className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
                                                     placeholder="0"
                                                 />
@@ -404,19 +515,18 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                 {isReadOnly ? (
                                                     <span className="font-bold text-slate-500 text-[11px] uppercase">{item.unidad}</span>
                                                 ) : (
-                                                    <UnitCombobox
+                                                    <UnitSelect
                                                         value={item.unidad}
                                                         onChange={v => onUpdateItem(item.id, 'unidad', v)}
-                                                        listId="cot-unidades"
                                                         className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[11px] uppercase cursor-pointer"
                                                     />
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 border-r border-white/30 min-w-[220px]">
-                                                <input
+                                                <CellInput
                                                     type="text"
                                                     value={item.descripcion}
-                                                    onChange={e => onUpdateItem(item.id, 'descripcion', e.target.value)}
+                                                    onChange={v => onUpdateItem(item.id, 'descripcion', v)}
                                                     onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) onAddRow(); }}
                                                     readOnly={isReadOnly}
                                                     className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
@@ -427,10 +537,17 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                             <td className="px-4 py-3 border-r border-white/30">
                                                 <div className="flex items-center justify-end gap-1">
                                                     <span className="text-slate-400 text-[10px] font-bold">S/</span>
-                                                    <input
+                                                    <CellInput
                                                         type="number"
                                                         value={item.precio_unitario || ''}
-                                                        onChange={e => onUpdateItem(item.id, 'precio_unitario', e.target.value)}
+                                                        onChange={v => onUpdateItem(item.id, 'precio_unitario', v)}
+                                                        onKeyDown={e => {
+                                                            blockNumericKeys(e);
+                                                            if (e.key === 'Tab' && idx === form.items.length - 1) {
+                                                                e.preventDefault();
+                                                                onAddRow();
+                                                            }
+                                                        }}
                                                         readOnly={isReadOnly}
                                                         className="w-20 bg-transparent border-none font-black text-[#366480] text-right outline-none text-sm focus:bg-[#f0f5f4]/60 transition-colors rounded-lg"
                                                         placeholder="0.00"
@@ -461,7 +578,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     className="w-full py-4 border-t border-white/40 text-xs font-bold text-slate-400 hover:text-[#366480] hover:bg-white/30 transition-all flex items-center justify-center gap-2"
                                 >
                                     <span className="material-icons-round text-sm">add</span>
-                                    AGREGAR FILA PERSONALIZADA
+                                    AGREGAR FILA
                                 </button>
                             )}
                         </div>
@@ -477,10 +594,11 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     <span>Descuento</span>
                                     <div className="flex items-center gap-1 border-b border-rose-200">
                                         <span className="text-[10px]">- S/</span>
-                                        <input
+                                        <CellInput
                                             type="number"
                                             value={form.descuento || ''}
-                                            onChange={e => onDescuentoChange(e.target.value)}
+                                            onChange={onDescuentoChange}
+                                            onKeyDown={blockNumericKeys}
                                             readOnly={isReadOnly}
                                             className="w-16 bg-transparent border-none text-right font-black outline-none text-rose-500"
                                             placeholder="0.00"
@@ -503,10 +621,11 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     <span>Adelanto</span>
                                     <div className="flex items-center gap-1 bg-white/50 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
                                         <span className="text-[10px]">S/</span>
-                                        <input
+                                        <CellInput
                                             type="number"
                                             value={form.adelanto || ''}
-                                            onChange={e => onAdelantoChange(e.target.value)}
+                                            onChange={onAdelantoChange}
+                                            onKeyDown={blockNumericKeys}
                                             readOnly={isReadOnly}
                                             className="w-16 bg-transparent border-none text-right font-black outline-none text-emerald-600"
                                             placeholder="0.00"
@@ -528,7 +647,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         <StatusBadge estado={form.estado} />
                         <div className="flex gap-3">
                             <button
-                                onClick={onClose}
+                                onClick={handleClose}
                                 className="px-6 py-3 rounded-2xl text-sm font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
                             >
                                 {isReadOnly ? 'Cerrar' : 'Descartar'}
@@ -556,7 +675,32 @@ const EditorModal: React.FC<EditorModalProps> = ({
                 </div>
             </div>
 
-            {/* Confirmation modal */}
+            {/* Close-without-saving confirm */}
+            {showCloseConfirm && (
+                <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/20 backdrop-blur-[4px]">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center text-center">
+                        <span className="material-icons-round text-rose-500 text-4xl mb-4">warning</span>
+                        <h3 className="text-lg font-black mb-2 text-slate-800">¿Cerrar sin guardar?</h3>
+                        <p className="text-sm text-slate-500 mb-6">Se perderá todo el avance no guardado.</p>
+                        <div className="flex gap-3 w-full">
+                            <button
+                                onClick={() => setShowCloseConfirm(false)}
+                                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-all"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => { setShowCloseConfirm(false); setIsClosing(true); }}
+                                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500 text-white font-black text-sm hover:bg-rose-600 transition-all"
+                            >
+                                Cerrar de todos modos
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Procesar confirmation modal */}
             {showProcesarConfirm && (
                 <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/20 backdrop-blur-[4px]">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center text-center">
@@ -596,7 +740,7 @@ export function CotizacionesPage() {
     const [loading, setLoading] = useState(true);
     const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [filterEstado, setFilterEstado] = useState<'TODOS' | 'BORRADOR' | 'LISTO'>('TODOS');
+    const [filterEstado, setFilterEstado] = useState<'TODOS' | 'BORRADOR' | 'LISTO' | 'ELIMINADO'>('TODOS');
     const now = new Date();
     const [startDate, setStartDate] = useState(format(new Date(Date.now() - 7 * 86400000), 'yyyy-MM-dd'));
     const [endDate, setEndDate] = useState(format(now, 'yyyy-MM-dd'));
@@ -606,10 +750,16 @@ export function CotizacionesPage() {
 
     // Editor state
     const [form, setForm] = useState<FormState>(emptyForm());
+    const [isDirty, setIsDirty] = useState(false);
     const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
+    const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
+
+    // Item IDs whose unit was manually selected by the user — auto-detection
+    // from description keywords (CANTO→MTS, SERVICIO→SERV) is suppressed for these.
+    const manualUnitsRef = useRef<Set<string>>(new Set());
 
     // Click outside date picker
     useEffect(() => {
@@ -628,11 +778,6 @@ export function CotizacionesPage() {
         }
     }, [editorOpen]);
 
-    // Lock scroll when editor is open
-    useEffect(() => {
-        document.body.style.overflow = editorOpen ? 'hidden' : '';
-        return () => { document.body.style.overflow = ''; };
-    }, [editorOpen]);
 
     // ── Data ─────────────────────────────────────────────────────────────────
 
@@ -646,7 +791,13 @@ export function CotizacionesPage() {
                 .gte('fecha_emision', startDate)
                 .lte('fecha_emision', endDate)
                 .order('created_at', { ascending: false });
-            if (filterEstado !== 'TODOS') q = q.eq('estado', filterEstado);
+            if (filterEstado === 'ELIMINADO') {
+                q = q.eq('estado', 'ELIMINADO');
+            } else if (filterEstado !== 'TODOS') {
+                q = q.eq('estado', filterEstado);
+            } else {
+                q = q.neq('estado', 'ELIMINADO');
+            }
             const { data, error } = await q;
             if (error) throw error;
             setCotizaciones((data as Cotizacion[]) || []);
@@ -690,9 +841,12 @@ export function CotizacionesPage() {
     // ── Editor helpers ─────────────────────────────────────────────────────────
 
     const openNew = () => {
+        document.body.style.overflow = 'hidden';
         setForm(emptyForm());
         setEditingId(null);
         setEditingCode('');
+        setIsDirty(false);
+        manualUnitsRef.current = new Set();
         setEditorOpen(true);
     };
 
@@ -710,7 +864,7 @@ export function CotizacionesPage() {
             fecha_entrega: c.fecha_entrega || null,
             items: c.items?.length
                 ? c.items
-                : [{ id: crypto.randomUUID(), cantidad: 1, unidad: 'UND', descripcion: '', precio_unitario: 0, total: 0 }],
+                : [{ id: crypto.randomUUID(), cantidad: 1, unidad: 'PLS', descripcion: '', precio_unitario: 0, total: 0 }],
             subtotal: c.subtotal || 0,
             descuento: c.descuento || 0,
             igv: c.igv || 0,
@@ -722,12 +876,18 @@ export function CotizacionesPage() {
         });
         setEditingId(c.id);
         setEditingCode(c.codigo || '');
+        setIsDirty(false);
+        // Existing items came from the DB → treat their units as manually chosen
+        manualUnitsRef.current = new Set((c.items || []).map(it => it.id));
+        document.body.style.overflow = 'hidden';
         setEditorOpen(true);
     };
 
     const closeEditor = () => setEditorOpen(false);
 
     const updateItem = (id: string, field: keyof LineItem, raw: string) => {
+        setIsDirty(true);
+        if (field === 'unidad') manualUnitsRef.current.add(id);
         setForm(prev => {
             const items = prev.items.map(it => {
                 if (it.id !== id) return it;
@@ -736,6 +896,14 @@ export function CotizacionesPage() {
                 if (field === 'cantidad' || field === 'precio_unitario') {
                     updated.total = parseFloat((updated.cantidad * updated.precio_unitario).toFixed(2));
                 }
+                // Auto-pick unit from description keywords if user hasn't chosen one.
+                // SERVICIO has higher priority than CANTO so "servicio de canto" → SERV.
+                if (field === 'descripcion' && !manualUnitsRef.current.has(id)) {
+                    const upper = String(val).toUpperCase();
+                    if (upper.includes('SERVICIO')) updated.unidad = 'SERV';
+                    else if (upper.includes('CANTO')) updated.unidad = 'MTS';
+                    else updated.unidad = 'PLS';
+                }
                 return updated;
             });
             return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
@@ -743,13 +911,17 @@ export function CotizacionesPage() {
     };
 
     const addRow = () => {
+        setIsDirty(true);
+        const newId = crypto.randomUUID();
         setForm(prev => ({
             ...prev,
-            items: [...prev.items, { id: crypto.randomUUID(), cantidad: 1, unidad: 'UND', descripcion: '', precio_unitario: 0, total: 0 }],
+            items: [...prev.items, { id: newId, cantidad: 1, unidad: 'PLS', descripcion: '', precio_unitario: 0, total: 0 }],
         }));
+        setPendingFocusRowId(newId);
     };
 
     const removeRow = (id: string) => {
+        setIsDirty(true);
         setForm(prev => {
             const items = prev.items.filter(it => it.id !== id);
             return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
@@ -757,11 +929,13 @@ export function CotizacionesPage() {
     };
 
     const setDescuento = (val: string) => {
+        setIsDirty(true);
         const d = parseFloat(val) || 0;
         setForm(prev => ({ ...prev, descuento: d, ...recalc(prev.items, d, prev.tipo_documento, prev.adelanto) }));
     };
 
     const setAdelanto = (val: string) => {
+        setIsDirty(true);
         const a = parseFloat(val) || 0;
         setForm(prev => ({
             ...prev,
@@ -771,6 +945,7 @@ export function CotizacionesPage() {
     };
 
     const setTipoDocumento = (tipo: TipoDoc) => {
+        setIsDirty(true);
         setForm(prev => ({
             ...prev,
             tipo_documento: tipo,
@@ -778,64 +953,50 @@ export function CotizacionesPage() {
         }));
     };
 
-    const handleExportPDF = () => {
-        const exportData = {
-            items: form.items.map(it => ({
-                quantity: it.cantidad,
-                unit: it.unidad,
-                type: 'PRODUCTO',
-                description: it.descripcion,
-                unitPrice: it.precio_unitario,
-                total: it.total
-            })),
-            totals: {
-                subtotal: form.subtotal,
-                discount: form.descuento,
-                igv: form.igv,
-                total: form.total,
-                advance: form.adelanto,
-                balance: form.saldo_pendiente
-            },
-            code: editingCode || 'NUEVA',
-            clientData: {
-                name: form.cliente_nombre,
-                doi: form.cliente_doi,
-                address: form.cliente_direccion,
-                deliveryDate: form.fecha_entrega
-            },
-            businessInfo: businessInfo
-        };
-        generateQuotePDF(exportData, `Cotizacion_${editingCode || 'Nueva'}`);
+    const generateCodigo = async (): Promise<string> => {
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const prefix = `COT-${yy}${mm}${dd}-`;
+        const { data } = await supabase.from('cotizaciones').select('codigo').like('codigo', `${prefix}%`);
+        let maxN = 0;
+        (data || []).forEach((row: any) => {
+            const m = row.codigo?.match(/COT-\d{6}-(\d+)$/);
+            if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
+        });
+        return `${prefix}${String(maxN + 1).padStart(3, '0')}`;
     };
 
-    const handleExportExcel = () => {
-        exportToExcel({
-            items: form.items.map(it => ({
-                quantity: it.cantidad,
-                unit: it.unidad,
-                type: 'PRODUCTO',
-                description: it.descripcion,
-                unitPrice: it.precio_unitario,
-                total: it.total,
-            })),
-            totals: {
-                subtotal: form.subtotal,
-                discount: form.descuento,
-                igv: form.igv,
-                total: form.total,
-                advance: form.adelanto,
-                balance: form.saldo_pendiente,
-            },
-            code: editingCode || 'NUEVA',
-            clientData: {
-                name: form.cliente_nombre,
-                address: form.cliente_direccion,
-                doi: form.cliente_doi,
-                deliveryDate: form.fecha_entrega,
-            },
-            businessInfo,
-        }, `Cotizacion_${editingCode || 'Nueva'}`);
-    };
+    const buildExportData = () => ({
+        items: form.items.map(it => ({
+            quantity: it.cantidad,
+            unit: it.unidad,
+            type: 'PRODUCTO',
+            description: it.descripcion,
+            unitPrice: it.precio_unitario,
+            total: it.total,
+        })),
+        totals: {
+            subtotal: form.subtotal,
+            discount: form.descuento,
+            igv: form.igv,
+            total: form.total,
+            advance: form.adelanto,
+            balance: form.saldo_pendiente,
+        },
+        code: editingCode || 'NUEVA',
+        clientData: {
+            name: form.cliente_nombre,
+            doi: form.cliente_doi,
+            address: form.cliente_direccion,
+            deliveryDate: form.fecha_entrega,
+        },
+        businessInfo,
+    });
+
+    const handleExportPDF = () => generateQuotePDF(buildExportData(), `Cotizacion_${editingCode || 'Nueva'}`);
+    const handlePrintPDF  = () => printQuotePDF(buildExportData());
 
     const syncItemsTable = async (cotizacionId: string, items: LineItem[]) => {
         await supabase.from('cotizaciones_items').delete().eq('cotizacion_id', cotizacionId);
@@ -865,13 +1026,17 @@ export function CotizacionesPage() {
                 const { error } = await supabase.from('cotizaciones').update(payload).eq('id', editingId);
                 if (error) throw error;
             } else {
+                const codigo = await generateCodigo();
                 const { data: inserted, error } = await supabase
                     .from('cotizaciones')
-                    .insert(payload)
-                    .select('id')
+                    .insert({ ...payload, codigo })
+                    .select('id, codigo')
                     .single();
                 if (error) throw error;
                 cotizacionId = inserted.id;
+                const finalCode = inserted.codigo || codigo;
+                setEditingCode(finalCode);
+                setEditingId(inserted.id);
             }
 
             if (cotizacionId) {
@@ -883,9 +1048,14 @@ export function CotizacionesPage() {
             }
 
             setSaveStatus('success');
-            if (estadoOverride === 'LISTO') setFilterEstado('TODOS');
             await fetchData();
-            setTimeout(() => { setSaveStatus('idle'); closeEditor(); }, 1500);
+            if (estadoOverride === 'LISTO') {
+                setFilterEstado('TODOS');
+                setTimeout(() => { setSaveStatus('idle'); closeEditor(); }, 1500);
+            } else {
+                setIsDirty(false);
+                setTimeout(() => setSaveStatus('idle'), 1500);
+            }
         } catch (e) {
             console.error(e);
             setSaveStatus('error');
@@ -894,14 +1064,18 @@ export function CotizacionesPage() {
     };
 
     const deleteCot = async (id: string) => {
-        const { error } = await supabase.from('cotizaciones').delete().eq('id', id);
+        const { error } = await supabase.from('cotizaciones').update({ estado: 'ELIMINADO' }).eq('id', id);
         if (!error) { setDeleteConfirmId(null); fetchData(); }
     };
 
-    const duplicate = async (c: Cotizacion) => {
-        const { codigo: _c, id: _i, created_at: _d, ...rest } = c;
+    const duplicateFromModal = async () => {
+        if (!editingId) return;
+        const cot = cotizaciones.find(c => c.id === editingId);
+        if (!cot) return;
+        const { codigo: _c, id: _i, created_at: _d, ...rest } = cot;
         await supabase.from('cotizaciones').insert({ ...rest, estado: 'BORRADOR' });
-        fetchData();
+        await fetchData();
+        closeEditor();
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -917,10 +1091,11 @@ export function CotizacionesPage() {
                 form={form}
                 businessInfo={businessInfo}
                 saveStatus={saveStatus}
+                isDirty={isDirty}
                 onClose={closeEditor}
                 onSaveBorrador={() => save('BORRADOR')}
                 onSaveListo={() => save('LISTO')}
-                onFormChange={setForm}
+                onFormChange={(f) => { setForm(f); setIsDirty(true); }}
                 onUpdateItem={updateItem}
                 onAddRow={addRow}
                 onRemoveRow={removeRow}
@@ -928,8 +1103,10 @@ export function CotizacionesPage() {
                 onAdelantoChange={setAdelanto}
                 onTipoDocumento={setTipoDocumento}
                 onExportPDF={handleExportPDF}
-                onExportExcel={handleExportExcel}
+                onPrint={handlePrintPDF}
+                onDuplicate={editingId ? duplicateFromModal : undefined}
                 isReadOnly={form.estado === 'LISTO'}
+                pendingFocusRowId={pendingFocusRowId}
             />
 
             <div className="min-h-screen flex flex-col animate-premium-fade">
@@ -962,7 +1139,7 @@ export function CotizacionesPage() {
                             value={searchTerm}
                             onSearch={setSearchTerm}
                             placeholder="Buscar por código, cliente, DOI..."
-                            className="w-full pl-11 pr-5 py-3 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none placeholder:text-[#8b9ba5] placeholder:font-normal"
+                            className="w-full pl-11 pr-5 py-3 bg-white border border-[#c8d8de] shadow-sm rounded-full text-[12px] font-bold text-[#2c3434] outline-none focus:border-[#366480] focus:ring-2 focus:ring-[#366480]/10 transition-all placeholder:text-[#8b9ba5] placeholder:font-normal"
                         />
                     </div>
 
@@ -975,6 +1152,7 @@ export function CotizacionesPage() {
                             <option value="TODOS">Todos los estados</option>
                             <option value="BORRADOR">Borrador</option>
                             <option value="LISTO">Listo</option>
+                            <option value="ELIMINADO">Eliminados</option>
                         </select>
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
                     </div>
@@ -1081,23 +1259,19 @@ export function CotizacionesPage() {
                                         <p className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Total</p>
                                         <p className="text-[16px] font-black text-[#366480] tabular-nums">{fmtSol(c.total)}</p>
                                     </div>
-                                    <div
-                                        className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        onClick={e => e.stopPropagation()}
-                                    >
-                                        <button
-                                            onClick={() => duplicate(c)}
-                                            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-[#f8faf9] text-[10px] font-black text-[#8b9ba5] hover:text-[#366480] hover:bg-[#eef4f7] transition-all uppercase tracking-wider"
+                                    {c.estado === 'BORRADOR' && (
+                                        <div
+                                            className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={e => e.stopPropagation()}
                                         >
-                                            <Copy className="w-3 h-3" /> Duplicar
-                                        </button>
-                                        <button
-                                            onClick={() => setDeleteConfirmId(c.id)}
-                                            className="w-7 h-7 flex items-center justify-center rounded-xl bg-[#f8faf9] text-[#c5d0d4] hover:text-red-400 hover:bg-red-50 transition-all"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
+                                            <button
+                                                onClick={() => setDeleteConfirmId(c.id)}
+                                                className="w-7 h-7 flex items-center justify-center rounded-xl bg-[#f8faf9] text-[#c5d0d4] hover:text-red-400 hover:bg-red-50 transition-all"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -1113,8 +1287,8 @@ export function CotizacionesPage() {
                                     <Trash2 className="w-5 h-5 text-red-500" />
                                 </div>
                                 <div>
-                                    <p className="text-[14px] font-black text-[#2c3434]">Eliminar cotización</p>
-                                    <p className="text-[11px] font-bold text-[#8b9ba5]">Esta acción no se puede deshacer</p>
+                                    <p className="text-[14px] font-black text-[#2c3434]">Mover a eliminados</p>
+                                    <p className="text-[11px] font-bold text-[#8b9ba5]">Podrás verla en el filtro "Eliminados"</p>
                                 </div>
                             </div>
                             <div className="flex gap-3 mt-6">

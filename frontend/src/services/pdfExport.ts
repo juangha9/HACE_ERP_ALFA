@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-export const generateQuotePDF = (exportData: any, filename: string) => {
+const buildQuotePDF = (exportData: any): jsPDF => {
     const { items, totals, code, clientData, businessInfo } = exportData;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -200,5 +200,39 @@ export const generateQuotePDF = (exportData: any, filename: string) => {
     doc.setTextColor(71, 85, 105);
     doc.text(companyName, 55, sigY + 10, { align: 'center' });
 
-    doc.save(`${filename}.pdf`);
+    return doc;
+};
+
+export const generateQuotePDF = (exportData: any, filename: string) => {
+    buildQuotePDF(exportData).save(`${filename}.pdf`);
+};
+
+export const printQuotePDF = (exportData: any) => {
+    const doc = buildQuotePDF(exportData);
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+
+    // Hidden iframe → calls .print() on the PDF viewer without opening a tab
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    iframe.src = url;
+    document.body.appendChild(iframe);
+
+    iframe.onload = () => {
+        // Small delay so the PDF viewer finishes rendering before invoking print
+        setTimeout(() => {
+            try {
+                iframe.contentWindow?.focus();
+                iframe.contentWindow?.print();
+            } catch (e) {
+                console.error('Print failed:', e);
+            }
+        }, 200);
+    };
+
+    // Cleanup once the user is done; afterprint may not fire on PDF viewers
+    setTimeout(() => {
+        if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        URL.revokeObjectURL(url);
+    }, 60_000);
 };

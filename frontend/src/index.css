@@ -427,6 +427,36 @@ body {
   animation: premiumFadeIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes modalPanelIn {
+  0%   { opacity: 0; transform: scale(0.96) translateY(14px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-modal-panel {
+  animation: modalPanelIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.animate-backdrop {
+  animation: backdropIn 0.22s ease-out forwards;
+}
+
+@keyframes modalPanelOut {
+  0%   { opacity: 1; transform: scale(1) translateY(0); }
+  100% { opacity: 0; transform: scale(0.96) translateY(10px); }
+}
+@keyframes backdropOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.animate-modal-panel-out {
+  animation: modalPanelOut 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.animate-backdrop-out {
+  animation: backdropOut 0.18s ease-in forwards;
+}
+
 /* Iridescent Pulsing Glow Animation - Soft Pastel */
 @keyframes iridescentPulsingGlow {
   0% {
