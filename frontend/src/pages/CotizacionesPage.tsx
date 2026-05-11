@@ -953,20 +953,7 @@ export function CotizacionesPage() {
         }));
     };
 
-    const generateCodigo = async (): Promise<string> => {
-        const now = new Date();
-        const yy = String(now.getFullYear()).slice(2);
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        const prefix = `COT-${yy}${mm}${dd}-`;
-        const { data } = await supabase.from('cotizaciones').select('codigo').like('codigo', `${prefix}%`);
-        let maxN = 0;
-        (data || []).forEach((row: any) => {
-            const m = row.codigo?.match(/COT-\d{6}-(\d+)$/);
-            if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
-        });
-        return `${prefix}${String(maxN + 1).padStart(3, '0')}`;
-    };
+
 
     const buildExportData = () => ({
         items: form.items.map(it => ({
@@ -1026,16 +1013,14 @@ export function CotizacionesPage() {
                 const { error } = await supabase.from('cotizaciones').update(payload).eq('id', editingId);
                 if (error) throw error;
             } else {
-                const codigo = await generateCodigo();
                 const { data: inserted, error } = await supabase
                     .from('cotizaciones')
-                    .insert({ ...payload, codigo })
+                    .insert({ ...payload })
                     .select('id, codigo')
                     .single();
                 if (error) throw error;
                 cotizacionId = inserted.id;
-                const finalCode = inserted.codigo || codigo;
-                setEditingCode(finalCode);
+                setEditingCode(inserted.codigo);
                 setEditingId(inserted.id);
             }
 
