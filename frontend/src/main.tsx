@@ -11,3 +11,4 @@ createRoot(document.getElementById('root')!).render(
     </ThemeProvider>
   </StrictMode>,
 )
+// Note: AuthProvider is inside App so it has access to BrowserRouter's context
