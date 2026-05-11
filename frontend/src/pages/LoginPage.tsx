@@ -100,17 +100,16 @@ export function LoginPage() {
                     {/* ── Branding ── */}
                     <div className="flex flex-col items-center mb-8">
                         <div
-                            className="w-20 h-20 rounded-[22px] flex items-center justify-center mb-4"
+                            className="w-20 h-20 rounded-[22px] flex items-center justify-center mb-4 bg-white"
                             style={{
-                                background: 'linear-gradient(145deg, #366480 0%, #2c5268 100%)',
-                                boxShadow: '0 12px 30px rgba(54,100,128,0.35)',
+                                boxShadow: '0 12px 30px rgba(54,100,128,0.15)',
+                                border: '1px solid rgba(54,100,128,0.1)',
                             }}
                         >
                             <img
                                 src={haceLogo}
                                 alt="HACE"
-                                className="w-14 h-14 object-contain"
-                                style={{ filter: 'brightness(0) invert(1)' }}
+                                className="w-16 h-16 object-contain"
                             />
                         </div>
                         <h1
