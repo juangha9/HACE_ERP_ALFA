@@ -325,6 +325,7 @@ export const OptimizationLayout = () => {
                 const bName = matchedBoard?.name ?? (matKey !== '0' ? `MAT.${matKey}` : 'Sin material');
                 const piecesForOpt = matchedBoard?.veta ? groupPieces.map(p => ({ ...p, matchGrain: true })) : groupPieces;
 
+                let resultBoards: Board[] = [];
                 try {
                     resultBoards = optimizeCuttingMap(piecesForOpt, bw, bh, config, aiBrainWeights);
                 } catch (err: any) {
