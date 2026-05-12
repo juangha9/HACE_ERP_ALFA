@@ -326,13 +326,14 @@ export const api = {
         throw new Error('Usar catalogService para eliminar);');
     },
 
-    getInventoryMovements: async (limit = 50, projectId?: string) => {
+    getInventoryMovements: async (limit?: number, projectId?: string) => {
         let query = supabase
             .from('inventory_movements')
             .select('*, product:catalog_products(name:base_name, sku), contact:contacts(name)')
-            .order('date', { ascending: false })
-            .limit(limit);
-        
+            .order('date', { ascending: false });
+
+        if (limit !== undefined) query = query.limit(limit);
+
         if (projectId) {
             query = query.eq('project_id', projectId);
         }

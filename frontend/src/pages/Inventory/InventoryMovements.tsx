@@ -187,7 +187,7 @@ export default function InventoryMovements() {
     const loadData = async () => {
         try {
             const [movs, prods, conts, projs] = await Promise.all([
-                api.getInventoryMovements(500), // Get more for tool loan checks
+                api.getInventoryMovements(), // no limit — needed for accurate tool loan counts
                 api.getInventoryProducts(),
                 api.getContacts(),
                 api.getProjects()

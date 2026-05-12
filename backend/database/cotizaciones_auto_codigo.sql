@@ -52,6 +52,9 @@ END;
 $$;
 
 -- 3. Attach trigger (replace if it already exists)
+-- Drop the original sequential-code trigger created by cotizaciones_schema.sql
+DROP TRIGGER IF EXISTS trg_cotizacion_code ON public.cotizaciones;
+DROP FUNCTION IF EXISTS public.generate_cotizacion_code();
 DROP TRIGGER IF EXISTS trg_set_cotizacion_codigo ON public.cotizaciones;
 
 CREATE TRIGGER trg_set_cotizacion_codigo

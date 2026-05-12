@@ -1029,7 +1029,8 @@ export function CotizacionesPage() {
             }
 
             if (estadoOverride === 'LISTO' && cotizacionId) {
-                await supabase.rpc('cotizacion_to_venta', { p_cotizacion_id: cotizacionId }).maybeSingle();
+                const { error: rpcError } = await supabase.rpc('cotizacion_to_venta', { p_cotizacion_id: cotizacionId }).maybeSingle();
+                if (rpcError) throw rpcError;
             }
 
             setSaveStatus('success');

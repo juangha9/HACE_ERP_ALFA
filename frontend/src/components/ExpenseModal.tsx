@@ -225,46 +225,44 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-            <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-6xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden">
+            <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full ${hasInvoice ? 'max-w-5xl' : 'max-w-2xl'} border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden transition-all duration-300`}>
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
-                
-                <div className="px-8 py-6 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40 shrink-0">
-                    <div className="flex items-center gap-4">
-                        <TrendingDown className="w-10 h-10 text-[#4A90E2] drop-shadow-sm" />
+
+                <div className="px-6 py-5 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <TrendingDown className="w-8 h-8 text-[#4A90E2] drop-shadow-sm" />
                         <div>
-                            <h2 className="text-2xl font-black text-[#2c3434] uppercase tracking-tight">Registrar Egreso</h2>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest leading-none">Tesorería Avanzada</span>
-                                <div className="w-1 h-1 rounded-full bg-[#d3dcdb]"></div>
-                                <span className={`text-[9px] font-black uppercase tracking-widest leading-none ${hasInvoice ? 'text-[#366480]' : 'text-[#8b9ba5]'}`}>{hasInvoice ? 'Modo Factura Activado' : 'Modo Simple'}</span>
+                            <h2 className="text-lg font-black text-[#2c3434] uppercase tracking-tight">Registrar Egreso</h2>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className={`text-[9px] font-black uppercase tracking-widest leading-none ${hasInvoice ? 'text-[#366480]' : 'text-[#8b9ba5]'}`}>{hasInvoice ? 'Modo Factura' : 'Modo Simple'}</span>
                             </div>
                         </div>
                     </div>
-                    
-                    <div className="flex items-center gap-6">
-                        <div 
+
+                    <div className="flex items-center gap-4">
+                        <div
                             onClick={() => setHasInvoice(!hasInvoice)}
-                            className={`flex items-center gap-3 px-5 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${hasInvoice ? 'bg-[#366480] border-[#366480] text-white shadow-[#366480]/20' : 'bg-[#f0f5f4] border-[#d3dcdb]/50 text-[#8b9ba5] hover:bg-[#e9efee]'}`}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer transition-all border shadow-sm ${hasInvoice ? 'bg-[#366480] border-[#366480] text-white shadow-[#366480]/20' : 'bg-[#f0f5f4] border-[#d3dcdb]/50 text-[#8b9ba5] hover:bg-[#e9efee]'}`}
                         >
-                            <FileSearch className={`w-4 h-4 ${hasInvoice ? 'animate-pulse text-white' : ''}`} />
-                            <span className="text-[10px] font-black uppercase tracking-widest">¿Registrar con Factura?</span>
+                            <FileSearch className={`w-3.5 h-3.5 ${hasInvoice ? 'animate-pulse text-white' : ''}`} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">¿Con Factura?</span>
                         </div>
-                        <button onClick={onClose} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20"><X className="w-6 h-6" /></button>
+                        <button onClick={onClose} className="w-9 h-9 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20"><X className="w-5 h-5" /></button>
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-8">
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                        {/* LEFT SECTION: SELECTORS & INPUTS (4 COLS) */}
-                        <div className="lg:col-span-4 space-y-6">
-                            <div className="space-y-4">
-                                <label className="text-[10px] font-black text-slate-400 uppercase block pl-2 tracking-[0.2em]">Categoría / Concepto</label>
-                                <select 
-                                    value={gastoData.categoria} 
+                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                    <div className={`grid ${hasInvoice ? 'grid-cols-1 lg:grid-cols-12 gap-6' : 'grid-cols-1 gap-5'}`}>
+                        {/* LEFT SECTION: SELECTORS & INPUTS */}
+                        <div className={`${hasInvoice ? 'lg:col-span-5' : ''} space-y-4`}>
+                            <div className="space-y-3">
+                                <label className="text-[9px] font-black text-slate-400 uppercase block pl-1 tracking-[0.2em]">Categoría / Concepto</label>
+                                <select
+                                    value={gastoData.categoria}
                                     onChange={(e) => {
                                         setGastoData({...gastoData, categoria: e.target.value});
-                                    }} 
-                                    className="w-full bg-slate-50 dark:bg-slate-800 p-5 rounded-3xl text-sm font-black outline-none border-2 border-transparent focus:border-rose-400 transition-all uppercase cursor-pointer shadow-inner"
+                                    }}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 px-4 py-3 rounded-2xl text-[12px] font-black outline-none border-2 border-transparent focus:border-rose-400 transition-all uppercase cursor-pointer shadow-inner"
                                 >
                                     <option value="REQUERIMIENTO DE COMPRA">REQUERIMIENTO DE COMPRA</option>
                                     <option value="Luz">Servicio: Luz</option>
@@ -276,173 +274,198 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                     <option value="Pago a Terceros">Honorarios / Pago Terceros</option>
                                     <option value="Ajuste de Caja">Ajuste de Saldo en Cuenta</option>
                                 </select>
-                                <div className="bg-rose-50/50 dark:bg-rose-950/20 p-6 rounded-[2.5rem] border border-rose-100 dark:border-rose-900/50 shadow-inner">
-                                    <label className="text-[10px] font-black text-rose-500 uppercase block tracking-widest pl-1 mb-2">Monto Individual (S/)</label>
-                                    <input 
-                                        type="number" 
-                                        value={gastoData.monto} 
-                                        onChange={(e) => setGastoData({...gastoData, monto: e.target.value})} 
-                                        className="w-full bg-transparent border-none p-0 text-3xl font-black outline-none tabular-nums text-rose-600 focus:ring-0" 
+                                <div className="bg-rose-50/50 dark:bg-rose-950/20 px-5 py-3 rounded-2xl border border-rose-100 dark:border-rose-900/50 shadow-inner">
+                                    <label className="text-[9px] font-black text-rose-500 uppercase block tracking-widest pl-0.5 mb-1">Monto Individual (S/)</label>
+                                    <input
+                                        type="number"
+                                        value={gastoData.monto}
+                                        onChange={(e) => setGastoData({...gastoData, monto: e.target.value})}
+                                        className="w-full bg-transparent border-none p-0 text-2xl font-black outline-none tabular-nums text-rose-600 focus:ring-0"
                                         placeholder="0.00"
                                     />
                                 </div>
-                                <textarea 
-                                    placeholder="Descripción / Glosa..." 
-                                    value={gastoData.desc} 
-                                    onChange={(e) => setGastoData({...gastoData, desc: e.target.value})} 
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-transparent focus:border-rose-400 p-5 rounded-3xl text-[11px] font-bold outline-none h-24 transition-all uppercase resize-none shadow-inner" 
+                                <textarea
+                                    placeholder="Descripción / Glosa..."
+                                    value={gastoData.desc}
+                                    onChange={(e) => setGastoData({...gastoData, desc: e.target.value})}
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-transparent focus:border-rose-400 px-4 py-3 rounded-2xl text-[11px] font-bold outline-none h-20 transition-all uppercase resize-none shadow-inner"
                                 />
                             </div>
 
-                            <button 
+                            <button
                                 onClick={addBreakdownItem}
                                 disabled={!gastoData.monto}
-                                className={`w-full py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-widest transition-all ${hasInvoice ? 'bg-indigo-600 text-white shadow-xl hover:scale-[1.02] active:scale-95' : 'hidden'}`}
+                                className={`w-full py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${hasInvoice ? 'bg-indigo-600 text-white shadow-lg hover:scale-[1.02] active:scale-95' : 'hidden'}`}
                             >
-                                + Añadir al Desglose de Factura
+                                + Añadir al Desglose
                             </button>
-                        </div>
 
-                        {/* MIDDLE SECTION: BREAKDOWN & DOCUMENTS (8 COLS) */}
-                        <div className="lg:col-span-8 flex flex-col gap-6">
-                            {hasInvoice ? (
-                                <div className="flex-1 bg-indigo-50/20 dark:bg-indigo-950/5 rounded-[3.5rem] border-2 border-indigo-100/50 dark:border-indigo-900/30 flex flex-col overflow-hidden shadow-inner">
-                                    <div className="px-8 py-6 border-b border-indigo-100/50 flex justify-between items-center bg-white/50 dark:bg-slate-900/50">
-                                        <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] italic leading-none">Artículos en la Factura</h4>
-                                        <span className="text-xl font-black text-indigo-700 tabular-nums leading-none">TOTAL: S/ {totalInvoiceAmount.toFixed(2)}</span>
+                            {/* Voucher upload (always visible when traceability required, shown here when not in invoice mode) */}
+                            {!hasInvoice && isTraceabilityRequired && (
+                                <div className="space-y-3 pt-2 border-t border-slate-100">
+                                    <div className="flex items-center justify-between pl-0.5">
+                                        <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Auditoría Bancaria</h5>
+                                        <span className="text-[7px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full uppercase">Obligatorio*</span>
                                     </div>
-                                    
-                                    <div className="flex-1 overflow-y-auto p-8 space-y-3 custom-scrollbar">
-                                        {invoiceBreakdown.length === 0 ? (
-                                            <div className="pt-20 flex flex-col items-center opacity-30">
-                                                <Calculator className="w-12 h-12 mb-4 text-slate-300 pointer-events-none" />
-                                                <p className="text-[10px] font-black text-slate-400 uppercase italic">Añade Conceptos desde el panel izquierdo</p>
-                                            </div>
-                                        ) : invoiceBreakdown.map((item) => (
-                                            <div key={item.id} className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-sm flex justify-between items-center group animate-in slide-in-from-right-4">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-3 mb-1">
-                                                        <span className="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
-                                                            {item.category}
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase truncate leading-none">
-                                                        {item.description}
-                                                    </p>
-                                                </div>
-                                                <div className="flex items-center gap-6">
-                                                    <span className="text-sm font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">S/ {item.amount.toFixed(2)}</span>
-                                                    <button onClick={() => removeBreakdownItem(item.id)} className="p-2 text-slate-200 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all group-hover:opacity-100 opacity-0"><X className="w-4 h-4" /></button>
-                                                </div>
-                                            </div>
-                                        ))}
+                                    <div
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className={`h-24 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all ${showError && !voucherFile ? 'border-rose-400 bg-rose-50' : 'border-slate-200 hover:border-rose-500 bg-white dark:bg-slate-800 shadow-sm'}`}
+                                    >
+                                        {voucherPreview ? (
+                                            <img src={voucherPreview} className="h-full w-full object-contain p-2 rounded-2xl" alt="Voucher"/>
+                                        ) : (
+                                            <>
+                                                <Camera className="w-6 h-6 text-slate-300" />
+                                                <span className="text-[9px] font-black text-slate-400 uppercase">Subir Váucher</span>
+                                            </>
+                                        )}
                                     </div>
-                                </div>
-                            ) : (
-                                <div className="flex-1 flex flex-col justify-center items-center opacity-40 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[3.5rem] p-12 bg-slate-50/50">
-                                     <ArrowLeft className="w-12 h-12 mb-4 text-slate-200" />
-                                     <p className="text-xs font-black text-slate-400 uppercase tracking-widest text-center leading-relaxed">Configura el gasto en el panel lateral<br/><span className="text-[9px] font-bold italic normal-case mt-3 block opacity-60">O activa el botón superior "Registrar con Factura"</span></p>
+                                    <div className="relative">
+                                        <input
+                                            placeholder="N° OPERACIÓN *"
+                                            value={numOp}
+                                            onChange={(e) => setNumOp(e.target.value.toUpperCase())}
+                                            className={`w-full bg-white dark:bg-slate-800 px-4 py-3 rounded-xl text-center font-black text-base outline-none border-2 transition-all ${showError && !numOp ? 'border-rose-400 shadow-rose-50' : 'border-slate-100 focus:border-rose-500 shadow-sm'}`}
+                                        />
+                                        {showError && !numOp && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-rose-500 animate-pulse" />}
+                                    </div>
                                 </div>
                             )}
+                        </div>
 
-                            {/* DOCUMENTATION PANEL */}
-                            <div className={`grid ${isTraceabilityRequired && hasInvoice ? 'grid-cols-2' : 'grid-cols-1'} gap-6 bg-slate-50 dark:bg-slate-900/50 p-8 rounded-[3rem] border border-slate-100 dark:border-slate-800 transition-all duration-500`}>
-                                 {isTraceabilityRequired && (
-                                     <div className="space-y-4 animate-in slide-in-from-left-4">
-                                        <div className="flex items-center justify-between pl-1">
-                                            <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Auditoría / Trazabilidad Bancaria</h5>
+                        {/* RIGHT SECTION: only shown in invoice mode */}
+                        {hasInvoice && (
+                        <div className="lg:col-span-7 flex flex-col gap-4">
+                            <div className="flex-1 bg-indigo-50/20 dark:bg-indigo-950/5 rounded-2xl border-2 border-indigo-100/50 dark:border-indigo-900/30 flex flex-col overflow-hidden shadow-inner min-h-[200px]">
+                                <div className="px-5 py-3 border-b border-indigo-100/50 flex justify-between items-center bg-white/50 dark:bg-slate-900/50">
+                                    <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-[0.2em] italic leading-none">Artículos en la Factura</h4>
+                                    <span className="text-base font-black text-indigo-700 tabular-nums leading-none">TOTAL: S/ {totalInvoiceAmount.toFixed(2)}</span>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                                    {invoiceBreakdown.length === 0 ? (
+                                        <div className="pt-12 flex flex-col items-center opacity-30">
+                                            <Calculator className="w-10 h-10 mb-3 text-slate-300 pointer-events-none" />
+                                            <p className="text-[10px] font-black text-slate-400 uppercase italic">Añade Conceptos desde el panel izquierdo</p>
+                                        </div>
+                                    ) : invoiceBreakdown.map((item) => (
+                                        <div key={item.id} className="bg-white dark:bg-slate-800 px-4 py-3 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm flex justify-between items-center group animate-in slide-in-from-right-4">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-0.5">
+                                                    <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+                                                        {item.category}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10px] font-black text-slate-800 dark:text-slate-200 uppercase truncate leading-none">
+                                                    {item.description}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="text-[12px] font-black text-slate-900 dark:text-white tabular-nums tracking-tighter">S/ {item.amount.toFixed(2)}</span>
+                                                <button onClick={() => removeBreakdownItem(item.id)} className="p-1.5 text-slate-200 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all group-hover:opacity-100 opacity-0"><X className="w-3.5 h-3.5" /></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* DOCUMENTATION PANEL: Voucher + Invoice (only in invoice mode) */}
+                            <div className={`grid ${isTraceabilityRequired ? 'grid-cols-2' : 'grid-cols-1'} gap-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all duration-500`}>
+                                {isTraceabilityRequired && (
+                                    <div className="space-y-2 animate-in slide-in-from-left-4">
+                                        <div className="flex items-center justify-between pl-0.5">
+                                            <h5 className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Auditoría Bancaria</h5>
                                             <span className="text-[7px] font-black text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full uppercase">Obligatorio*</span>
                                         </div>
-                                        <div className="space-y-3">
-                                            <div 
-                                                onClick={() => fileInputRef.current?.click()} 
-                                                className={`h-28 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center gap-2 cursor-pointer transition-all ${showError && !voucherFile ? 'border-rose-400 bg-rose-50' : 'border-slate-200 hover:border-rose-500 bg-white dark:bg-slate-800 shadow-sm'}`}
-                                            >
-                                                {voucherPreview ? (
-                                                    <img src={voucherPreview} className="h-full w-full object-contain p-3 rounded-[2rem]" alt="Voucher"/>
-                                                ) : (
-                                                    <>
-                                                        <Camera className="w-7 h-7 text-slate-300" />
-                                                        <span className="text-[9px] font-black text-slate-400 uppercase">Subir Váucher</span>
-                                                    </>
-                                                )}
-                                            </div>
-                                            <div className="relative">
-                                                <input 
-                                                    placeholder="N° OPERACIÓN *" 
-                                                    value={numOp} 
-                                                    onChange={(e) => setNumOp(e.target.value.toUpperCase())}
-                                                    className={`w-full bg-white dark:bg-slate-800 p-4 rounded-2xl text-center font-black text-xl outline-none border-2 transition-all ${showError && !numOp ? 'border-rose-400 shadow-rose-50' : 'border-slate-100 focus:border-rose-500 shadow-sm'}`}
-                                                />
-                                                {showError && !numOp && <AlertCircle className="absolute right-4 top-1/2 -translate-y-1/2 w-6 h-6 text-rose-500 animate-pulse" />}
-                                            </div>
+                                        <div
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className={`h-20 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${showError && !voucherFile ? 'border-rose-400 bg-rose-50' : 'border-slate-200 hover:border-rose-500 bg-white dark:bg-slate-800 shadow-sm'}`}
+                                        >
+                                            {voucherPreview ? (
+                                                <img src={voucherPreview} className="h-full w-full object-contain p-2 rounded-xl" alt="Voucher"/>
+                                            ) : (
+                                                <>
+                                                    <Camera className="w-5 h-5 text-slate-300" />
+                                                    <span className="text-[9px] font-black text-slate-400 uppercase">Subir Váucher</span>
+                                                </>
+                                            )}
                                         </div>
-                                     </div>
-                                 )}
-
-                                 <div className={`space-y-4 transition-all ${isTraceabilityRequired && hasInvoice ? 'border-l border-slate-100 dark:border-slate-800 pl-6' : ''}`}>
-                                    <div className="flex items-center justify-between pl-1">
-                                        <h5 className={`text-[9px] font-black uppercase tracking-widest leading-none ${hasInvoice ? 'text-indigo-400' : 'text-slate-300'}`}>Evidencia Documentaria (Factura)</h5>
-                                        {hasInvoice && <span className="text-[7px] font-black text-indigo-400/50 bg-indigo-50 px-2 py-0.5 rounded-full uppercase italic">Opcional</span>}
+                                        <div className="relative">
+                                            <input
+                                                placeholder="N° OP *"
+                                                value={numOp}
+                                                onChange={(e) => setNumOp(e.target.value.toUpperCase())}
+                                                className={`w-full bg-white dark:bg-slate-800 px-3 py-2.5 rounded-xl text-center font-black text-sm outline-none border-2 transition-all ${showError && !numOp ? 'border-rose-400 shadow-rose-50' : 'border-slate-100 focus:border-rose-500 shadow-sm'}`}
+                                            />
+                                            {showError && !numOp && <AlertCircle className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-500 animate-pulse" />}
+                                        </div>
                                     </div>
-                                    <div 
+                                )}
+
+                                <div className={`space-y-2 transition-all ${isTraceabilityRequired ? 'border-l border-slate-100 dark:border-slate-800 pl-4' : ''}`}>
+                                    <div className="flex items-center justify-between pl-0.5">
+                                        <h5 className="text-[9px] font-black uppercase tracking-widest leading-none text-indigo-400">Factura Digital</h5>
+                                        <span className="text-[7px] font-black text-indigo-400/50 bg-indigo-50 px-2 py-0.5 rounded-full uppercase italic">Opcional</span>
+                                    </div>
+                                    <div
                                         onClick={() => invoiceInputRef.current?.click()}
-                                        className={`h-full min-h-[160px] border-2 border-dashed rounded-[3rem] flex flex-col items-center justify-center cursor-pointer transition-all ${hasInvoice ? 'border-indigo-200 hover:border-indigo-400 bg-white dark:bg-indigo-950/20 shadow-sm' : 'border-slate-100 opacity-10 grayscale pointer-events-none bg-slate-50/10'}`}
+                                        className="h-full min-h-[100px] border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all border-indigo-200 hover:border-indigo-400 bg-white dark:bg-indigo-950/20 shadow-sm"
                                     >
                                         {invoicePreview ? (
-                                            <div className="relative group p-2 h-full w-full">
-                                                <img src={invoicePreview} className="w-full h-full object-contain rounded-[2.5rem]" alt="Factura"/>
-                                                <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center rounded-[2.5rem] backdrop-blur-[2px]">
-                                                    <ImagePlus className="w-10 h-10 text-white" />
+                                            <div className="relative group p-1.5 h-full w-full">
+                                                <img src={invoicePreview} className="w-full h-full object-contain rounded-lg" alt="Factura"/>
+                                                <div className="absolute inset-0 bg-indigo-600/20 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center rounded-lg backdrop-blur-[2px]">
+                                                    <ImagePlus className="w-8 h-8 text-white" />
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="flex flex-col items-center gap-3">
-                                                <FileSearch className={`w-10 h-10 ${hasInvoice ? 'text-indigo-300 animate-bounce-slow' : 'text-slate-200'}`} />
+                                            <div className="flex flex-col items-center gap-2">
+                                                <FileSearch className="w-8 h-8 text-indigo-300 animate-bounce-slow" />
                                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Digitalizar Factura</p>
                                             </div>
                                         )}
                                     </div>
-                                 </div>
+                                </div>
                             </div>
                         </div>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex gap-8 mt-8 pt-8 border-t border-slate-50 dark:border-slate-800">
-                    <div className="flex-1 flex flex-col justify-center items-start pl-6">
-                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 leading-none">Carga Financiera Proyectada</p>
-                         <div className="flex items-baseline gap-6">
-                            <span className={`text-5xl font-black tabular-nums tracking-tighter transition-colors ${hasInsufficientFunds ? 'text-rose-600' : 'text-slate-950 dark:text-white'}`}>S/ {totalToSpend.toFixed(2)}</span>
-                            <span className={`text-[10px] font-black uppercase px-4 py-1.5 rounded-full border tracking-widest shadow-sm ${currentBalance - totalToSpend < 0 ? 'bg-rose-50 text-rose-500 border-rose-100 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                <div className="flex flex-wrap items-center gap-4 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-white/40 shrink-0">
+                    <div className="flex-1 min-w-[180px]">
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 leading-none">Total</p>
+                         <div className="flex items-baseline gap-3">
+                            <span className={`text-3xl font-black tabular-nums tracking-tighter transition-colors ${hasInsufficientFunds ? 'text-rose-600' : 'text-slate-950 dark:text-white'}`}>S/ {totalToSpend.toFixed(2)}</span>
+                            <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-full border tracking-widest shadow-sm ${currentBalance - totalToSpend < 0 ? 'bg-rose-50 text-rose-500 border-rose-100 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
                                 Remanente: S/ {(currentBalance - totalToSpend).toFixed(2)}
                             </span>
                          </div>
                     </div>
 
-                    <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-[2.5rem] pr-8 border border-slate-100 dark:border-slate-800 shadow-inner">
+                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-inner">
                         {['Efectivo', ...BANK_ACCOUNTS].map(acc => (
-                            <button 
-                                key={acc} 
-                                onClick={() => setGastoData({...gastoData, cuenta: acc})} 
-                                className={`h-14 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${gastoData.cuenta === acc ? 'bg-rose-600 text-white shadow-2xl scale-110 shadow-rose-200' : 'bg-white dark:bg-slate-800 text-slate-300 border border-slate-100 dark:border-slate-700 hover:text-slate-400'}`}
+                            <button
+                                key={acc}
+                                onClick={() => setGastoData({...gastoData, cuenta: acc})}
+                                className={`h-9 px-3 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${gastoData.cuenta === acc ? 'bg-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-100 dark:border-slate-700 hover:text-slate-600'}`}
                             >
                                 {acc.split('/')[0]}
                             </button>
                         ))}
                     </div>
 
-                    <button 
+                    <button
                         onClick={handleConfirmGasto}
                         disabled={isSubmitting || totalToSpend <= 0 || hasInsufficientFunds}
-                        className={`px-16 rounded-[2rem] h-14 text-[12px] font-black uppercase tracking-widest shadow-xl active:scale-95 disabled:opacity-30 flex items-center gap-5 transition-all bg-[#4A90E2] text-white shadow-[#4A90E2]/20 border-b-4 border-[#366480]`}
+                        className={`px-8 rounded-xl h-12 text-[11px] font-black uppercase tracking-widest shadow-lg active:scale-95 disabled:opacity-30 flex items-center gap-3 transition-all bg-[#4A90E2] text-white shadow-[#4A90E2]/20 border-b-4 border-[#366480]`}
                     >
-                        {isSubmitting ? 'PROCESANDO...' : 'Sincronizar Movimiento'}
-                        <ArrowRight className="w-5 h-5" />
+                        {isSubmitting ? 'PROCESANDO...' : 'Confirmar'}
+                        <ArrowRight className="w-4 h-4" />
                     </button>
                 </div>
             </div>
-            
+
             <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => handleFileChange(e, 'voucher')} className="hidden" />
             <input ref={invoiceInputRef} type="file" accept="image/*" onChange={(e) => handleFileChange(e, 'invoice')} className="hidden" />
         </div>

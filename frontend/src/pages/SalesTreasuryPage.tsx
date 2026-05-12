@@ -28,7 +28,8 @@ import {
   CheckCircle2,
   Lock,
   Edit3,
-  Calendar
+  Calendar,
+  BarChart2
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { NodrizaTesoreria, VentaCabecera, VentaDetalle, VentaCobro, OrdenPago } from '../services/types';
@@ -112,8 +113,14 @@ export const SalesTreasuryPage = () => {
     const [showDeposit8059Modal, setShowDeposit8059Modal] = useState(false);
     const [showPayOrderModal, setShowPayOrderModal] = useState<OrdenPago | null>(null);
     const [zoomImage, setZoomImage] = useState<string | null>(null);
-    
-    useScrollLock(!!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice);
+    const [showKardexModal, setShowKardexModal] = useState(false);
+    const [kardexAccount, setKardexAccount] = useState('2049/YAPE');
+    const [kardexStart, setKardexStart] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+    const [kardexEnd, setKardexEnd] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+    const [showKardexDatePicker, setShowKardexDatePicker] = useState(false);
+    const [showCashDatePicker, setShowCashDatePicker] = useState(false);
+
+    useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice);
     
     // Cash Modal Filters
     const [cashFilterStart, setCashFilterStart] = useState(defaultStartOfWeek);
@@ -146,6 +153,8 @@ export const SalesTreasuryPage = () => {
     const exportMenuRef = useRef<HTMLDivElement>(null);
     const datePickerRef = useRef<HTMLDivElement>(null);
     const cuentasPopupRef = useRef<HTMLDivElement>(null);
+    const kardexDatePickerRef = useRef<HTMLDivElement>(null);
+    const cashDatePickerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -157,6 +166,12 @@ export const SalesTreasuryPage = () => {
             }
             if (cuentasPopupRef.current && !cuentasPopupRef.current.contains(event.target as Node)) {
                 setShowCuentasPopup(false);
+            }
+            if (kardexDatePickerRef.current && !kardexDatePickerRef.current.contains(event.target as Node)) {
+                setShowKardexDatePicker(false);
+            }
+            if (cashDatePickerRef.current && !cashDatePickerRef.current.contains(event.target as Node)) {
+                setShowCashDatePicker(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -267,8 +282,6 @@ export const SalesTreasuryPage = () => {
 
     const calculateGlobalBalance = (target: string) => balances.global[target] || 0;
 
-    useEffect(() => {
-    }, [showTransferModal, showDeposit8059Modal]);
 
     const BANK_ACCOUNTS = ['2049/YAPE', '4071', '9001', '8059'];
 
@@ -329,49 +342,47 @@ export const SalesTreasuryPage = () => {
         return timeline.sort((a, b) => b.created_at.localeCompare(a.created_at));
     }, [cashOnlyMovements]);
 
-    const handleExport = async (type: 'PDF' | 'EXCEL' | 'VOUCHERS_PDF' | 'INVOICES_PDF') => {
-        const title = viewMode === 'VENTAS' ? 'REPORTE DE VENTAS Y COBROS' : 'REPORTE DE EGRESOS Y COMPRAS';
-        const fileName = viewMode === 'VENTAS' ? 'Reporte_Ventas' : 'Reporte_Egresos';
-
+    const handleExport = async (type: 'VENTAS_PDF' | 'VENTAS_EXCEL' | 'EGRESOS_PDF' | 'EGRESOS_EXCEL' | 'VOUCHERS_PDF' | 'INVOICES_PDF') => {
         if (type === 'VOUCHERS_PDF') {
-            const items = viewMode === 'VENTAS'
-                ? movements.filter(m => m.tipo_movimiento === 'INGRESO' && m.voucher_url).map(m => ({
-                    url: m.voucher_url!,
-                    label: `Cobro Venta #${m.venta_id?.slice(0,8) || 'N/A'}`,
-                    date: format(new Date(m.created_at), 'dd/MM/yyyy'),
-                    amount: `S/ ${Number(m.monto).toFixed(2)}`
-                  }))
-                : filteredCompras.filter(c => c.voucher_url).map(c => ({
-                    url: c.voucher_url!,
-                    label: `Egreso: ${c.categoria} - ${c.observaciones}`,
-                    date: format(new Date(c.created_at!), 'dd/MM/yyyy'),
-                    amount: `S/ ${Number(c.monto).toFixed(2)}`
-                  }));
+            const ventasItems = movements.filter(m => m.tipo_movimiento === 'INGRESO' && m.voucher_url).map(m => ({
+                url: m.voucher_url!,
+                label: `Cobro Venta #${m.venta_id?.slice(0,8) || 'N/A'}`,
+                date: format(new Date(m.created_at), 'dd/MM/yyyy'),
+                amount: `S/ ${Number(m.monto).toFixed(2)}`
+            }));
+            const egresosItems = filteredCompras.filter(c => c.voucher_url).map(c => ({
+                url: c.voucher_url!,
+                label: `Egreso: ${c.categoria} - ${c.observaciones}`,
+                date: format(new Date(c.created_at!), 'dd/MM/yyyy'),
+                amount: `S/ ${Number(c.monto).toFixed(2)}`
+            }));
+            const items = viewMode === 'VENTAS' ? ventasItems : egresosItems;
+            const fileName = viewMode === 'VENTAS' ? 'Reporte_Ventas' : 'Reporte_Egresos';
             await exportImagesToPDF('VÁUCHERES Y COMPROBANTES DE PAGO', items, `Voucheres_${fileName}`);
             setShowExportMenu(false);
             return;
         }
 
         if (type === 'INVOICES_PDF') {
-            const items = viewMode === 'VENTAS'
-                ? []
-                : filteredCompras.filter(c => c.factura_url).map(c => ({
-                    url: c.factura_url!,
-                    label: `Factura Egreso: ${c.categoria} - ${c.observaciones}`,
-                    date: format(new Date(c.created_at!), 'dd/MM/yyyy'),
-                    amount: `S/ ${Number(c.monto).toFixed(2)}`
-                  }));
+            const items = filteredCompras.filter(c => c.factura_url).map(c => ({
+                url: c.factura_url!,
+                label: `Factura Egreso: ${c.categoria} - ${c.observaciones}`,
+                date: format(new Date(c.created_at!), 'dd/MM/yyyy'),
+                amount: `S/ ${Number(c.monto).toFixed(2)}`
+            }));
             if (items.length === 0) {
                 alert("No hay facturas o imágenes registradas en esta vista para exportar.");
                 setShowExportMenu(false);
                 return;
             }
-            await exportImagesToPDF('FACTURAS DE EGRESOS', items, `Facturas_${fileName}`);
+            await exportImagesToPDF('FACTURAS DE EGRESOS', items, `Facturas_Reporte_Egresos`);
             setShowExportMenu(false);
             return;
         }
 
-        if (viewMode === 'VENTAS') {
+        if (type === 'VENTAS_PDF' || type === 'VENTAS_EXCEL') {
+            const title = 'REPORTE DE VENTAS Y COBROS';
+            const fileName = 'Reporte_Ventas';
             const columns = ['FECHA', 'CÓDIGO/OT', 'CLIENTE', 'TOTAL', 'COBRADO', 'PENDIENTE', 'ESTADO'];
             const data = filteredVentas.map(v => [
                 format(new Date(v.created_at), 'dd/MM/yyyy'),
@@ -383,7 +394,7 @@ export const SalesTreasuryPage = () => {
                 v.estado_pago
             ]);
 
-            if (type === 'PDF') {
+            if (type === 'VENTAS_PDF') {
                 exportToPDF(title, columns, data, fileName);
             } else {
                 const excelData = filteredVentas.map(v => ({
@@ -397,7 +408,9 @@ export const SalesTreasuryPage = () => {
                 }));
                 exportToExcel(excelData, fileName);
             }
-        } else {
+        } else if (type === 'EGRESOS_PDF' || type === 'EGRESOS_EXCEL') {
+            const title = 'REPORTE DE EGRESOS Y COMPRAS';
+            const fileName = 'Reporte_Egresos';
             const columns = ['FECHA', 'CATEGORÍA', 'CUENTA', 'DESCRIPCIÓN', 'MONTO'];
             const data = filteredCompras.map(c => [
                 format(new Date(c.created_at!), 'dd/MM/yyyy'),
@@ -407,7 +420,7 @@ export const SalesTreasuryPage = () => {
                 `S/ ${Number(c.monto).toFixed(2)}`
             ]);
 
-            if (type === 'PDF') {
+            if (type === 'EGRESOS_PDF') {
                 exportToPDF(title, columns, data, fileName);
             } else {
                 const excelData = filteredCompras.map(c => ({
@@ -550,9 +563,53 @@ export const SalesTreasuryPage = () => {
         });
     }, [ordenesPago, deferredSearch, filterEstado, startDate, endDate]);
 
-    const pendingOrdenesCount = useMemo(() => 
-        ordenesPago.filter(op => op.estado === 'enviado').length, 
+    const pendingOrdenesCount = useMemo(() =>
+        ordenesPago.filter(op => op.estado === 'enviado').length,
     [ordenesPago]);
+
+    const KARDEX_ACCOUNTS = ['TODOS', 'Efectivo', '2049/YAPE', '4071', '9001', '8059'] as const;
+    const KARDEX_TRACKED = ['Efectivo', '2049/YAPE', '4071', '9001', '8059'] as const;
+
+    const kardexRows = useMemo(() => {
+        const start = new Date(kardexStart + 'T00:00:00');
+        const end   = new Date(kardexEnd   + 'T23:59:59');
+        const acc   = kardexAccount;
+        const isAll = acc === 'TODOS';
+
+        type KRow = { date: string; desc: string; numOp?: string; entrada: number; salida: number; contra: string; cuenta: string };
+        const rows: KRow[] = [];
+
+        [...movements]
+            .filter(m => { const d = new Date(m.created_at); return d >= start && d <= end; })
+            .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+            .forEach(m => {
+                const desc = m.observaciones || m.categoria || m.tipo_movimiento;
+                if (isAll) {
+                    // Show every movement, expressing perspective of the tracked accounts.
+                    // Transferencias internas between two tracked accounts produce two rows (one per side).
+                    const destTracked = m.cuenta_destino && (KARDEX_TRACKED as readonly string[]).includes(m.cuenta_destino);
+                    const origTracked = m.cuenta_origen  && (KARDEX_TRACKED as readonly string[]).includes(m.cuenta_origen);
+                    if (destTracked) {
+                        rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: Number(m.monto), salida: 0, contra: m.cuenta_origen || '—', cuenta: m.cuenta_destino! });
+                    }
+                    if (origTracked) {
+                        rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: 0, salida: Number(m.monto), contra: m.cuenta_destino || '—', cuenta: m.cuenta_origen! });
+                    }
+                    return;
+                }
+                const toHere   = m.cuenta_destino === acc;
+                const fromHere = m.cuenta_origen  === acc;
+                if (!toHere && !fromHere) return;
+                if (toHere && !fromHere) {
+                    rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: Number(m.monto), salida: 0, contra: m.cuenta_origen || '—', cuenta: acc });
+                } else if (fromHere && !toHere) {
+                    rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: 0, salida: Number(m.monto), contra: m.cuenta_destino || '—', cuenta: acc });
+                }
+            });
+
+        let balance = 0;
+        return rows.map(r => { balance += r.entrada - r.salida; return { ...r, balance }; });
+    }, [movements, kardexAccount, kardexStart, kardexEnd]);
 
     // memo8059 moved to standalone component ᛚᛚᛚ
 
@@ -612,25 +669,43 @@ export const SalesTreasuryPage = () => {
                                         <FileText className="w-4 h-4 text-[#366480]" /> Reportes
                                     </button>
                                     
-                                    <div className={`absolute top-full right-0 mt-3 w-64 bg-white/95 backdrop-blur-2xl rounded-[28px] border border-[#d3dcdb]/40 shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden z-[100] transition-all duration-200 origin-top p-2.5 ${showExportMenu ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
-                                        <button onClick={() => { handleExport('PDF'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
+                                    <div className={`absolute top-full right-0 mt-3 w-72 bg-white/95 backdrop-blur-2xl rounded-[28px] border border-[#d3dcdb]/40 shadow-[0_20px_50px_rgba(0,0,0,0.1)] overflow-hidden z-[100] transition-all duration-200 origin-top p-2.5 ${showExportMenu ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}`}>
+                                        <div className="px-3 py-1.5 text-[8px] font-black text-[#8b9ba5] uppercase tracking-[0.2em]">Ventas</div>
+                                        <button onClick={() => { handleExport('VENTAS_PDF'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
                                             <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center text-rose-500 group-hover:scale-110 transition-transform"><FileText className="w-4 h-4" /></div>
-                                            <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar PDF</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Documento Oficial</span></div>
+                                            <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar Ventas PDF</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Documento Oficial</span></div>
                                         </button>
-                                        <button onClick={() => { handleExport('EXCEL'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
+                                        <button onClick={() => { handleExport('VENTAS_EXCEL'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
                                             <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform"><FileSpreadsheet className="w-4 h-4" /></div>
-                                            <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar Excel</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Hoja de Cálculo</span></div>
+                                            <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar Ventas Excel</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Hoja de Cálculo</span></div>
                                         </button>
-                                        <button onClick={() => { handleExport('VOUCHERS_PDF'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#f7faf9] rounded-xl transition-all text-left group border-t border-[#d3dcdb]/20 mt-1 pt-4">
+                                        <div className="px-3 py-1.5 text-[8px] font-black text-[#8b9ba5] uppercase tracking-[0.2em] mt-1 border-t border-[#d3dcdb]/20 pt-3">Egresos</div>
+                                        <button onClick={() => { handleExport('EGRESOS_PDF'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
+                                            <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center text-rose-500 group-hover:scale-110 transition-transform"><FileText className="w-4 h-4" /></div>
+                                            <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar Egresos PDF</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Documento Oficial</span></div>
+                                        </button>
+                                        <button onClick={() => { handleExport('EGRESOS_EXCEL'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
+                                            <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform"><FileSpreadsheet className="w-4 h-4" /></div>
+                                            <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar Egresos Excel</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Hoja de Cálculo</span></div>
+                                        </button>
+                                        <div className="px-3 py-1.5 text-[8px] font-black text-[#8b9ba5] uppercase tracking-[0.2em] mt-1 border-t border-[#d3dcdb]/20 pt-3">Documentos</div>
+                                        <button onClick={() => { handleExport('VOUCHERS_PDF'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
                                             <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-500 group-hover:scale-110 transition-transform"><FileText className="w-4 h-4" /></div>
                                             <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar Váucheres</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Comprobantes (PDF)</span></div>
                                         </button>
-                                        <button onClick={() => { handleExport('INVOICES_PDF'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-3 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
+                                        <button onClick={() => { handleExport('INVOICES_PDF'); setShowExportMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#f7faf9] rounded-xl transition-all text-left group">
                                             <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500 group-hover:scale-110 transition-transform"><FileText className="w-4 h-4" /></div>
                                             <div className="flex flex-col"><span className="text-[11px] font-[900] text-[#2c3434] uppercase tracking-tight">Exportar Facturas</span><span className="text-[9px] text-[#366480]/40 font-bold uppercase tracking-widest">Sustentos Subidos (PDF)</span></div>
                                         </button>
                                     </div>
                                 </div>
+
+                                <button
+                                    onClick={() => setShowKardexModal(true)}
+                                    className="flex items-center gap-2 px-5 py-3 bg-[#e8eded] text-[#366480] hover:bg-[#dce3e3] rounded-xl text-[13px] font-bold transition-all"
+                                >
+                                    <BarChart2 className="w-4 h-4 text-[#366480]" /> <span className="leading-tight">Historial<br/>Cuentas</span>
+                                </button>
 
                                 <button
                                     onClick={() => setShowGastoModal(true)}
@@ -723,7 +798,10 @@ export const SalesTreasuryPage = () => {
                                 ].map((tab) => (
                                     <button
                                         key={tab.id}
-                                        onClick={() => startTransition(() => setViewMode(tab.id as any))}
+                                        onClick={() => {
+                                            startTransition(() => setViewMode(tab.id as any));
+                                            if (tab.id !== 'VENTAS' && filterEstado === 'PARCIAL') setFilterEstado('TODOS');
+                                        }}
                                         className={`relative py-5 px-6 text-[13px] font-[800] transition-all duration-300 ${
                                             viewMode === tab.id 
                                             ? 'text-[#244c66]' 
@@ -885,7 +963,7 @@ export const SalesTreasuryPage = () => {
                                                             </td>
                                                             <td className="py-4 text-right pr-4">
                                                                 <div className="flex items-center justify-end gap-3 transition-all duration-300">
-                                                                    {!isStub && <button onClick={() => openHistory(venta)} className="p-3 bg-white text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm border border-[#d3dcdb]/20"><HistoryIcon className="w-4 h-4" /></button>}
+                                                                    {!isStub && <button onClick={() => openHistory(venta)} title="Historial de cobros" className="p-3 bg-white text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm border border-[#d3dcdb]/20"><HistoryIcon className="w-4 h-4" /></button>}
                                                                     {!isStub && Number(venta.saldo_pendiente) > 0 && <button onClick={() => setShowCobroModal(venta)} className="px-6 py-3 bg-[#4A90E2] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD] transition-all">Cobrar</button>}
                                                                 </div>
                                                             </td>
@@ -1177,6 +1255,194 @@ export const SalesTreasuryPage = () => {
                     document.body
                 )}
 
+                {/* ── KARDEX DE CUENTAS MODAL ──────────────────────────────────── */}
+                {showKardexModal && createPortal(
+                    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
+                        <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[95vh] min-h-[640px] relative">
+                            <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
+
+                            {/* Header */}
+                            <div className="px-8 py-6 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40 shrink-0 rounded-t-3xl">
+                                <div className="flex items-center gap-4">
+                                    <BarChart2 className="w-8 h-8 text-[#366480] drop-shadow-sm" />
+                                    <div>
+                                        <h2 className="text-xl font-black text-[#2c3434] uppercase tracking-tight">Historial de Cuentas</h2>
+                                        <p className="text-[9px] font-bold text-[#8b9ba5] uppercase tracking-widest mt-0.5">Kardex de movimientos por cuenta bancaria</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowKardexModal(false)} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Controls */}
+                            <div className="px-8 py-5 border-b border-[#f0f5f4] flex flex-wrap items-center gap-3 shrink-0 bg-white/20">
+                                {/* Account dropdown */}
+                                <div className="relative">
+                                    <select
+                                        value={kardexAccount}
+                                        onChange={(e) => setKardexAccount(e.target.value)}
+                                        className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-12 py-3 rounded-full text-[11px] font-black uppercase tracking-widest outline-none cursor-pointer hover:bg-[#e8eded] transition-all border border-[#d3dcdb]/30"
+                                    >
+                                        {KARDEX_ACCOUNTS.map(acc => (
+                                            <option key={acc} value={acc}>{acc === 'TODOS' ? 'Todas las cuentas' : acc}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
+                                </div>
+
+                                {/* Date range */}
+                                <div className="relative ml-auto" ref={kardexDatePickerRef}>
+                                    <button
+                                        onClick={() => setShowKardexDatePicker(p => !p)}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[11px] font-bold hover:bg-[#e8eded] transition-all"
+                                    >
+                                        <Calendar className="w-4 h-4 text-[#4A90E2]" />
+                                        {`${format(new Date(kardexStart + 'T12:00:00'), "dd MMM", { locale: es })} — ${format(new Date(kardexEnd + 'T12:00:00'), "dd MMM yyyy", { locale: es })}`}
+                                        <ChevronDown className={`w-3 h-3 transition-transform ${showKardexDatePicker ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    <RangeDatePicker
+                                        isOpen={showKardexDatePicker}
+                                        startDate={kardexStart}
+                                        endDate={kardexEnd}
+                                        onApply={(s, e) => { setKardexStart(s); setKardexEnd(e); setShowKardexDatePicker(false); }}
+                                        onCancel={() => setShowKardexDatePicker(false)}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Table */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                {kardexRows.length === 0 ? (
+                                    <div className="py-24 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[10px]">Sin movimientos en el rango seleccionado</div>
+                                ) : (
+                                    <table className="w-full text-left">
+                                        <thead className="sticky top-0 z-10 bg-[#f7faf9]/95 backdrop-blur-md border-b border-[#d3dcdb]/20">
+                                            <tr className="text-[#366480]/40 text-[9px] font-black uppercase tracking-[0.25em]">
+                                                <th className="py-4 pl-8 w-36">Fecha</th>
+                                                {kardexAccount === 'TODOS' && <th className="py-4 px-4 w-28">Cuenta</th>}
+                                                <th className="py-4 px-4">Descripción</th>
+                                                <th className="py-4 px-4">Contrapartida</th>
+                                                <th className="py-4 px-4 text-right text-emerald-600/60">Entrada (S/)</th>
+                                                <th className="py-4 px-4 text-right text-rose-500/60">Salida (S/)</th>
+                                                {kardexAccount !== 'TODOS' && <th className="py-4 pr-8 text-right">Saldo (S/)</th>}
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-[#d3dcdb]/10">
+                                            {kardexRows.map((row, i) => (
+                                                <tr key={i} className="hover:bg-[#f8faf9]/60 transition-colors">
+                                                    <td className="py-3.5 pl-8 whitespace-nowrap">
+                                                        <span className="text-[10px] font-bold text-[#8b9ba5]">{format(new Date(row.date), 'dd/MM/yy', { locale: es })}</span>
+                                                        <span className="block text-[9px] font-bold text-[#d3dcdb]">{format(new Date(row.date), 'HH:mm', { locale: es })}{row.numOp ? ` · #${row.numOp}` : ''}</span>
+                                                    </td>
+                                                    {kardexAccount === 'TODOS' && (
+                                                        <td className="py-3.5 px-4">
+                                                            <span className="px-3 py-1 bg-[#244c66]/10 text-[#244c66] text-[9px] font-black rounded-full uppercase tracking-wide">
+                                                                {row.cuenta}
+                                                            </span>
+                                                        </td>
+                                                    )}
+                                                    <td className="py-3.5 px-4 text-[11px] font-bold text-[#2c3434] max-w-[220px] truncate uppercase" title={row.desc}>
+                                                        {row.desc || '—'}
+                                                    </td>
+                                                    <td className="py-3.5 px-4">
+                                                        <span className="px-3 py-1 bg-[#f0f5f4] text-[#366480] text-[9px] font-black rounded-full uppercase tracking-wide">
+                                                            {row.contra}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-3.5 px-4 text-right tabular-nums text-[12px] font-[900]">
+                                                        {row.entrada > 0 ? <span className="text-emerald-600">+{formatCurrency(row.entrada)}</span> : <span className="text-[#d3dcdb]">—</span>}
+                                                    </td>
+                                                    <td className="py-3.5 px-4 text-right tabular-nums text-[12px] font-[900]">
+                                                        {row.salida > 0 ? <span className="text-rose-500">−{formatCurrency(row.salida)}</span> : <span className="text-[#d3dcdb]">—</span>}
+                                                    </td>
+                                                    {kardexAccount !== 'TODOS' && (
+                                                        <td className={`py-3.5 pr-8 text-right tabular-nums text-[13px] font-black ${row.balance >= 0 ? 'text-[#2c3434]' : 'text-rose-600'}`}>
+                                                            {formatCurrency(row.balance)}
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+
+                            {/* Footer — summary + actions */}
+                            {kardexRows.length > 0 && (() => {
+                                const totalEntrada = kardexRows.reduce((s, r) => s + r.entrada, 0);
+                                const totalSalida  = kardexRows.reduce((s, r) => s + r.salida,  0);
+                                const isAll = kardexAccount === 'TODOS';
+                                const saldoFinal   = isAll
+                                    ? KARDEX_TRACKED.reduce((acc, a) => acc + calculateGlobalBalance(a), 0)
+                                    : kardexRows[kardexRows.length - 1]?.balance ?? 0;
+                                return (
+                                    <div className="px-8 py-5 border-t border-[#f0f5f4] bg-white/40 shrink-0 flex items-center justify-between gap-6 rounded-b-3xl">
+                                        <div className="flex items-center gap-8">
+                                            <div className="flex flex-col">
+                                                <span className="text-[8px] font-black text-[#8b9ba5] uppercase tracking-widest">Total Entradas</span>
+                                                <span className="text-[15px] font-[900] text-emerald-600 tabular-nums">+S/ {formatCurrency(totalEntrada)}</span>
+                                            </div>
+                                            <div className="w-px h-8 bg-[#d3dcdb]/30"></div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[8px] font-black text-[#8b9ba5] uppercase tracking-widest">Total Salidas</span>
+                                                <span className="text-[15px] font-[900] text-rose-500 tabular-nums">−S/ {formatCurrency(totalSalida)}</span>
+                                            </div>
+                                            <div className="w-px h-8 bg-[#d3dcdb]/30"></div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[8px] font-black text-[#8b9ba5] uppercase tracking-widest">{isAll ? 'Patrimonio Global' : 'Saldo Final'}</span>
+                                                <span className={`text-[15px] font-[900] tabular-nums ${saldoFinal >= 0 ? 'text-[#244c66]' : 'text-rose-600'}`}>S/ {formatCurrency(saldoFinal)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                onClick={() => {
+                                                    const dateLabel = `${format(new Date(kardexStart + 'T12:00:00'), 'dd/MM/yyyy', { locale: es })} al ${format(new Date(kardexEnd + 'T12:00:00'), 'dd/MM/yyyy', { locale: es })}`;
+                                                    if (isAll) {
+                                                        const title = `HISTORIAL UNIFICADO DE CUENTAS — ${dateLabel}`;
+                                                        const cols = ['FECHA', 'CUENTA', 'DESCRIPCIÓN', 'CONTRAPARTIDA', 'ENTRADA (S/)', 'SALIDA (S/)'];
+                                                        const rows = kardexRows.map(r => [
+                                                            format(new Date(r.date), 'dd/MM/yy HH:mm', { locale: es }),
+                                                            r.cuenta.toUpperCase(),
+                                                            (r.desc || '').toUpperCase(),
+                                                            (r.contra || '—').toUpperCase(),
+                                                            r.entrada > 0 ? `+${formatCurrency(r.entrada)}` : '—',
+                                                            r.salida  > 0 ? `-${formatCurrency(r.salida)}`  : '—'
+                                                        ]);
+                                                        exportToPDF(title, cols, rows, `Kardex_Unificado`);
+                                                    } else {
+                                                        const title = `HISTORIAL DE CUENTA ${kardexAccount} — ${dateLabel}`;
+                                                        const cols = ['FECHA', 'DESCRIPCIÓN', 'CONTRAPARTIDA', 'ENTRADA (S/)', 'SALIDA (S/)', 'SALDO (S/)'];
+                                                        const rows = kardexRows.map(r => [
+                                                            format(new Date(r.date), 'dd/MM/yy HH:mm', { locale: es }),
+                                                            (r.desc || '').toUpperCase(),
+                                                            (r.contra || '—').toUpperCase(),
+                                                            r.entrada > 0 ? `+${formatCurrency(r.entrada)}` : '—',
+                                                            r.salida  > 0 ? `-${formatCurrency(r.salida)}`  : '—',
+                                                            formatCurrency(r.balance)
+                                                        ]);
+                                                        exportToPDF(title, cols, rows, `Kardex_${kardexAccount.replace('/', '-')}`);
+                                                    }
+                                                }}
+                                                className="flex items-center gap-2 px-6 py-3 bg-[#e8eded] text-[#366480] hover:bg-[#dce3e3] rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                                            >
+                                                <FileText className="w-4 h-4" /> {isAll ? 'Reporte Unificado' : 'Exportar PDF'}
+                                            </button>
+                                            <button onClick={() => setShowKardexModal(false)} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                            {kardexRows.length === 0 && (
+                                <div className="px-8 py-5 border-t border-[#f0f5f4] bg-white/40 shrink-0 flex justify-end rounded-b-3xl">
+                                    <button onClick={() => setShowKardexModal(false)} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
+                                </div>
+                            )}
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
                 {showDeposit8059Modal && createPortal(
                     <Deposit8059Modal
                         ventas={ventas}
@@ -1280,172 +1546,120 @@ export const SalesTreasuryPage = () => {
             {/* CASH MANAGEMENT POPUP */}
             {showCashAccountModal && createPortal(
                 <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-                    <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-7xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden">
+                    <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-6xl border border-white/50 flex flex-col max-h-[92vh] min-h-[640px] relative">
                         <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
-                        
-                        <div className="px-8 py-6 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
+
+                        {/* Header */}
+                        <div className="px-8 py-5 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40 shrink-0 rounded-t-3xl">
                             <div className="flex items-center gap-4">
-                                <Banknote className="w-10 h-10 text-[#4A90E2] drop-shadow-sm" />
+                                <Banknote className="w-8 h-8 text-[#4A90E2] drop-shadow-sm" />
                                 <div>
-                                    <h2 className="text-2xl font-black text-[#2c3434] uppercase tracking-tight">Libro de Caja Efectivo</h2>
+                                    <h2 className="text-xl font-black text-[#2c3434] uppercase tracking-tight">Libro de Caja Efectivo</h2>
+                                    <p className="text-[9px] font-bold text-[#8b9ba5] uppercase tracking-widest mt-0.5">Detalle de ingresos y salidas en efectivo</p>
                                 </div>
                             </div>
                             <button onClick={() => setShowCashAccountModal(false)} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
-                                <X className="w-6 h-6" />
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
-                        
-                        <div className="flex-1 flex flex-col p-8 overflow-hidden">
-                                
-                                <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-800 px-6 py-4 rounded-3xl border border-slate-100/50 shadow-sm w-max">
-                                    <div className="flex flex-col gap-1.5">
-                                        <select 
-                                            value={cashQuickFilter}
-                                            onChange={(e) => {
-                                                const val = e.target.value as any;
-                                                setCashQuickFilter(val);
-                                                if (val !== 'PERSONALIZADO') {
-                                                    const now = new Date();
-                                                    let start = format(now, 'yyyy-MM-dd');
-                                                    let end = format(now, 'yyyy-MM-dd');
-                                                    if (val === 'ESTA_SEMANA') {
-                                                        start = format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
-                                                        end = format(new Date(), 'yyyy-MM-dd');
-                                                    } else if (val === 'MES_ACTUAL') {
-                                                        start = format(startOfMonth(now), 'yyyy-MM-dd');
-                                                        end = format(endOfMonth(now), 'yyyy-MM-dd');
-                                                    }
-                                                    setTempCashFilterStart(start);
-                                                    setTempCashFilterEnd(end);
-                                                    setCashFilterStart(start);
-                                                    setCashFilterEnd(end);
-                                                }
-                                            }}
-                                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-[11px] font-black outline-none focus:border-indigo-500 text-slate-600 dark:text-slate-300 w-44 uppercase shadow-sm cursor-pointer"
-                                        >
-                                            <option value="PERSONALIZADO">Rango: Personalizado</option>
-                                            <option value="HOY">Hoy</option>
-                                            <option value="ESTA_SEMANA">Última Semana</option>
-                                            <option value="MES_ACTUAL">Mes Actual</option>
-                                        </select>
-                                    </div>
-                                                                         <div className="h-14 w-px bg-slate-200 dark:bg-slate-700 mx-3"></div>
-                                    <div className="flex flex-col items-center">
-                                        <div className={`flex p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 h-9 mb-3 transition-all ${cashQuickFilter !== 'PERSONALIZADO' ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
-                                            <button 
-                                                onClick={() => setCashFilterMode('RANGE')}
-                                                className={`px-6 flex items-center justify-center text-[9px] font-black uppercase rounded-lg transition-all ${cashFilterMode === 'RANGE' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}
-                                            >
-                                                Rango
-                                            </button>
-                                            <button 
-                                                onClick={() => {
-                                                    setCashFilterMode('DAY');
-                                                    setTempCashFilterEnd(tempCashFilterStart);
-                                                }}
-                                                className={`px-6 flex items-center justify-center text-[9px] font-black uppercase rounded-lg transition-all ${cashFilterMode === 'DAY' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}
-                                            >
-                                                Día
-                                            </button>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex flex-col gap-1">
-                                                <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-2 ${cashQuickFilter !== 'PERSONALIZADO' ? 'text-slate-300' : 'text-slate-400'}`}>{cashFilterMode === 'RANGE' ? 'Desde' : 'Fecha'}</span>
-                                                <input 
-                                                    type="date" 
-                                                    value={tempCashFilterStart} 
-                                                    onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        setTempCashFilterStart(val);
-                                                        if (cashFilterMode === 'DAY') setTempCashFilterEnd(val);
-                                                    }} 
-                                                    disabled={cashQuickFilter !== 'PERSONALIZADO'} 
-                                                    className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-[11px] font-black outline-none focus:border-indigo-500 w-40 shadow-sm ${cashQuickFilter !== 'PERSONALIZADO' ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-800' : ''}`} 
-                                                />
-                                            </div>
-                                            {cashFilterMode === 'RANGE' && (
-                                                <div className="flex flex-col gap-1">
-                                                    <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-2 ${cashQuickFilter !== 'PERSONALIZADO' ? 'text-slate-300' : 'text-slate-400'}`}>Hasta</span>
-                                                    <input 
-                                                        type="date" 
-                                                        value={tempCashFilterEnd} 
-                                                        onChange={(e) => setTempCashFilterEnd(e.target.value)} 
-                                                        disabled={cashQuickFilter !== 'PERSONALIZADO'} 
-                                                        className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-[11px] font-black outline-none focus:border-indigo-500 w-40 shadow-sm ${cashQuickFilter !== 'PERSONALIZADO' ? 'opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-800' : ''}`} 
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3 ml-2 mt-8">
-                                        <div className="relative">
-                                            <button 
-                                                onClick={() => { setCashFilterStart(tempCashFilterStart); setCashFilterEnd(tempCashFilterEnd); }} 
-                                                disabled={cashQuickFilter !== 'PERSONALIZADO'}
-                                                className={`p-4 rounded-2xl border-2 shadow-sm transition-all flex items-center justify-center 
-                                                    ${cashQuickFilter !== 'PERSONALIZADO' 
-                                                        ? 'bg-slate-100 dark:bg-slate-800 border-transparent text-slate-300 opacity-50 cursor-not-allowed' 
-                                                        : (tempCashFilterStart !== cashFilterStart || (cashFilterMode === 'RANGE' && tempCashFilterEnd !== cashFilterEnd))
-                                                            ? 'bg-indigo-600 border-indigo-700 text-white animate-pulse hover:bg-indigo-700 hover:scale-105 active:scale-95' 
-                                                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-200 active:scale-95'
-                                                    }`}
-                                                title={cashQuickFilter !== 'PERSONALIZADO' ? 'Filtro automático activado' : 'Aplicar filtro'}
-                                            >
-                                                <Filter className="w-5 h-5" />
-                                            </button>
-                                            {cashQuickFilter === 'PERSONALIZADO' && (tempCashFilterStart !== cashFilterStart || (cashFilterMode === 'RANGE' && tempCashFilterEnd !== cashFilterEnd)) && (
-                                                <span className="absolute -top-2 -right-2 flex h-4 w-4">
-                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                                                    <span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 border-2 border-white dark:border-slate-900"></span>
-                                                </span>
-                                            )}
-                                        </div>
-                                        <button onClick={() => {
-                                            setCashFilterStart(''); setCashFilterEnd('');
-                                            setTempCashFilterStart(''); setTempCashFilterEnd('');
-                                            setCashQuickFilter('PERSONALIZADO');
-                                        }} className="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-rose-50 hover:text-rose-600 transition-colors shadow-sm"><RefreshCw className="w-5 h-5" /></button>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div className="flex flex-col items-end gap-16 mr-20">
-                                <button 
-                                    onClick={() => {
-                                        setShowDeposit8059Modal(true);
-                                    }}
-                                    className="px-10 py-5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-3xl text-[12px] font-black shadow-xl shadow-emerald-200 dark:shadow-none transition-all active:scale-[0.98] flex items-center gap-4 border-b-4 border-emerald-800 whitespace-nowrap"
+
+                        {/* Controls */}
+                        <div className="px-8 py-4 border-b border-[#f0f5f4] flex flex-wrap items-center gap-3 shrink-0 bg-white/20">
+                            {/* Date range */}
+                            <div className="relative" ref={cashDatePickerRef}>
+                                <button
+                                    onClick={() => setShowCashDatePicker(p => !p)}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[11px] font-bold hover:bg-[#e8eded] transition-all"
                                 >
-                                    <ArrowRightLeft className="w-5 h-5" /> DEPÓSITO A 8059
+                                    <Calendar className="w-4 h-4 text-[#4A90E2]" />
+                                    {cashFilterStart && cashFilterEnd
+                                        ? `${format(new Date(cashFilterStart + 'T12:00:00'), "dd MMM", { locale: es })} — ${format(new Date(cashFilterEnd + 'T12:00:00'), "dd MMM yyyy", { locale: es })}`
+                                        : 'Todas las fechas'}
+                                    <ChevronDown className={`w-3 h-3 transition-transform ${showCashDatePicker ? 'rotate-180' : ''}`} />
                                 </button>
-                                
-                                <div className="bg-indigo-600 px-8 py-5 rounded-3xl text-white shadow-xl shadow-indigo-200 dark:shadow-none flex flex-col justify-center items-center">
-                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-1">Saldo Disponible</p>
-                                    <div className="flex items-baseline gap-1 whitespace-nowrap">
-                                        <span className="text-xl font-black">S/</span>
-                                        <span className="text-3xl font-black tabular-nums tracking-tighter">
-                                            {saldoEf.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
-                                        </span>
-                                    </div>
-                                </div>
+                                <RangeDatePicker
+                                    isOpen={showCashDatePicker}
+                                    startDate={cashFilterStart || format(new Date(), 'yyyy-MM-dd')}
+                                    endDate={cashFilterEnd || format(new Date(), 'yyyy-MM-dd')}
+                                    onApply={(s, e) => { setCashFilterStart(s); setCashFilterEnd(e); setTempCashFilterStart(s); setTempCashFilterEnd(e); setCashQuickFilter('PERSONALIZADO'); setShowCashDatePicker(false); }}
+                                    onCancel={() => setShowCashDatePicker(false)}
+                                />
                             </div>
-                        
-                        <div className="flex-1 overflow-x-auto">
+
+                            {/* Quick filter */}
+                            <div className="relative">
+                                <select
+                                    value={cashQuickFilter}
+                                    onChange={(e) => {
+                                        const val = e.target.value as any;
+                                        setCashQuickFilter(val);
+                                        if (val !== 'PERSONALIZADO') {
+                                            const now = new Date();
+                                            let start = format(now, 'yyyy-MM-dd');
+                                            let end = format(now, 'yyyy-MM-dd');
+                                            if (val === 'ESTA_SEMANA') {
+                                                start = format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd');
+                                                end = format(new Date(), 'yyyy-MM-dd');
+                                            } else if (val === 'MES_ACTUAL') {
+                                                start = format(startOfMonth(now), 'yyyy-MM-dd');
+                                                end = format(endOfMonth(now), 'yyyy-MM-dd');
+                                            }
+                                            setTempCashFilterStart(start);
+                                            setTempCashFilterEnd(end);
+                                            setCashFilterStart(start);
+                                            setCashFilterEnd(end);
+                                        }
+                                    }}
+                                    className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-10 py-2.5 rounded-full text-[11px] font-bold outline-none cursor-pointer hover:bg-[#e8eded] transition-all"
+                                >
+                                    <option value="PERSONALIZADO">Personalizado</option>
+                                    <option value="HOY">Hoy</option>
+                                    <option value="ESTA_SEMANA">Última Semana</option>
+                                    <option value="MES_ACTUAL">Mes Actual</option>
+                                </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setCashFilterStart(''); setCashFilterEnd('');
+                                    setTempCashFilterStart(''); setTempCashFilterEnd('');
+                                    setCashQuickFilter('PERSONALIZADO');
+                                }}
+                                title="Limpiar filtros"
+                                className="p-2.5 bg-[#f8faf9] text-[#8b9ba5] hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                            </button>
+
+                            <div className="ml-auto flex items-center gap-3">
+                                <div className="bg-[#244c66] px-5 py-2.5 rounded-full text-white shadow-md flex items-center gap-3">
+                                    <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-70">Saldo Disponible</span>
+                                    <span className="text-base font-black tabular-nums">S/ {saldoEf.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <button
+                                    onClick={() => setShowDeposit8059Modal(true)}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-[11px] font-black uppercase tracking-widest shadow-md transition-all"
+                                >
+                                    <ArrowRightLeft className="w-4 h-4" /> Depósito 8059
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Table */}
+                        <div className="flex-1 overflow-auto custom-scrollbar">
                             <table className="w-full text-left">
-                                <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10 border-b border-slate-100 dark:border-slate-800">
-                                    <tr>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Tipo</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Movimiento</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Obra / Venta</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descripción</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Efectivo</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Yape</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Monto</th>
-                                        <th className="py-6 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center min-w-[150px]">Monto Depósito a 8059</th>
+                                <thead className="sticky top-0 z-10 bg-[#f7faf9]/95 backdrop-blur-md border-b border-[#d3dcdb]/20">
+                                    <tr className="text-[#366480]/40 text-[9px] font-black uppercase tracking-[0.25em]">
+                                        <th className="py-3.5 pl-8">Fecha</th>
+                                        <th className="py-3.5 px-3 text-center">Tipo</th>
+                                        <th className="py-3.5 px-3">Movimiento</th>
+                                        <th className="py-3.5 px-3">Descripción</th>
+                                        <th className="py-3.5 px-3 text-right">Monto</th>
+                                        <th className="py-3.5 pr-8 text-center min-w-[120px]">Dep. a 8059</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                <tbody className="divide-y divide-[#d3dcdb]/10">
                                     {unifiedCashTimeline.map((item, idx) => {
                                         const prevItem = idx > 0 ? unifiedCashTimeline[idx - 1] : null;
                                         const isNewDay = !prevItem || item.date !== prevItem.date;
@@ -1453,85 +1667,80 @@ export const SalesTreasuryPage = () => {
                                         return (
                                             <React.Fragment key={item.isConsolidated ? `cons-${item.date}` : `mov-${item.id}`}>
                                                 {isNewDay && idx > 0 && (
-                                                    <tr className="bg-slate-50/20 dark:bg-slate-900/40 border-none">
-                                                        <td colSpan={11} className="py-4 px-4 border-y border-slate-100 dark:border-slate-800/80">
-                                                            <div className="flex items-center gap-6">
-                                                                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700"></div>
-                                                                <div className="flex items-center gap-3">
-                                                                    <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                                                                    <span className="text-[10px] font-black text-slate-500 dark:text-slate-300 uppercase tracking-[0.5em] italic">CORTE DEL DÍA {prevItem?.date}</span>
+                                                    <tr className="bg-[#f8faf9]/30 border-none">
+                                                        <td colSpan={6} className="py-2.5 px-4 border-y border-[#d3dcdb]/20">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="flex-1 h-px bg-[#d3dcdb]/40"></div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <Clock className="w-3 h-3 text-[#4A90E2]" />
+                                                                    <span className="text-[9px] font-black text-[#366480] uppercase tracking-[0.3em]">Corte del día {prevItem?.date}</span>
                                                                 </div>
-                                                                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700"></div>
+                                                                <div className="flex-1 h-px bg-[#d3dcdb]/40"></div>
                                                             </div>
                                                         </td>
                                                     </tr>
                                                 )}
                                                 {item.isConsolidated ? (
                                                     <React.Fragment>
-                                                        <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-all group">
-                                                            <td className="py-6 px-4 text-[12px] font-black text-slate-900 dark:text-white tabular-nums italic">{item.date}</td>
-                                                            <td className="py-6 px-4 text-center">
-                                                                <span className="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 text-[9px] font-black rounded-lg uppercase tracking-widest shadow-sm">INGRESO</span>
+                                                        <tr className="hover:bg-[#f8faf9]/60 transition-colors group">
+                                                            <td className="py-3 pl-8 text-[11px] font-black text-[#2c3434] tabular-nums">{item.date}</td>
+                                                            <td className="py-3 px-3 text-center">
+                                                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[9px] font-black rounded-full uppercase tracking-wide">Ingreso</span>
                                                             </td>
-                                                            <td className="py-6 px-4">
-                                                                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">CONSOLIDADO VENTAS ({item.count})</span>
+                                                            <td className="py-3 px-3">
+                                                                <span className="text-[11px] font-bold text-[#2c3434] uppercase">Consolidado Ventas ({item.count})</span>
                                                             </td>
-                                                            <td className="py-6 px-4 text-center">
-                                                                <span className="text-[10px] font-black text-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 px-4 py-1.5 rounded-full border border-indigo-100 dark:border-indigo-800">VENTA</span>
-                                                            </td>
-                                                            <td className="py-6 px-4">
-                                                                <div 
+                                                            <td className="py-3 px-3">
+                                                                <div
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         if (selectedCashDay === item.date) setSelectedCashDay(null);
                                                                         else getCashMovementsForDay(item.date);
                                                                     }}
-                                                                    className="flex items-center gap-2 cursor-pointer group/btn"
+                                                                    className="inline-flex items-center gap-1.5 cursor-pointer group/btn"
                                                                 >
-                                                                    <span className="text-[9px] font-extrabold text-slate-400 group-hover/btn:text-indigo-600 uppercase italic transition-colors">Ver detalle</span>
-                                                                    <ChevronDown className={`w-3 h-3 text-slate-300 group-hover/btn:text-indigo-400 transition-all duration-300 ${selectedCashDay === item.date ? 'rotate-180' : ''}`} />
+                                                                    <span className="text-[9px] font-extrabold text-[#8b9ba5] group-hover/btn:text-[#4A90E2] uppercase italic transition-colors">Ver detalle</span>
+                                                                    <ChevronDown className={`w-3 h-3 text-[#d3dcdb] group-hover/btn:text-[#4A90E2] transition-all duration-300 ${selectedCashDay === item.date ? 'rotate-180' : ''}`} />
                                                                 </div>
                                                             </td>
-                                                            <td className="py-6 px-4 text-center"><div className="w-2 h-2 rounded-full bg-emerald-500 mx-auto"></div></td>
-                                                            <td className="py-6 px-4 text-center"><div className="w-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800 mx-auto"></div></td>
-                                                            <td className="py-6 px-4 text-right px-10">
-                                                                <span className="text-[14px] font-black text-emerald-600 tabular-nums">S/ {Number(item.total).toFixed(2)}</span>
+                                                            <td className="py-3 px-3 text-right">
+                                                                <span className="text-[12px] font-black text-emerald-600 tabular-nums">S/ {Number(item.total).toFixed(2)}</span>
                                                             </td>
-                                                            <td className="py-6 px-4 text-center">
-                                                                <span className="text-[11px] font-bold text-slate-300 dark:text-slate-700 tabular-nums italic">0.00</span>
+                                                            <td className="py-3 pr-8 text-center">
+                                                                <span className="text-[10px] font-bold text-[#d3dcdb] tabular-nums italic">—</span>
                                                             </td>
                                                         </tr>
-                                                        <tr className={selectedCashDay === item.date ? 'bg-slate-50/20 dark:bg-slate-800/10' : ''}>
-                                                            <td colSpan={11} className="p-0 border-none focus:outline-none">
+                                                        <tr className={selectedCashDay === item.date ? 'bg-[#f8faf9]/40' : ''}>
+                                                            <td colSpan={6} className="p-0 border-none focus:outline-none">
                                                                 <div className={`grid transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)] ${selectedCashDay === item.date ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                                                                     <div className="overflow-hidden">
-                                                                        <div className="p-8 border-x-4 border-indigo-500">
-                                                                            <div className="bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-xl border border-slate-100 dark:border-slate-800">
-                                                                                <table className="w-full text-left font-sans">
-                                                                                    <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-100 dark:border-slate-700">
+                                                                        <div className="p-5 border-l-4 border-[#4A90E2]">
+                                                                            <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-[#d3dcdb]/30">
+                                                                                <table className="w-full text-left">
+                                                                                    <thead className="bg-[#f7faf9]/50 border-b border-[#d3dcdb]/20">
                                                                                         <tr>
-                                                                                            <th className="py-4 px-6 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Hora</th>
-                                                                                            <th className="py-4 px-6 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Referencia Venta</th>
-                                                                                            <th className="py-4 px-6 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Observación</th>
-                                                                                            <th className="py-4 px-6 text-[9px] font-black uppercase tracking-widest text-right text-slate-500 dark:text-slate-400">Subtotal</th>
+                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-[#366480]/50">Hora</th>
+                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-[#366480]/50">Referencia Venta</th>
+                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-[#366480]/50">Observación</th>
+                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-right text-[#366480]/50">Subtotal</th>
                                                                                         </tr>
                                                                                     </thead>
-                                                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                                                    <tbody className="divide-y divide-[#d3dcdb]/10">
                                                                                         {loadingCashDetail ? (
-                                                                                            <tr><td colSpan={4} className="py-10 text-center"><RefreshCw className="w-6 h-6 animate-spin mx-auto text-indigo-500" /></td></tr>
+                                                                                            <tr><td colSpan={4} className="py-8 text-center"><RefreshCw className="w-5 h-5 animate-spin mx-auto text-[#4A90E2]" /></td></tr>
                                                                                         ) : cashDetailList.map(innerItem => {
                                                                                             const v = (ventas || []).find(v => v.id === innerItem.referencia_id);
                                                                                             return (
-                                                                                                <tr key={innerItem.id} className="hover:bg-slate-50 transition-colors">
-                                                                                                    <td className="py-4 px-6 text-[10px] font-bold text-slate-400 tabular-nums">{format(new Date(innerItem.created_at), 'HH:mm:ss')}</td>
-                                                                                                    <td className="py-4 px-6">
+                                                                                                <tr key={innerItem.id} className="hover:bg-[#f8faf9]/40 transition-colors">
+                                                                                                    <td className="py-3 px-5 text-[10px] font-bold text-[#8b9ba5] tabular-nums">{format(new Date(innerItem.created_at), 'HH:mm:ss')}</td>
+                                                                                                    <td className="py-3 px-5">
                                                                                                         <div className="flex flex-col">
-                                                                                                            <span className="text-[11px] font-black text-indigo-600 uppercase tracking-tighter">#{v?.codigo_cotizacion || innerItem.referencia_id?.slice(0,8)}</span>
-                                                                                                            <span className="text-[9px] font-bold text-slate-500 uppercase">{v?.cliente_nombre}</span>
+                                                                                                            <span className="text-[10px] font-black text-[#244c66] uppercase tracking-tighter">#{v?.codigo_cotizacion || innerItem.referencia_id?.slice(0,8)}</span>
+                                                                                                            <span className="text-[9px] font-bold text-[#8b9ba5] uppercase">{v?.cliente_nombre}</span>
                                                                                                         </div>
                                                                                                     </td>
-                                                                                                    <td className="py-4 px-6 text-[10px] font-bold text-slate-400 italic">{(innerItem.observaciones || '').toUpperCase()}</td>
-                                                                                                    <td className="py-4 px-6 text-right text-[12px] font-black text-slate-900 dark:text-white tabular-nums">S/ {Number(innerItem.monto).toFixed(2)}</td>
+                                                                                                    <td className="py-3 px-5 text-[10px] font-bold text-[#8b9ba5] italic">{(innerItem.observaciones || '').toUpperCase()}</td>
+                                                                                                    <td className="py-3 px-5 text-right text-[11px] font-black text-[#2c3434] tabular-nums">S/ {Number(innerItem.monto).toFixed(2)}</td>
                                                                                                 </tr>
                                                                                             );
                                                                                         })}
@@ -1545,42 +1754,33 @@ export const SalesTreasuryPage = () => {
                                                         </tr>
                                                     </React.Fragment>
                                                 ) : (
-                                                    <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-all border-l-4 border-transparent hover:border-indigo-500">
-                                                        <td className="py-6 px-4 text-[12px] font-black text-slate-900 dark:text-white tabular-nums italic opacity-60">{item.date}</td>
-                                                        <td className="py-6 px-4 text-center">
-                                                            <span className={`px-3 py-1.5 text-[9px] font-black rounded-lg uppercase tracking-widest shadow-sm ${
-                                                                item.tipo_movimiento === 'EGRESO' ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30' : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30'
+                                                    <tr key={item.id} className="hover:bg-[#f8faf9]/60 transition-colors">
+                                                        <td className="py-3 pl-8 text-[11px] font-black text-[#2c3434]/60 tabular-nums">{item.date}</td>
+                                                        <td className="py-3 px-3 text-center">
+                                                            <span className={`px-2.5 py-1 text-[9px] font-black rounded-full uppercase tracking-wide ${
+                                                                item.tipo_movimiento === 'EGRESO' ? 'bg-rose-50 text-rose-600' : 'bg-[#244c66]/10 text-[#244c66]'
                                                             }`}>
                                                                 {item.tipo_movimiento}
                                                             </span>
                                                         </td>
-                                                        <td className="py-6 px-4">
-                                                            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">{item.categoria}</span>
+                                                        <td className="py-3 px-3">
+                                                            <span className="text-[11px] font-bold text-[#2c3434] uppercase">{item.categoria}</span>
                                                         </td>
-                                                        <td className="py-6 px-4 text-center">
-                                                            <span className="text-[10px] font-black text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full">--</span>
-                                                        </td>
-                                                        <td className="py-6 px-4 text-[10px] font-bold text-slate-500 dark:text-slate-400 italic uppercase">
+                                                        <td className="py-3 px-3 text-[10px] font-bold text-[#8b9ba5] italic uppercase max-w-[260px] truncate" title={item.observaciones}>
                                                             {item.observaciones}
                                                         </td>
-                                                        <td className="py-6 px-4 text-center">
-                                                            <div className={`w-2 h-2 rounded-full mx-auto ${item.cuenta_origen === 'Efectivo' || item.cuenta_destino === 'Efectivo' ? 'bg-indigo-500' : 'bg-slate-100'}`}></div>
-                                                        </td>
-                                                        <td className="py-6 px-4 text-center">
-                                                            <div className={`w-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800 mx-auto`}></div>
-                                                        </td>
-                                                        <td className="py-6 px-4 text-right">
-                                                            <span className={`text-[14px] font-black tabular-nums ${item.tipo_movimiento === 'EGRESO' || item.cuenta_origen === 'Efectivo' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                        <td className="py-3 px-3 text-right">
+                                                            <span className={`text-[12px] font-black tabular-nums ${item.tipo_movimiento === 'EGRESO' || item.cuenta_origen === 'Efectivo' ? 'text-rose-600' : 'text-emerald-600'}`}>
                                                                 S/ {Number(item.monto).toFixed(2)}
                                                             </span>
                                                         </td>
-                                                        <td className="py-6 px-4 text-center">
+                                                        <td className="py-3 pr-8 text-center">
                                                             {item.cuenta_destino === '8059' ? (
-                                                                <span className="text-[14px] font-black text-emerald-600 tabular-nums italic">
+                                                                <span className="text-[12px] font-black text-emerald-600 tabular-nums">
                                                                     S/ {Number(item.monto).toFixed(2)}
                                                                 </span>
                                                             ) : (
-                                                                <span className="text-[11px] font-bold text-slate-300 dark:text-slate-700 tabular-nums italic">0.00</span>
+                                                                <span className="text-[10px] font-bold text-[#d3dcdb] tabular-nums italic">—</span>
                                                             )}
                                                         </td>
                                                     </tr>
@@ -1592,18 +1792,20 @@ export const SalesTreasuryPage = () => {
                             </table>
                         </div>
 
-                        <div className="mt-10 pt-8 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/10 -mx-12 px-12 -mb-12 pb-12">
-                            <div className="flex gap-10">
+                        {/* Footer summary */}
+                        <div className="px-8 py-4 border-t border-[#f0f5f4] bg-white/40 shrink-0 flex items-center justify-between gap-6 rounded-b-3xl">
+                            <div className="flex items-center gap-8">
                                 <div className="flex flex-col">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic mb-1 text-center">Entradas Totales</span>
-                                    <span className="text-xl font-black text-emerald-600 tabular-nums">S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_destino === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
+                                    <span className="text-[8px] font-black text-[#8b9ba5] uppercase tracking-widest">Entradas Totales</span>
+                                    <span className="text-[15px] font-[900] text-emerald-600 tabular-nums">+S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_destino === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
                                 </div>
+                                <div className="w-px h-8 bg-[#d3dcdb]/30"></div>
                                 <div className="flex flex-col">
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic mb-1 text-center">Salidas Totales</span>
-                                    <span className="text-xl font-black text-rose-600 tabular-nums">S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_origen === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
+                                    <span className="text-[8px] font-black text-[#8b9ba5] uppercase tracking-widest">Salidas Totales</span>
+                                    <span className="text-[15px] font-[900] text-rose-500 tabular-nums">−S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_origen === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
                                 </div>
                             </div>
-                            <button onClick={() => setShowCashAccountModal(false)} className="px-12 py-5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[11px] font-black rounded-2xl uppercase tracking-widest shadow-2xl hover:scale-105 active:scale-95 transition-all">Regresar</button>
+                            <button onClick={() => setShowCashAccountModal(false)} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
                         </div>
                     </div>
                 </div>,
