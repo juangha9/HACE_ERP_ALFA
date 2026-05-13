@@ -105,6 +105,7 @@ export const SalesTreasuryPage = () => {
     const [showHistoryModal, setShowHistoryModal] = useState<VentaCabecera | null>(null);
     const [showTrailModal, setShowTrailModal] = useState<VentaCabecera | null>(null);
     const [showCashAccountModal, setShowCashAccountModal] = useState(false);
+    const [isClosingCashModal, setIsClosingCashModal] = useState(false);
     const [selectedCashDay, setSelectedCashDay] = useState<string | null>(null);
     const [loadingCashDetail, setLoadingCashDetail] = useState(false);
     const [loadingTrail, setLoadingTrail] = useState(false);
@@ -114,6 +115,7 @@ export const SalesTreasuryPage = () => {
     const [showPayOrderModal, setShowPayOrderModal] = useState<OrdenPago | null>(null);
     const [zoomImage, setZoomImage] = useState<string | null>(null);
     const [showKardexModal, setShowKardexModal] = useState(false);
+    const [isClosingKardexModal, setIsClosingKardexModal] = useState(false);
     const [kardexAccount, setKardexAccount] = useState('2049/YAPE');
     const [kardexStart, setKardexStart] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
     const [kardexEnd, setKardexEnd] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -177,6 +179,22 @@ export const SalesTreasuryPage = () => {
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    const closeCashModal = () => {
+        setIsClosingCashModal(true);
+        setTimeout(() => {
+            setShowCashAccountModal(false);
+            setIsClosingCashModal(false);
+        }, 300);
+    };
+
+    const closeKardexModal = () => {
+        setIsClosingKardexModal(true);
+        setTimeout(() => {
+            setShowKardexModal(false);
+            setIsClosingKardexModal(false);
+        }, 300);
+    };
 
     const handleBulkDocExport = async (type: 'invoice' | 'voucher') => {
         setIsExportingDocs(true);
@@ -727,7 +745,7 @@ export const SalesTreasuryPage = () => {
                         <div className="grid grid-cols-3 gap-6 mb-8">
                             {/* Disponible en Caja */}
                             <div 
-                                onClick={() => setShowCashAccountModal(true)}
+                                onClick={() => { setIsClosingCashModal(false); setShowCashAccountModal(true); }}
                                 className="relative bg-white rounded-3xl p-6 shadow-sm cursor-pointer overflow-hidden h-[150px] flex flex-col justify-center border border-[#e8eded]"
                             >
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-[#f8faf9] rounded-full translate-x-12 -translate-y-12 opacity-100 pointer-events-none"></div>
@@ -930,41 +948,47 @@ export const SalesTreasuryPage = () => {
                                 {viewMode === 'VENTAS' && (
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
-                                            <tr className="text-[#366480]/40 text-[9px] font-black uppercase tracking-[0.25em] border-b border-[#d3dcdb]/10"><th className="py-4 pl-4">Transacción / OT</th><th className="py-4">Cliente</th><th className="py-4 text-right">Monto Total</th><th className="py-4 px-8">Balance de Pago</th><th className="py-4 text-right pr-4">Acciones</th></tr>
+                                            <tr className="text-[#366480]/50 text-[11px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
+                                                <th className="py-5 pl-4 text-left w-[20%]">Transacción / OT</th>
+                                                <th className="py-5 text-left w-[30%]">Cliente</th>
+                                                <th className="py-5 text-left w-[15%]">Monto Total</th>
+                                                <th className="py-5 text-left pl-8 w-[20%]">Balance de Pago</th>
+                                                <th className="py-5 text-left w-[15%]">Acciones</th>
+                                            </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={5} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[10px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[10px]">No se encontraron registros</td></tr> : filteredVentas.map(venta => {
+                                            {loading ? <tr><td colSpan={5} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : filteredVentas.map(venta => {
                                                 const isStub = venta.id.startsWith('opt::');
                                                 return (
                                                     <React.Fragment key={venta.id}>
                                                         <tr className="group hover:bg-[#f0f5f4]/30 transition-all duration-300">
-                                                            <td className="py-4 pl-4">
+                                                            <td className="py-5 pl-4 text-left">
                                                                 <div className="flex items-center gap-4">
-                                                                    <button onClick={() => toggleExpand(venta.id)} className={`p-2 rounded-xl border transition-all ${expandedVenta === venta.id ? 'bg-[#4A90E2] text-white border-[#4A90E2]' : 'bg-white border-[#d3dcdb]/40 text-[#366480]/40 hover:text-[#4A90E2] shadow-sm'}`}>{expandedVenta === venta.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}</button>
+                                                                    <button onClick={() => toggleExpand(venta.id)} className={`p-2 rounded-xl border transition-all ${expandedVenta === venta.id ? 'bg-[#4A90E2] text-white border-[#4A90E2]' : 'bg-white border-[#d3dcdb]/40 text-[#366480]/40 hover:text-[#4A90E2] shadow-sm'}`}>{expandedVenta === venta.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
                                                                     <div className="flex flex-col">
-                                                                        <span className="text-[12px] font-[900] text-[#2c3434] tracking-tight uppercase">#{venta.codigo_cotizacion || venta.id.slice(0,8)}</span>
-                                                                        <span className="text-[9px] font-bold text-[#366480]/40 uppercase tracking-widest">{format(new Date(venta.created_at), "dd MMM, yyyy")}</span>
+                                                                        <span className="text-[14px] font-[900] text-[#2c3434] tracking-tight uppercase">#{venta.codigo_cotizacion || venta.id.slice(0,8)}</span>
+                                                                        <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest">{format(new Date(venta.created_at), "dd MMM, yyyy")}</span>
                                                                     </div>
                                                                 </div>
                                                             </td>
-                                                            <td className="py-4">
-                                                                <p className="text-[11px] font-black text-[#366480] uppercase tracking-tight">{venta.cliente_nombre}</p>
+                                                            <td className="py-5 text-left">
+                                                                <p className="text-[13px] font-black text-[#366480] uppercase tracking-tight">{venta.cliente_nombre}</p>
                                                             </td>
-                                                            <td className="py-4 text-right font-[900] text-[13px] text-[#2c3434] tabular-nums">
+                                                            <td className="py-5 text-left font-[900] text-[15px] text-[#2c3434] tabular-nums">
                                                                 {isStub ? '—' : `S/ ${formatCurrency(venta.monto_total)}`}
                                                             </td>
-                                                            <td className="py-4 px-8">
-                                                                <div className="flex items-center gap-3">
-                                                                    <span className={`px-4 py-1.5 text-[8px] font-black rounded-full border tracking-widest uppercase ${isStub ? 'bg-slate-100 text-slate-400 border-slate-200' : venta.estado_pago === 'CANCELADO' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                                                            <td className="py-5 pl-8 text-left">
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className={`px-4 py-1.5 text-[10px] font-black rounded-full border tracking-widest uppercase ${isStub ? 'bg-slate-100 text-slate-400 border-slate-200' : venta.estado_pago === 'CANCELADO' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
                                                                         {isStub ? 'Listo para Corte' : venta.estado_pago}
                                                                     </span>
-                                                                    {!isStub && <span className="text-[9px] font-[900] text-[#366480]/60 tabular-nums">S/ {formatCurrency(venta.saldo_pendiente)}</span>}
+                                                                    {!isStub && <span className="text-[11px] font-[900] text-[#366480]/60 tabular-nums">S/ {formatCurrency(venta.saldo_pendiente)}</span>}
                                                                 </div>
                                                             </td>
-                                                            <td className="py-4 text-right pr-4">
-                                                                <div className="flex items-center justify-end gap-3 transition-all duration-300">
+                                                            <td className="py-5 text-left">
+                                                                <div className="flex items-center justify-start gap-3 transition-all duration-300">
                                                                     {!isStub && <button onClick={() => openHistory(venta)} title="Historial de cobros" className="p-3 bg-white text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm border border-[#d3dcdb]/20"><HistoryIcon className="w-4 h-4" /></button>}
-                                                                    {!isStub && Number(venta.saldo_pendiente) > 0 && <button onClick={() => setShowCobroModal(venta)} className="px-6 py-3 bg-[#4A90E2] text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD] transition-all">Cobrar</button>}
+                                                                    {!isStub && Number(venta.saldo_pendiente) > 0 && <button onClick={() => setShowCobroModal(venta)} className="px-6 py-3 bg-[#4A90E2] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD] transition-all">Cobrar</button>}
                                                                 </div>
                                                             </td>
                                                         </tr>
@@ -1006,29 +1030,34 @@ export const SalesTreasuryPage = () => {
                                 {viewMode === 'COMPRAS' && (
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
-                                            <tr className="text-[#366480]/40 text-[9px] font-black uppercase tracking-[0.25em] border-b border-[#d3dcdb]/10">
-                                                <th className="py-4 pl-4">Registro</th><th className="py-4">Clasificación</th><th className="py-4 text-center">Documento</th><th className="py-4">Referencia</th><th className="py-4 text-right">Monto</th><th className="py-4 text-right pr-4">Gestión</th>
+                                            <tr className="text-[#366480]/50 text-[11px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
+                                                <th className="py-5 pl-4 text-left w-[15%]">Registro</th>
+                                                <th className="py-5 text-left w-[20%]">Clasificación</th>
+                                                <th className="py-5 text-left w-[15%]">Documento</th>
+                                                <th className="py-5 text-left w-[25%]">Referencia</th>
+                                                <th className="py-5 text-left w-[15%]">Monto</th>
+                                                <th className="py-5 text-left w-[10%]">Gestión</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={6} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[10px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={6} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[10px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
+                                            {loading ? <tr><td colSpan={6} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={6} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
                                                 <React.Fragment key={compra.id}>
                                                     <tr className="group hover:bg-[#fff0f2]/30 transition-all duration-300">
-                                                        <td className="py-4 pl-4 text-[10px] font-black text-[#366480]/40 uppercase">{format(new Date(compra.created_at!), "dd MMM, yyyy")}</td>
-                                                        <td className="py-4">
-                                                            <span className="px-4 py-1.5 bg-white text-[#366480] text-[9px] font-black rounded-full uppercase border border-[#d3dcdb]/40 tracking-widest shadow-sm">{compra.categoria}</span>
+                                                        <td className="py-5 pl-4 text-left text-[12px] font-black text-[#366480]/50 uppercase">{format(new Date(compra.created_at!), "dd MMM, yyyy")}</td>
+                                                        <td className="py-5 text-left">
+                                                            <span className="px-4 py-1.5 bg-white text-[#366480] text-[10px] font-black rounded-full uppercase border border-[#d3dcdb]/40 tracking-widest shadow-sm">{compra.categoria}</span>
                                                         </td>
-                                                        <td className="py-4 text-center">
+                                                        <td className="py-5 text-left">
                                                             {compra.has_invoice ? (
-                                                                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#dcfce7] text-[#166534] text-[8px] font-black rounded-full uppercase tracking-tighter border border-[#bbf7d0]">Factura Registrada</span>
+                                                                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#dcfce7] text-[#166534] text-[10px] font-black rounded-full uppercase tracking-tighter border border-[#bbf7d0]">Factura Registrada</span>
                                                             ) : (
-                                                                <span className="text-[8px] font-black text-[#366480]/20 uppercase tracking-[0.2em]">S/D Fiscal</span>
+                                                                <span className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em]">S/D Fiscal</span>
                                                             )}
                                                         </td>
-                                                        <td className="py-4 text-[11px] font-black uppercase text-[#2c3434] tracking-tight">{compra.observaciones}</td>
-                                                        <td className="py-4 text-right font-[900] text-rose-500 text-[14px] tabular-nums pr-4">S/ {formatCurrency(compra.monto)}</td>
-                                                        <td className="py-4 text-right pr-4">
-                                                            <div className="flex items-center justify-end gap-3 transition-all">
+                                                        <td className="py-5 text-left text-[13px] font-black uppercase text-[#2c3434] tracking-tight">{compra.observaciones}</td>
+                                                        <td className="py-5 text-left font-[900] text-rose-500 text-[15px] tabular-nums">S/ {formatCurrency(compra.monto)}</td>
+                                                        <td className="py-5 text-left">
+                                                            <div className="flex items-center justify-start gap-3 transition-all">
                                                                 <button onClick={() => setManagingInvoice(compra)} className="p-3 bg-white border border-[#d3dcdb]/20 text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm"><Search className="w-4 h-4" /></button>
                                                                 <button onClick={() => setExpandedCompra(expandedCompra === compra.id ? null : compra.id)} className={`p-3 rounded-xl transition-all shadow-sm border ${expandedCompra === compra.id ? 'bg-[#366480] text-white border-[#366480]' : 'bg-white border-[#d3dcdb]/20 text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2]'}`}><ChevronDown className={`w-4 h-4 transition-transform ${expandedCompra === compra.id ? 'rotate-180' : ''}`} /></button>
                                                             </div>
@@ -1072,34 +1101,38 @@ export const SalesTreasuryPage = () => {
                                 {viewMode === 'SOLICITUDES' && (
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
-                                            <tr className="text-[#366480]/40 text-[9px] font-black uppercase tracking-[0.25em] border-b border-[#d3dcdb]/10">
-                                                <th className="py-4 pl-4">Cod. / Emisión</th><th className="py-4">Proveedor / Obra</th><th className="py-4 text-right">Monto Total</th><th className="py-4 text-center">Estado</th><th className="py-4 text-right pr-4">Acciones</th>
+                                            <tr className="text-[#366480]/50 text-[11px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
+                                                <th className="py-5 pl-4 text-left w-[20%]">Cod. / Emisión</th>
+                                                <th className="py-5 text-left w-[35%]">Proveedor / Obra</th>
+                                                <th className="py-5 text-left w-[15%]">Monto Total</th>
+                                                <th className="py-5 text-left w-[15%]">Estado</th>
+                                                <th className="py-5 text-left w-[15%]">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={5} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[10px]">Recuperando requerimientos...</td></tr> : filteredOrdenes.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[10px]">No hay órdenes pendientes</td></tr> : filteredOrdenes.map(op => (
+                                            {loading ? <tr><td colSpan={5} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Recuperando requerimientos...</td></tr> : filteredOrdenes.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No hay órdenes pendientes</td></tr> : filteredOrdenes.map(op => (
                                                 <tr key={op.id} className="hover:bg-amber-50/20 transition-all group duration-300">
-                                                    <td className="py-4 pl-4">
+                                                    <td className="py-5 pl-4 text-left">
                                                         <div className="flex flex-col">
-                                                            <span className="text-[12px] font-[900] text-[#2c3434] uppercase tracking-tight">#{op.codigo_orden}</span>
-                                                            <span className="text-[9px] font-bold text-[#366480]/40 uppercase tracking-widest">{format(new Date(op.created_at!), "dd MMM, yyyy")}</span>
+                                                            <span className="text-[14px] font-[900] text-[#2c3434] uppercase tracking-tight">#{op.codigo_orden}</span>
+                                                            <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest">{format(new Date(op.created_at!), "dd MMM, yyyy")}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="py-4">
+                                                    <td className="py-5 text-left">
                                                         <div className="flex flex-col">
-                                                            <span className="text-[11px] font-black text-[#366480] uppercase tracking-tight leading-tight">{op.proveedor?.razon_social}</span>
-                                                            <span className="text-[9px] font-bold text-[#366480]/40 uppercase tracking-widest italic mt-0.5">{op.obra_nombre}</span>
+                                                            <span className="text-[13px] font-black text-[#366480] uppercase tracking-tight leading-tight">{op.proveedor?.razon_social}</span>
+                                                            <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest italic mt-0.5">{op.obra_nombre}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="py-4 text-right">
-                                                        <span className="text-[14px] font-[900] text-[#2c3434] tabular-nums">{op.moneda === 'PEN' ? 'S/' : '$'} {formatCurrency(op.monto_total)}</span>
+                                                    <td className="py-5 text-left">
+                                                        <span className="text-[15px] font-[900] text-[#2c3434] tabular-nums">{op.moneda === 'PEN' ? 'S/' : '$'} {formatCurrency(op.monto_total)}</span>
                                                     </td>
-                                                    <td className="py-4 text-center">
-                                                        <span className={`px-4 py-1.5 text-[9px] font-black rounded-full uppercase tracking-widest border shadow-sm ${op.estado === 'pagado' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>{op.estado}</span>
+                                                    <td className="py-5 text-left">
+                                                        <span className={`px-4 py-1.5 text-[10px] font-black rounded-full uppercase tracking-widest border shadow-sm ${op.estado === 'pagado' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>{op.estado}</span>
                                                     </td>
-                                                    <td className="py-4 text-right pr-4">
-                                                        <div className="flex justify-end transition-all duration-300">
-                                                            <button onClick={() => setShowPayOrderModal(op)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${op.estado === 'pagado' ? 'bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0]' : 'bg-[#4A90E2] text-white shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD]'}`}>
+                                                    <td className="py-5 text-left">
+                                                        <div className="flex justify-start transition-all duration-300">
+                                                            <button onClick={() => setShowPayOrderModal(op)} className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${op.estado === 'pagado' ? 'bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0]' : 'bg-[#4A90E2] text-white shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD]'}`}>
                                                                 <Eye className="w-3.5 h-3.5" /> Detalles
                                                             </button>
                                                         </div>
@@ -1257,8 +1290,8 @@ export const SalesTreasuryPage = () => {
 
                 {/* ── KARDEX DE CUENTAS MODAL ──────────────────────────────────── */}
                 {showKardexModal && createPortal(
-                    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-                        <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[95vh] min-h-[640px] relative">
+                    <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosingKardexModal ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+                        <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[95vh] min-h-[640px] relative ${isClosingKardexModal ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                             <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
                             {/* Header */}
@@ -1270,7 +1303,7 @@ export const SalesTreasuryPage = () => {
                                         <p className="text-[9px] font-bold text-[#8b9ba5] uppercase tracking-widest mt-0.5">Kardex de movimientos por cuenta bancaria</p>
                                     </div>
                                 </div>
-                                <button onClick={() => setShowKardexModal(false)} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
+                                <button onClick={closeKardexModal} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
@@ -1428,14 +1461,14 @@ export const SalesTreasuryPage = () => {
                                             >
                                                 <FileText className="w-4 h-4" /> {isAll ? 'Reporte Unificado' : 'Exportar PDF'}
                                             </button>
-                                            <button onClick={() => setShowKardexModal(false)} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
+                                            <button onClick={closeKardexModal} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
                                         </div>
                                     </div>
                                 );
                             })()}
                             {kardexRows.length === 0 && (
                                 <div className="px-8 py-5 border-t border-[#f0f5f4] bg-white/40 shrink-0 flex justify-end rounded-b-3xl">
-                                    <button onClick={() => setShowKardexModal(false)} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
+                                    <button onClick={closeKardexModal} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
                                 </div>
                             )}
                         </div>
@@ -1545,8 +1578,8 @@ export const SalesTreasuryPage = () => {
 
             {/* CASH MANAGEMENT POPUP */}
             {showCashAccountModal && createPortal(
-                <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-                    <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-6xl border border-white/50 flex flex-col max-h-[92vh] min-h-[640px] relative">
+                <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosingCashModal ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+                    <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-6xl border border-white/50 flex flex-col max-h-[92vh] min-h-[640px] relative ${isClosingCashModal ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                         <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
                         {/* Header */}
@@ -1558,7 +1591,7 @@ export const SalesTreasuryPage = () => {
                                     <p className="text-[9px] font-bold text-[#8b9ba5] uppercase tracking-widest mt-0.5">Detalle de ingresos y salidas en efectivo</p>
                                 </div>
                             </div>
-                            <button onClick={() => setShowCashAccountModal(false)} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
+                            <button onClick={closeCashModal} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -1568,7 +1601,12 @@ export const SalesTreasuryPage = () => {
                             {/* Date range */}
                             <div className="relative" ref={cashDatePickerRef}>
                                 <button
-                                    onClick={() => setShowCashDatePicker(p => !p)}
+                                    onClick={() => {
+                                        if (cashQuickFilter !== 'PERSONALIZADO') {
+                                            setCashQuickFilter('PERSONALIZADO');
+                                        }
+                                        setShowCashDatePicker(p => !p);
+                                    }}
                                     className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[11px] font-bold hover:bg-[#e8eded] transition-all"
                                 >
                                     <Calendar className="w-4 h-4 text-[#4A90E2]" />
@@ -1583,6 +1621,7 @@ export const SalesTreasuryPage = () => {
                                     endDate={cashFilterEnd || format(new Date(), 'yyyy-MM-dd')}
                                     onApply={(s, e) => { setCashFilterStart(s); setCashFilterEnd(e); setTempCashFilterStart(s); setTempCashFilterEnd(e); setCashQuickFilter('PERSONALIZADO'); setShowCashDatePicker(false); }}
                                     onCancel={() => setShowCashDatePicker(false)}
+                                    align="left"
                                 />
                             </div>
 

@@ -55,6 +55,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
         desc: '' 
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
     
     // Traceability fields
     const [numOp, setNumOp] = useState('');
@@ -210,7 +211,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
             });
 
             await onSuccess();
-            onClose();
+            handleClose();
         } catch (error) {
             console.error(error);
             alert("Error al registrar egreso.");
@@ -223,9 +224,16 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     const totalToSpend = hasInvoice ? totalInvoiceAmount : Number(gastoData.monto);
     const hasInsufficientFunds = gastoData.categoria !== 'Ajuste de Caja' && totalToSpend > currentBalance;
 
+    const handleClose = () => {
+        setIsClosing(true);
+        setTimeout(() => {
+            onClose();
+        }, 300);
+    };
+
     return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-            <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full ${hasInvoice ? 'max-w-5xl' : 'max-w-2xl'} border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden transition-all duration-300`}>
+        <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+            <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full ${hasInvoice ? 'max-w-5xl' : 'max-w-2xl'} border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden transition-all ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
                 <div className="px-6 py-5 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40 shrink-0">
@@ -247,7 +255,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                             <FileSearch className={`w-3.5 h-3.5 ${hasInvoice ? 'animate-pulse text-white' : ''}`} />
                             <span className="text-[10px] font-black uppercase tracking-widest">¿Con Factura?</span>
                         </div>
-                        <button onClick={onClose} className="w-9 h-9 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20"><X className="w-5 h-5" /></button>
+                        <button onClick={handleClose} className="w-9 h-9 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20"><X className="w-5 h-5" /></button>
                     </div>
                 </div>
 

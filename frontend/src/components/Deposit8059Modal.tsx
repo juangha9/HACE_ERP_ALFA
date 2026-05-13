@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { X, ArrowRightLeft, Camera, Search, Filter, RefreshCw, TrendingDown } from 'lucide-react';
+import { X, ArrowRightLeft, Camera, Search, Filter, RefreshCw, TrendingDown, Calendar, ChevronDown } from 'lucide-react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { api } from '../services/api';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { RangeDatePicker } from './RangeDatePicker';
 import type { VentaCabecera, NodrizaTesoreria } from '../services/types';
 
 interface Deposit8059ModalProps {
@@ -62,7 +64,15 @@ export const Deposit8059Modal: React.FC<Deposit8059ModalProps> = ({
     const [tempStart, setTempStart] = useState(defaultWeekStart);
     const [tempEnd, setTempEnd] = useState(defaultToday);
     const [quickFilter, setQuickFilter] = useState<'PERSONALIZADO' | 'HOY' | 'ESTA_SEMANA' | 'MES_ACTUAL'>('ESTA_SEMANA');
-    const [filterMode, setFilterMode] = useState<'RANGE' | 'DAY'>('RANGE');
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
+
+    const handleClose = () => {
+        setIsClosing(true);
+        setTimeout(() => {
+            onClose();
+        }, 300);
+    };
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -183,7 +193,7 @@ export const Deposit8059Modal: React.FC<Deposit8059ModalProps> = ({
                 });
             }
             await onSuccess();
-            onClose();
+            handleClose();
         } catch {
             alert('Error al realizar el depósito.');
         } finally {
@@ -192,8 +202,8 @@ export const Deposit8059Modal: React.FC<Deposit8059ModalProps> = ({
     };
 
     return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-            <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-6xl flex flex-col h-[90vh] border border-white/50 relative overflow-hidden">
+        <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+            <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-6xl flex flex-col h-[90vh] border border-white/50 relative ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
                 
                 <div className="px-8 py-6 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40 shrink-0">
@@ -208,38 +218,61 @@ export const Deposit8059Modal: React.FC<Deposit8059ModalProps> = ({
                             </div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20">
+                    <button onClick={handleClose} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20">
                         <X className="w-6 h-6" />
                     </button>
                 </div>
                 <div className="px-12 py-8 flex flex-col gap-6 shrink-0 bg-white/20">
-                    <div className="flex items-center gap-4 w-full bg-white dark:bg-slate-900 p-3 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-lg overflow-hidden">
+                    <div className="flex items-center gap-4 w-full bg-white dark:bg-slate-900 p-3 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-lg relative">
                         {/* Filters */}
-                        <div className="flex items-center gap-2 bg-slate-50/80 dark:bg-slate-800/50 p-2 rounded-[1.2rem] border border-slate-100/50 shrink-0">
-                            <div className="flex flex-col gap-0.5">
-                                <span className="text-[7.5px] font-black text-slate-400 uppercase tracking-[0.1em] px-1 italic">Rango</span>
-                                <select value={quickFilter} onChange={(e) => handleApplyQuickFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-lg text-[9px] font-black outline-none w-28 uppercase cursor-pointer">
+                        <div className="flex flex-wrap items-center gap-3 shrink-0">
+                            {/* Date range */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => {
+                                        if (quickFilter !== 'PERSONALIZADO') {
+                                            handleApplyQuickFilter('PERSONALIZADO');
+                                        }
+                                        setShowDatePicker(p => !p);
+                                    }}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[11px] font-bold hover:bg-[#e8eded] transition-all"
+                                >
+                                    <Calendar className="w-4 h-4 text-[#4A90E2]" />
+                                    {tempStart && tempEnd
+                                        ? `${format(new Date(tempStart + 'T12:00:00'), "dd MMM", { locale: es })} — ${format(new Date(tempEnd + 'T12:00:00'), "dd MMM yyyy", { locale: es })}`
+                                        : 'Todas las fechas'}
+                                    <ChevronDown className={`w-3 h-3 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} />
+                                </button>
+                                <RangeDatePicker
+                                    isOpen={showDatePicker}
+                                    startDate={tempStart || format(new Date(), 'yyyy-MM-dd')}
+                                    endDate={tempEnd || format(new Date(), 'yyyy-MM-dd')}
+                                    onApply={(s, e) => { setTempStart(s); setTempEnd(e); setModalStartDate(s); setModalEndDate(e); handleApplyQuickFilter('PERSONALIZADO'); setShowDatePicker(false); }}
+                                    onCancel={() => setShowDatePicker(false)}
+                                    align="left"
+                                />
+                            </div>
+
+                            {/* Quick filter */}
+                            <div className="relative">
+                                <select
+                                    value={quickFilter}
+                                    onChange={(e) => handleApplyQuickFilter(e.target.value)}
+                                    className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-10 py-2.5 rounded-full text-[11px] font-bold outline-none cursor-pointer hover:bg-[#e8eded] transition-all"
+                                >
                                     <option value="PERSONALIZADO">Personalizado</option>
                                     <option value="HOY">Hoy</option>
-                                    <option value="ESTA_SEMANA">Semana</option>
-                                    <option value="MES_ACTUAL">Mes</option>
+                                    <option value="ESTA_SEMANA">Última Semana</option>
+                                    <option value="MES_ACTUAL">Mes Actual</option>
                                 </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
                             </div>
-                            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
-                            <div className="flex flex-col items-center">
-                                <div className={`flex p-0.5 bg-slate-100 dark:bg-slate-900 rounded-lg border h-6 mb-1 transition-all ${quickFilter !== 'PERSONALIZADO' ? 'opacity-40 pointer-events-none' : ''}`}>
-                                    <button onClick={() => setFilterMode('RANGE')} className={`px-2 text-[7px] font-black uppercase rounded-md ${filterMode === 'RANGE' ? 'bg-white dark:bg-slate-700 text-emerald-600' : 'text-slate-400'}`}>Rango</button>
-                                    <button onClick={() => { setFilterMode('DAY'); setTempEnd(tempStart); }} className={`px-2 text-[7px] font-black uppercase rounded-md ${filterMode === 'DAY' ? 'bg-white dark:bg-slate-700 text-emerald-600' : 'text-slate-400'}`}>Día</button>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <input type="date" value={tempStart} onChange={(e) => { setTempStart(e.target.value); if (filterMode === 'DAY') setTempEnd(e.target.value); }} disabled={quickFilter !== 'PERSONALIZADO'} className={`bg-white dark:bg-slate-900 border border-slate-200 px-2 py-1 rounded-lg text-[9px] font-black w-24 ${quickFilter !== 'PERSONALIZADO' ? 'opacity-50' : ''}`} />
-                                    {filterMode === 'RANGE' && <input type="date" value={tempEnd} onChange={(e) => setTempEnd(e.target.value)} disabled={quickFilter !== 'PERSONALIZADO'} className={`bg-white dark:bg-slate-900 border border-slate-200 px-2 py-1 rounded-lg text-[9px] font-black w-24 ${quickFilter !== 'PERSONALIZADO' ? 'opacity-50' : ''}`} />}
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-1 ml-1">
-                                <button onClick={() => { setModalStartDate(tempStart); setModalEndDate(tempEnd); }} disabled={quickFilter !== 'PERSONALIZADO'} className={`p-2 rounded-lg border shadow-sm transition-all ${quickFilter !== 'PERSONALIZADO' ? 'opacity-50' : (tempStart !== modalStartDate || tempEnd !== modalEndDate) ? 'bg-emerald-600 text-white animate-pulse' : 'bg-white text-slate-400'}`}><Filter className="w-3.5 h-3.5" /></button>
-                                <button onClick={() => { setModalStartDate(''); setModalEndDate(''); setTempStart(''); setTempEnd(''); setQuickFilter('PERSONALIZADO'); }} className="p-2 bg-slate-100 rounded-lg hover:text-rose-500 transition-colors"><RefreshCw className="w-3.5 h-3.5" /></button>
-                            </div>
+                            <button
+                                onClick={() => { setModalStartDate(''); setModalEndDate(''); setTempStart(''); setTempEnd(''); handleApplyQuickFilter('PERSONALIZADO'); }}
+                                className="p-2.5 bg-[#f8faf9] text-[#8b9ba5] hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                            </button>
                         </div>
 
                         <div className="h-10 w-px bg-slate-100 dark:bg-slate-800 shrink-0 mx-0.5" />

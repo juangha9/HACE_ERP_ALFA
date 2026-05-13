@@ -59,6 +59,7 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
     const [motivo, setMotivo] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
 
     useScrollLock(true);
 
@@ -202,7 +203,7 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
                 });
             }
             await onSuccess();
-            onClose();
+            handleClose();
         } catch {
             alert('Error al realizar la transferencia.');
         } finally {
@@ -213,9 +214,16 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
     const totalSaleFunds = ventas.reduce((acc, v) => acc + getSaleFunds(v.id, transferData.origen), 0);
     const showAdjustmentWarning = totalSaleFunds > globalBalOrigen && globalBalOrigen >= 0;
 
+    const handleClose = () => {
+        setIsClosing(true);
+        setTimeout(() => {
+            onClose();
+        }, 300);
+    };
+
     return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-            <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-7xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden">
+        <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+            <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-7xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
                 {/* ── Header ─────────────────────────────────────────── */}
@@ -271,7 +279,7 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
 
                     {/* Right: Totals + CTA */}
                     <div className="flex flex-col items-end gap-6 justify-between h-full">
-                        <button onClick={onClose} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20 self-end -mt-2 -mr-2"><X className="w-6 h-6" /></button>
+                        <button onClick={handleClose} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20 self-end -mt-2 -mr-2"><X className="w-6 h-6" /></button>
                         <div className="flex items-center gap-10 bg-slate-50/50 dark:bg-slate-800/30 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
                             <div className="text-center">
                                 <p className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1 flex justify-center">TOTAL A TRANSFERIR</p>
