@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
-    X, ArrowRightLeft, Camera, Filter, RefreshCw, TrendingDown
+    X, ArrowRight, Camera, Filter, RefreshCw, TrendingDown, Calendar, ChevronDown
 } from 'lucide-react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { api } from '../services/api';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { RangeDatePicker } from './RangeDatePicker';
 import type { VentaCabecera, NodrizaTesoreria } from '../services/types';
 
 const BANK_ACCOUNTS = ['2049/YAPE', '4071', '9001', '8059'];
@@ -71,9 +73,20 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
     const [tempStart, setTempStart] = useState(defaultWeekStart);
     const [tempEnd, setTempEnd] = useState(defaultToday);
     const [quickFilter, setQuickFilter] = useState<'PERSONALIZADO' | 'HOY' | 'ESTA_SEMANA' | 'MES_ACTUAL'>('ESTA_SEMANA');
-    const [filterMode, setFilterMode] = useState<'RANGE' | 'DAY'>('RANGE');
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const datePickerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (showDatePicker && datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
+                setShowDatePicker(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showDatePicker]);
 
     // Paste handler for voucher
     useEffect(() => {
@@ -223,173 +236,212 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
 
     return (
         <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
-            <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-7xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
+            <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
                 {/* ── Header ─────────────────────────────────────────── */}
-                <div className="sticky top-0 z-[100] bg-white/40 px-12 py-6 border-b border-[#d3dcdb]/30 shrink-0 flex justify-between items-start">
-                    {/* Left: Title + Filters */}
-                    <div className="flex flex-col gap-6">
-                        <div className="flex items-center gap-4">
-                            <ArrowRightLeft className="w-10 h-10 text-[#4A90E2] drop-shadow-sm" />
-                            <h3 className="text-3xl font-black text-[#2c3434] uppercase tracking-tighter whitespace-nowrap">Transferencia Interna</h3>
+                <div className="sticky top-0 z-[100] bg-white/40 px-8 py-5 border-b border-[#d3dcdb]/30 shrink-0 flex justify-between items-end relative">
+                    <button onClick={handleClose} className="absolute top-5 right-5 w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20"><X className="w-5 h-5" /></button>
+                    {/* Left: Title + Filters + Action */}
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-3">
+                            <ArrowRight className="w-8 h-8 text-[#4A90E2] drop-shadow-sm" />
+                            <h3 className="text-2xl font-black text-[#2c3434] uppercase tracking-tighter whitespace-nowrap">Transferencia Interna</h3>
                         </div>
 
-                        <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-800 px-6 py-4 rounded-3xl border border-slate-100/50 shadow-sm">
+                        <div className="flex flex-wrap items-center gap-3 shrink-0">
+                            {/* Date range */}
+                            <div className="relative" ref={datePickerRef}>
+                                <button
+                                    onClick={() => {
+                                        if (quickFilter !== 'PERSONALIZADO') {
+                                            handleApplyQuickFilter('PERSONALIZADO');
+                                        }
+                                        setShowDatePicker(p => !p);
+                                    }}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[11px] font-bold hover:bg-[#e8eded] transition-all"
+                                >
+                                    <Calendar className="w-4 h-4 text-[#4A90E2]" />
+                                    {tempStart && tempEnd
+                                        ? `${format(new Date(tempStart + 'T12:00:00'), "dd MMM", { locale: es })} — ${format(new Date(tempEnd + 'T12:00:00'), "dd MMM yyyy", { locale: es })}`
+                                        : 'Todas las fechas'}
+                                    <ChevronDown className={`w-3 h-3 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} />
+                                </button>
+                                <RangeDatePicker
+                                    isOpen={showDatePicker}
+                                    startDate={tempStart || format(new Date(), 'yyyy-MM-dd')}
+                                    endDate={tempEnd || format(new Date(), 'yyyy-MM-dd')}
+                                    onApply={(s, e) => { setTempStart(s); setTempEnd(e); setModalStartDate(s); setModalEndDate(e); handleApplyQuickFilter('PERSONALIZADO'); setShowDatePicker(false); }}
+                                    onCancel={() => setShowDatePicker(false)}
+                                    align="left"
+                                />
+                            </div>
+
                             {/* Quick filter */}
-                            <div className="flex flex-col gap-1.5">
-                                <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] px-1">Rango</span>
-                                <select value={quickFilter} onChange={(e) => handleApplyQuickFilter(e.target.value)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-[11px] font-black outline-none focus:border-indigo-500 text-slate-600 dark:text-slate-300 w-44 uppercase shadow-sm cursor-pointer">
+                            <div className="relative">
+                                <select
+                                    value={quickFilter}
+                                    onChange={(e) => {
+                                        handleApplyQuickFilter(e.target.value);
+                                        setShowDatePicker(false);
+                                    }}
+                                    className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-10 py-2.5 rounded-full text-[11px] font-bold outline-none cursor-pointer hover:bg-[#e8eded] transition-all"
+                                >
                                     <option value="PERSONALIZADO">Personalizado</option>
                                     <option value="HOY">Hoy</option>
                                     <option value="ESTA_SEMANA">Última Semana</option>
                                     <option value="MES_ACTUAL">Mes Actual</option>
                                 </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
                             </div>
-                            <div className="h-14 w-px bg-slate-200 dark:bg-slate-700 mx-3" />
-                            {/* Mode switch + dates */}
-                            <div className="flex flex-col items-center">
-                                <div className={`flex p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 h-9 mb-3 transition-all ${quickFilter !== 'PERSONALIZADO' ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
-                                    <button onClick={() => setFilterMode('RANGE')} className={`px-6 flex items-center justify-center text-[9px] font-black uppercase rounded-lg transition-all ${filterMode === 'RANGE' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}>Rango</button>
-                                    <button onClick={() => { setFilterMode('DAY'); setTempEnd(tempStart); }} className={`px-6 flex items-center justify-center text-[9px] font-black uppercase rounded-lg transition-all ${filterMode === 'DAY' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md transform scale-105' : 'text-slate-400 hover:text-slate-600'}`}>Día</button>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="flex flex-col gap-1">
-                                        <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-2 ${quickFilter !== 'PERSONALIZADO' ? 'text-slate-300' : 'text-slate-400'}`}>{filterMode === 'RANGE' ? 'Desde' : 'Fecha'}</span>
-                                        <input type="date" value={tempStart} onChange={(e) => { setTempStart(e.target.value); if (filterMode === 'DAY') setTempEnd(e.target.value); }} disabled={quickFilter !== 'PERSONALIZADO'} className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-[11px] font-black outline-none focus:border-indigo-500 w-44 shadow-sm ${quickFilter !== 'PERSONALIZADO' ? 'opacity-50 cursor-not-allowed' : ''}`} />
-                                    </div>
-                                    {filterMode === 'RANGE' && (
-                                        <div className="flex flex-col gap-1">
-                                            <span className={`text-[8px] font-black uppercase tracking-[0.2em] px-2 ${quickFilter !== 'PERSONALIZADO' ? 'text-slate-300' : 'text-slate-400'}`}>Hasta</span>
-                                            <input type="date" value={tempEnd} onChange={(e) => setTempEnd(e.target.value)} disabled={quickFilter !== 'PERSONALIZADO'} className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl text-[11px] font-black outline-none focus:border-indigo-500 w-44 shadow-sm ${quickFilter !== 'PERSONALIZADO' ? 'opacity-50 cursor-not-allowed' : ''}`} />
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="relative mt-8 ml-2">
-                                <button onClick={() => { setModalStartDate(tempStart); setModalEndDate(tempEnd); }} disabled={quickFilter !== 'PERSONALIZADO'} className={`p-4 rounded-2xl border-2 shadow-md transition-all flex items-center justify-center ${quickFilter !== 'PERSONALIZADO' ? 'bg-slate-100 border-transparent text-slate-300 opacity-50 cursor-not-allowed' : (tempStart !== modalStartDate || (filterMode === 'RANGE' && tempEnd !== modalEndDate)) ? 'bg-indigo-600 border-indigo-700 text-white animate-pulse hover:bg-indigo-700' : 'bg-white dark:bg-slate-900 border-slate-200 text-slate-400'}`}>
-                                    <Filter className="w-5 h-5" />
-                                </button>
-                                {quickFilter === 'PERSONALIZADO' && (tempStart !== modalStartDate || (filterMode === 'RANGE' && tempEnd !== modalEndDate)) && (
-                                    <span className="absolute -top-2 -right-2 flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" /><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 border-2 border-white dark:border-slate-900" /></span>
-                                )}
-                            </div>
+
+                            <button
+                                onClick={() => { setModalStartDate(''); setModalEndDate(''); setTempStart(''); setTempEnd(''); handleApplyQuickFilter('PERSONALIZADO'); }}
+                                className="p-2.5 bg-[#f8faf9] text-[#8b9ba5] hover:text-rose-500 hover:bg-rose-50 rounded-full transition-all"
+                            >
+                                <RefreshCw className="w-4 h-4" />
+                            </button>
+
+                            <div className="w-px h-8 bg-slate-200/60 mx-1" />
+
+                            <button onClick={handleConfirm} disabled={isSubmitting || Object.keys(selectedItems).length === 0 || totalSelected > globalBalOrigen} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-[11px] font-black uppercase shadow-md hover:bg-indigo-700 transition-all disabled:opacity-30 tracking-widest active:scale-[0.98]">
+                                {isSubmitting ? 'PROCESANDO...' : 'EJECUTAR TRANSFERENCIA'}
+                            </button>
                         </div>
                     </div>
 
-                    {/* Right: Totals + CTA */}
-                    <div className="flex flex-col items-end gap-6 justify-between h-full">
-                        <button onClick={handleClose} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all z-20 self-end -mt-2 -mr-2"><X className="w-6 h-6" /></button>
-                        <div className="flex items-center gap-10 bg-slate-50/50 dark:bg-slate-800/30 p-6 rounded-3xl border border-slate-100 dark:border-slate-800">
+                    {/* Right: Totals */}
+                    <div className="flex flex-col items-end pt-2">
+                        <div className="flex items-center gap-6 bg-slate-50/50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                             <div className="text-center">
-                                <p className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1 flex justify-center">TOTAL A TRANSFERIR</p>
-                                <div className={`flex items-baseline justify-center gap-1.5 whitespace-nowrap transition-all ${totalSelected > globalBalOrigen ? 'text-rose-600 animate-pulse' : 'text-indigo-600'}`}>
-                                    <span className="text-2xl font-black">S/</span>
-                                    <span className="text-4xl font-black tabular-nums tracking-tighter">{formatCurrency(totalSelected)}</span>
+                                <p className="text-[9px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-0.5 flex justify-center">TOTAL A TRANSFERIR</p>
+                                <div className={`flex items-baseline justify-center gap-1 whitespace-nowrap transition-all ${totalSelected > globalBalOrigen ? 'text-rose-600 animate-pulse' : 'text-indigo-600'}`}>
+                                    <span className="text-xl font-black">S/</span>
+                                    <span className="text-3xl font-black tabular-nums tracking-tight">{formatCurrency(totalSelected)}</span>
                                 </div>
                             </div>
-                            <div className="h-14 w-px bg-slate-200 dark:bg-slate-700" />
+                            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700" />
                             <div className="text-center">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Disponible Real ({transferData.origen})</p>
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Disponible Real ({transferData.origen})</p>
                                 <div className="flex items-baseline justify-center gap-1 whitespace-nowrap text-slate-900 dark:text-white">
-                                    <span className="text-lg font-black">S/</span>
-                                    <span className="text-3xl font-black tabular-nums tracking-tight">{formatCurrency(globalBalOrigen)}</span>
+                                    <span className="text-base font-black">S/</span>
+                                    <span className="text-2xl font-black tabular-nums tracking-tight">{formatCurrency(globalBalOrigen)}</span>
                                 </div>
                             </div>
                         </div>
-                        <button onClick={handleConfirm} disabled={isSubmitting || Object.keys(selectedItems).length === 0 || totalSelected > globalBalOrigen} className="w-full py-5 bg-indigo-600 text-white rounded-2xl text-[12px] font-black uppercase shadow-xl hover:bg-indigo-700 transition-all disabled:opacity-30 tracking-widest border-b-4 border-indigo-800 active:scale-[0.98]">
-                            {isSubmitting ? 'PROCESANDO...' : 'EJECUTAR TRANSFERENCIA'}
-                        </button>
                     </div>
                 </div>
 
                 {/* Account selections (collapses on scroll) */}
-                <div className={`transition-all duration-500 ease-in-out ${isScrolled ? 'max-h-0 opacity-0 -translate-y-4 overflow-hidden' : 'max-h-[500px] opacity-100 translate-y-0 mt-8'}`}>
-                    <div className="grid grid-cols-2 gap-8 pt-6 px-12 border-t border-slate-50 dark:border-slate-800/50">
-                        <div className="space-y-6">
-                            <div className="flex items-center gap-6">
-                                <div className="min-w-[70px]"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Origen:</label></div>
-                                <div className="flex flex-wrap gap-2">
-                                    {ALL_ACCOUNTS.map(acc => (
-                                        <button key={acc} onClick={() => { setTransferData(d => ({ ...d, origen: acc, destino: d.destino === acc ? (acc === 'Efectivo' ? '4071' : 'Efectivo') : d.destino })); setSelectedItems({}); }} className={`px-6 py-2 rounded-xl border-2 font-black text-[10px] uppercase transition-all whitespace-nowrap ${transferData.origen === acc ? 'border-indigo-600 bg-indigo-50 text-indigo-600 shadow-md scale-[1.02]' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`}>{acc}</button>
-                                    ))}
+                <div className={`transition-all duration-500 ease-in-out shrink-0 ${isScrolled ? 'max-h-0 opacity-0 -translate-y-4 overflow-hidden' : 'max-h-[600px] opacity-100 translate-y-0'}`}>
+                    <div className="px-8 pt-6 pb-4 border-t border-[#d3dcdb]/20">
+
+                        {/* Card-style account selectors */}
+                        <div className="flex items-start gap-4 mb-5">
+                            {/* Origen */}
+                            <div className="flex-1 flex flex-col gap-2">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Origen</label>
+                                <div className="relative">
+                                    <select
+                                        value={transferData.origen}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setTransferData(d => ({ ...d, origen: val, destino: d.destino === val ? (val === 'Efectivo' ? '4071' : 'Efectivo') : d.destino }));
+                                            setSelectedItems({});
+                                        }}
+                                        className="appearance-none w-full bg-white/80 border border-[#d3dcdb]/50 text-[#2c3434] pl-5 pr-12 py-4 rounded-2xl text-[13px] font-black outline-none cursor-pointer hover:bg-[#f0f5f4] transition-all shadow-sm"
+                                    >
+                                        {ALL_ACCOUNTS.map(acc => (
+                                            <option key={acc} value={acc}>{acc}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#366480] pointer-events-none" />
+                                </div>
+                                <p className="text-[10px] font-bold text-[#8b9ba5] pl-1">
+                                    Saldo disponible: <span className="font-black text-[#244c66]">S/ {formatCurrency(globalBalOrigen)}</span>
+                                </p>
+                            </div>
+
+                            {/* Arrow */}
+                            <div className="flex items-center justify-center pt-8">
+                                <div className="w-10 h-10 rounded-full bg-[#f0f5f4] border border-[#d3dcdb]/30 flex items-center justify-center shadow-sm">
+                                    <ArrowRight className="w-4 h-4 text-[#4A90E2]" />
                                 </div>
                             </div>
-                            <div className="flex items-center gap-6">
-                                <div className="min-w-[70px]"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Destino:</label></div>
-                                <div className="flex flex-wrap gap-2">
-                                    {ALL_ACCOUNTS.map(acc => (
-                                        <button key={acc} onClick={() => { setTransferData(d => ({ ...d, destino: acc })); setShowError(false); }} className={`px-6 py-2 rounded-xl border-2 font-black text-[10px] uppercase transition-all whitespace-nowrap ${transferData.destino === acc ? 'border-emerald-600 bg-emerald-50 text-emerald-600 shadow-md scale-[1.02]' : 'border-slate-100 text-slate-400 hover:border-slate-200'}`} disabled={transferData.origen === acc}>{acc}</button>
-                                    ))}
+
+                            {/* Destino */}
+                            <div className="flex-1 flex flex-col gap-2">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Destino</label>
+                                <div className="relative">
+                                    <select
+                                        value={transferData.destino}
+                                        onChange={(e) => { setTransferData(d => ({ ...d, destino: e.target.value })); setShowError(false); }}
+                                        className="appearance-none w-full bg-white/80 border border-[#d3dcdb]/50 text-[#2c3434] pl-5 pr-12 py-4 rounded-2xl text-[13px] font-black outline-none cursor-pointer hover:bg-[#f0f5f4] transition-all shadow-sm"
+                                    >
+                                        {ALL_ACCOUNTS.filter(acc => acc !== transferData.origen).map(acc => (
+                                            <option key={acc} value={acc}>{acc}</option>
+                                        ))}
+                                    </select>
+                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#366480] pointer-events-none" />
                                 </div>
+                                <p className="text-[10px] font-bold text-[#8b9ba5] pl-1">Se abonará inmediatamente</p>
                             </div>
                         </div>
 
-                        {/* Voucher & Op Number */}
-                        <div className="flex gap-4 animate-in slide-in-from-right-4 duration-500">
-                            {isVoucherMandatory && (
-                                <>
-                                    <div className="flex-1 space-y-3">
-                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block pl-1">Váucher de Operación</label>
-                                        <div onClick={() => fileInputRef.current?.click()} className={`h-24 w-full border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden bg-slate-50 dark:bg-slate-800 relative group ${showError && !voucherFile ? 'border-rose-400 bg-rose-50/50' : 'border-slate-200 hover:border-emerald-400'}`}>
-                                            {voucherPreview ? (
-                                                <div className="relative w-full h-full">
-                                                    <img src={voucherPreview} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                                    <button onClick={(e) => { e.stopPropagation(); setVoucherFile(null); setVoucherPreview(null); }} className="absolute top-2 right-2 p-1.5 bg-rose-500/90 text-white rounded-full shadow-lg hover:bg-rose-600 transition-all z-10 hover:scale-110 flex items-center justify-center border border-rose-400/50" title="Eliminar imagen"><X className="w-3 h-3" /></button>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <Camera className={`w-6 h-6 mb-1 ${showError && !voucherFile ? 'text-rose-400' : 'text-slate-300'}`} />
-                                                    <span className={`text-[8px] font-black uppercase ${showError && !voucherFile ? 'text-rose-500' : 'text-slate-400'}`}>Adjuntar</span>
-                                                </>
-                                            )}
+                        {/* Voucher & Op Number (conditional) */}
+                        {(isVoucherMandatory || isMotivoMandatory) && (
+                            <div className="flex gap-4 pt-4 border-t border-[#d3dcdb]/20">
+                                {isVoucherMandatory && (
+                                    <>
+                                        <div className="flex-1 space-y-2">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block pl-1">Vóucher de Operación</label>
+                                            <div onClick={() => fileInputRef.current?.click()} className={`h-20 w-full border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all overflow-hidden bg-[#f8faf9] relative group ${showError && !voucherFile ? 'border-rose-400 bg-rose-50/50' : 'border-[#d3dcdb]/50 hover:border-emerald-400'}`}>
+                                                {voucherPreview ? (
+                                                    <div className="relative w-full h-full">
+                                                        <img src={voucherPreview} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                                        <button onClick={(e) => { e.stopPropagation(); setVoucherFile(null); setVoucherPreview(null); }} className="absolute top-2 right-2 p-1.5 bg-rose-500/90 text-white rounded-full shadow-lg hover:bg-rose-600 transition-all z-10 flex items-center justify-center"><X className="w-3 h-3" /></button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <Camera className={`w-5 h-5 mb-1 ${showError && !voucherFile ? 'text-rose-400' : 'text-slate-300'}`} />
+                                                        <span className={`text-[8px] font-black uppercase ${showError && !voucherFile ? 'text-rose-500' : 'text-slate-400'}`}>Adjuntar</span>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="flex-1 space-y-3">
-                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block pl-1">N° Operación</label>
-                                        {/* Input is LOCAL — no parent re-render on keystroke */}
-                                        <input
-                                            type="text"
-                                            placeholder="TRANS-XXXX"
-                                            value={numOp}
-                                            onChange={(e) => { setNumOp(e.target.value.toUpperCase()); setShowError(false); }}
-                                            className={`w-full h-24 bg-slate-50 dark:bg-slate-800 border-2 rounded-2xl px-6 font-black text-center text-sm outline-none transition-all ${showError && !numOp ? 'border-rose-400 bg-rose-50' : 'border-slate-100 focus:border-indigo-400'}`}
+                                        <div className="flex-1 space-y-2">
+                                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block pl-1">N° Operación</label>
+                                            <input
+                                                type="text"
+                                                placeholder="TRANS-XXXX"
+                                                value={numOp}
+                                                onChange={(e) => { setNumOp(e.target.value.toUpperCase()); setShowError(false); }}
+                                                className={`w-full h-20 bg-[#f8faf9] border-2 rounded-2xl px-6 font-black text-center text-sm outline-none transition-all ${showError && !numOp ? 'border-rose-400 bg-rose-50' : 'border-[#d3dcdb]/50 focus:border-[#4A90E2]'}`}
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                                {isMotivoMandatory && (
+                                    <div className="flex-[2] space-y-2">
+                                        <label className="text-[9px] font-black text-[#4A90E2] uppercase tracking-widest block pl-1">Motivo de la Transferencia (Obligatorio)</label>
+                                        <textarea
+                                            placeholder="Describa el motivo detallado de esta transferencia..."
+                                            value={motivo}
+                                            onChange={(e) => { setMotivo(e.target.value); setShowError(false); }}
+                                            className={`w-full h-20 bg-[#f8faf9] border-2 rounded-2xl px-6 py-3 font-bold text-sm outline-none transition-all resize-none ${showError && !motivo.trim() ? 'border-rose-400 bg-rose-50' : 'border-[#d3dcdb]/50 focus:border-[#4A90E2]'}`}
                                         />
                                     </div>
-                                </>
-                            )}
-                            
-                            {isMotivoMandatory && (
-                                <div className="flex-[2] space-y-3">
-                                    <label className="text-[9px] font-black text-indigo-500 uppercase tracking-widest block pl-1">Motivo de la Transferencia (Obligatorio)</label>
-                                    <textarea
-                                        placeholder="Describa el motivo detallado de esta transferencia..."
-                                        value={motivo}
-                                        onChange={(e) => { setMotivo(e.target.value); setShowError(false); }}
-                                        className={`w-full h-24 bg-indigo-50/10 dark:bg-indigo-900/10 border-2 rounded-2xl px-6 py-4 font-bold text-sm outline-none transition-all resize-none ${showError && !motivo.trim() ? 'border-rose-400 bg-rose-50' : 'border-indigo-100 dark:border-indigo-800 focus:border-indigo-400'}`}
-                                    />
-                                </div>
-                            )}
-                        </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* Adjustment warning */}
-                {showAdjustmentWarning && (
-                    <div className="bg-amber-50 dark:bg-amber-900/20 px-12 py-3 border-y border-amber-100 dark:border-amber-900/40 flex items-center justify-between z-[90]">
-                        <div className="flex items-center gap-3 text-amber-600 dark:text-amber-500">
-                            <TrendingDown className="w-4 h-4" />
-                            <p className="text-[10px] font-black uppercase tracking-widest">Ajuste por Gastos Genéricos Aplicado</p>
-                        </div>
-                        <p className="text-[9px] font-bold text-amber-700/70 dark:text-amber-400/70 uppercase">
-                            El saldo por venta ha sido reducido proporcionalmente porque hay S/ {formatCurrency(totalSaleFunds - globalBalOrigen)} de la caja gastados sin asociar a ventas.
-                        </p>
-                    </div>
-                )}
+
 
                 {/* Scrollable table */}
                 <div
-                    className="flex-1 overflow-y-auto px-12 custom-scrollbar mb-8 pt-4"
+                    className="flex-1 overflow-y-auto px-8 custom-scrollbar mb-4"
                     onScroll={(e) => {
                         const st = e.currentTarget.scrollTop;
                         if (st > 100 && !isScrolled) setIsScrolled(true);
@@ -397,7 +449,7 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
                     }}
                 >
                     <table className="w-full text-left">
-                        <thead className="sticky top-0 bg-white dark:bg-slate-900 z-10 transition-all duration-500">
+                        <thead className="sticky top-0 bg-[#f8faf9]/95 backdrop-blur-md dark:bg-slate-900/95 z-10 shadow-sm">
                             <tr className="text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
                                 <th className="py-6 px-4">Selección</th>
                                 <th className="py-6 px-4">Venta</th>
@@ -451,9 +503,22 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
                     <div className={`transition-all duration-500 w-full flex-shrink-0 ${isScrolled ? 'h-[224px]' : 'h-0'}`} />
                 </div>
 
-                <div className="py-4 px-8 bg-slate-500/5 rounded-[2rem] border border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase text-center tracking-[0.3em] mx-8 mb-8">
+                <div className="py-2.5 px-6 bg-slate-500/5 rounded-2xl border border-slate-100 dark:border-slate-800 text-[8.5px] font-black text-slate-400 uppercase text-center tracking-[0.2em] mx-8 mb-4">
                     SELECCIONA LOS ELEMENTOS DE LA LISTA SUPERIOR PARA CALCULAR EL MOVIMIENTO
                 </div>
+
+                {/* Adjustment warning (moved to bottom) */}
+                {showAdjustmentWarning && (
+                    <div className="bg-amber-50 dark:bg-amber-900/20 px-8 py-4 border-t border-amber-100 dark:border-amber-900/40 flex items-center justify-between shrink-0 rounded-b-3xl">
+                        <div className="flex items-center gap-3 text-amber-600 dark:text-amber-500">
+                            <TrendingDown className="w-4 h-4" />
+                            <p className="text-[10px] font-black uppercase tracking-widest">Ajuste por Gastos Genéricos Aplicado</p>
+                        </div>
+                        <p className="text-[9px] font-bold text-amber-700/70 dark:text-amber-400/70 uppercase">
+                            El saldo por venta ha sido reducido proporcionalmente porque hay S/ {formatCurrency(totalSaleFunds - globalBalOrigen)} de la caja gastados sin asociar a ventas.
+                        </p>
+                    </div>
+                )}
 
                 <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
             </div>
