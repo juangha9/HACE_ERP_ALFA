@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
-    X, ArrowRight, Camera, Filter, RefreshCw, TrendingDown, Calendar, ChevronDown
+    X, ArrowRight, Camera, RefreshCw, TrendingDown, Calendar, ChevronDown
 } from 'lucide-react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { api } from '../services/api';
@@ -235,7 +235,7 @@ export const InternalTransferModal: React.FC<InternalTransferModalProps> = ({
     };
 
     return (
-        <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+        <div className={`treasury-ui fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
             <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 

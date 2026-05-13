@@ -542,3 +542,56 @@ body {
 .animate-iridescent-pulse {
   animation: iridescentPulsingGlow 3.5s ease-in-out infinite;
 }
+
+/* ── DESGLOSE TÉCNICO expand / collapse animations ──────────────────────── */
+@keyframes desgloseExpand {
+  from { opacity: 0; transform: translateY(-10px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+@keyframes desgloseCollapse {
+  from { opacity: 1; transform: translateY(0)    scale(1);    }
+  to   { opacity: 0; transform: translateY(-10px) scale(0.99); }
+}
+.animate-desglose {
+  animation: desgloseExpand  0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.animate-desglose-out {
+  animation: desgloseCollapse 0.32s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* DESGLOSE inner table: header matches data row size (15px), all columns left */
+.treasury-ui .desglose-table thead th {
+  font-size: 15px;
+  text-align: left;
+}
+
+/* ── Executive Ethereal Typography — Ventas & Tesorería ─────────────────── */
+.treasury-ui,
+.treasury-ui * {
+  font-family: 'Manrope', sans-serif;
+}
+
+/* Column Headers: SemiBold 600, 12px, UPPERCASE, tracking 0.05em */
+.treasury-ui table thead th {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+/* Primary Data rows: Medium 500, 15px, line-height 1.6, 20px vertical padding */
+.treasury-ui table tbody tr td {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.6;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  color: #2c3434;
+}
+
+/* Secondary content (dates, sub-labels): Regular 400, 14px, 70% opacity */
+.treasury-ui .t-date,
+.treasury-ui .t-label {
+  font-size: 14px;
+  font-weight: 400;
+  color: rgba(44, 52, 52, 0.70);
+}

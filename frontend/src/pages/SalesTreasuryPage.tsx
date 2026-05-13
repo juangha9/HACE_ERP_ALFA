@@ -80,6 +80,7 @@ export const SalesTreasuryPage = () => {
     const [ordenesPago, setOrdenesPago] = useState<any[]>([]);
     const [fontsLoaded, setFontsLoaded] = useState(false);
     const [expandedVenta, setExpandedVenta] = useState<string | null>(null);
+    const [exitingDesglose, setExitingDesglose] = useState<string | null>(null);
     const [expandedCompra, setExpandedCompra] = useState<string | null>(null);
     const [ventaDetails, setVentaDetails] = useState<Record<string, VentaDetalle[]>>({});
     const [loadingHistory, setLoadingHistory] = useState(false);
@@ -457,8 +458,11 @@ export const SalesTreasuryPage = () => {
     const toggleExpand = async (ventaId: string) => {
         if (expandedVenta === ventaId) {
             setExpandedVenta(null);
+            setExitingDesglose(ventaId);
+            setTimeout(() => setExitingDesglose(null), 340);
             return;
         }
+        setExitingDesglose(null);
         setExpandedVenta(ventaId);
         // Stubs (no ventas_cabecera yet) have no details to fetch
         if (!ventaDetails[ventaId] && !ventaId.startsWith('opt::')) {
@@ -658,9 +662,8 @@ export const SalesTreasuryPage = () => {
                     }}
                 />
             )}
-            <div className="flex flex-col h-full bg-[#f7faf9] text-[#2c3434] overflow-hidden relative" style={{ fontFamily: "'Work Sans', sans-serif" }}>
+            <div className="treasury-ui flex flex-col h-full bg-[#f7faf9] text-[#2c3434] overflow-hidden relative">
                 <style>{`
-                    @import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700;800;900&display=swap');
                     @keyframes slideDown {
                         from { opacity: 0; transform: translateY(-15px) scale(0.96); }
                         to { opacity: 1; transform: translateY(0) scale(1); }
@@ -992,26 +995,30 @@ export const SalesTreasuryPage = () => {
                                                                 </div>
                                                             </td>
                                                         </tr>
-                                                        {expandedVenta === venta.id && (
+                                                        {(expandedVenta === venta.id || exitingDesglose === venta.id) && (
                                                             <tr>
                                                                 <td colSpan={5} className="p-0 border-none bg-[#f7faf9]/30">
-                                                                    <div className="px-10 py-4 animate-in slide-in-from-top-4 duration-500">
+                                                                    <div className={`px-10 py-4 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
                                                                         <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm">
                                                                             <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] mb-6 border-b border-[#d3dcdb]/10 pb-4 italic">Desglose Técnico del Proyecto</p>
-                                                                            <table className="w-full text-[11px]">
-                                                                                <thead className="text-[#366480]/30 font-black uppercase tracking-widest border-b border-[#d3dcdb]/10">
-                                                                                    <tr><th className="pb-4 text-left">Componente / Recurso</th><th className="pb-4 text-center">Cantidad</th><th className="pb-4 text-right pr-4">Subtotal</th></tr>
+                                                                            <table className="desglose-table w-full">
+                                                                                <thead className="text-[#366480]/40 uppercase border-b border-[#d3dcdb]/10">
+                                                                                    <tr>
+                                                                                        <th className="pb-4 text-left">Componente / Recurso</th>
+                                                                                        <th className="pb-4 text-left">Cantidad</th>
+                                                                                        <th className="pb-4 text-left">Subtotal</th>
+                                                                                    </tr>
                                                                                 </thead>
                                                                                 <tbody className="divide-y divide-[#d3dcdb]/10">
                                                                                     {ventaDetails[venta.id]?.map(det => (
                                                                                         <tr key={det.id} className="hover:bg-[#f7faf9] transition-all">
-                                                                                            <td className="py-4 font-black uppercase text-[#366480]/70 tracking-tight">{det.material_insumo}</td>
-                                                                                            <td className="py-4 text-center font-[900] tabular-nums">{Number(det.cantidad).toFixed(2)}</td>
-                                                                                            <td className="py-4 text-right pr-4 font-[900] text-[#2c3434]">S/ {formatCurrency(det.total)}</td>
+                                                                                            <td className="py-4 text-left uppercase text-[#366480]/70 tracking-tight">{det.material_insumo}</td>
+                                                                                            <td className="py-4 text-left tabular-nums">{Number(det.cantidad).toFixed(2)}</td>
+                                                                                            <td className="py-4 text-left text-[#2c3434]">S/ {formatCurrency(det.total)}</td>
                                                                                         </tr>
                                                                                     ))}
                                                                                     {!ventaDetails[venta.id] && (
-                                                                                        <tr><td colSpan={3} className="py-10 text-center flex flex-col items-center gap-3"><RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" /><span className="font-black text-[#366480]/20 uppercase tracking-widest text-[9px]">Consultando desglose...</span></td></tr>
+                                                                                        <tr><td colSpan={3} className="py-10 text-center"><div className="flex flex-col items-center gap-3"><RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" /><span className="font-black text-[#366480]/20 uppercase tracking-widest text-[9px]">Consultando desglose...</span></div></td></tr>
                                                                                     )}
                                                                                 </tbody>
                                                                             </table>
@@ -1290,7 +1297,7 @@ export const SalesTreasuryPage = () => {
 
                 {/* ── KARDEX DE CUENTAS MODAL ──────────────────────────────────── */}
                 {showKardexModal && createPortal(
-                    <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosingKardexModal ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+                    <div className={`treasury-ui fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosingKardexModal ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
                         <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[95vh] min-h-[640px] relative ${isClosingKardexModal ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                             <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
@@ -1578,7 +1585,7 @@ export const SalesTreasuryPage = () => {
 
             {/* CASH MANAGEMENT POPUP */}
             {showCashAccountModal && createPortal(
-                <div className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosingCashModal ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+                <div className={`treasury-ui fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosingCashModal ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
                     <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-6xl border border-white/50 flex flex-col max-h-[92vh] min-h-[640px] relative ${isClosingCashModal ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                         <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 

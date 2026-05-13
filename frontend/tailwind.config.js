@@ -13,7 +13,8 @@ export default {
                 "background-dark": "#101622",
             },
             fontFamily: {
-                display: ["Inter", "sans-serif"],
+                display: ["Manrope", "sans-serif"],
+                manrope: ["Manrope", "sans-serif"],
             },
             borderRadius: {
                 "3xl": "1.5rem",
