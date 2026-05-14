@@ -166,7 +166,7 @@ export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startD
 
     const pickerNode = (
         <div
-            className={`${triggerRef ? '' : `absolute top-full ${align === 'left' ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} mt-3 `}bg-white/70 backdrop-blur-xl rounded-[24px] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.1)] border border-white/40 transition-all duration-200 w-[480px]
+            className={`${triggerRef ? '' : `absolute top-full ${align === 'left' ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} mt-3 z-[200] `}bg-white/95 backdrop-blur-2xl rounded-[24px] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-white/60 transition-all duration-200 w-[480px]
                 ${isOpen ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}
             `}
             style={triggerRef ? portalStyle : undefined}
