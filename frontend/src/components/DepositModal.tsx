@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Banknote, Camera, RefreshCw } from 'lucide-react';
+import { X, Banknote, Camera, RefreshCw, ChevronDown, Check } from 'lucide-react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { api } from '../services/api';
 import type { VentaCabecera } from '../services/types';
@@ -20,7 +20,9 @@ export const DepositModal: React.FC<DepositModalProps> = ({ venta, onClose, onRe
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [touched, setTouched] = useState(false);
+    const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const accountDropdownRef = useRef<HTMLDivElement>(null);
 
     useScrollLock(true);
 
@@ -56,6 +58,22 @@ export const DepositModal: React.FC<DepositModalProps> = ({ venta, onClose, onRe
     }, [cuentaDestino]); // Re-bind if account changes, though most importantly avoids stale closures
 
     const BANK_ACCOUNTS = ['2049/YAPE', '4071', '9001', '8059'];
+    const ALL_ACCOUNTS: { value: string; label: string; type: 'EFECTIVO' | 'BANCO' }[] = [
+        { value: 'Efectivo', label: 'Efectivo',  type: 'EFECTIVO' },
+        ...BANK_ACCOUNTS.map(acc => ({ value: acc, label: acc, type: 'BANCO' as const })),
+    ];
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) {
+                setAccountDropdownOpen(false);
+            }
+        };
+        if (accountDropdownOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [accountDropdownOpen]);
 
     // Validaciones visuales
     const missingMonto = touched && (!cobroMonto || Number(cobroMonto) <= 0);
@@ -221,18 +239,55 @@ export const DepositModal: React.FC<DepositModalProps> = ({ venta, onClose, onRe
                         </div>
                     )}
                     
-                    <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => {setCuentaDestino('Efectivo'); if(touched) setTouched(false); setError(null);}} className={`px-4 py-4 rounded-xl border-2 font-black text-[10px] uppercase transition-all flex items-center gap-3 ${cuentaDestino === 'Efectivo' ? 'border-indigo-600 bg-indigo-50 text-indigo-600' : 'border-slate-100 dark:border-slate-800 text-slate-600 opacity-90 hover:border-slate-200'}`}><Banknote className="w-4 h-4" /> Efectivo</button>
-                        <div className="grid grid-cols-2 gap-2">
-                            {BANK_ACCOUNTS.slice(0, 2).map(acc => (
-                                <button key={acc} onClick={() => {setCuentaDestino(acc); if(touched) setTouched(false); setError(null);}} className={`px-2 py-4 rounded-xl border-2 font-black text-[10px] uppercase transition-all truncate ${cuentaDestino === acc ? 'border-emerald-600 bg-emerald-50 text-emerald-600' : 'border-slate-100 dark:border-slate-800 text-slate-600 opacity-90 hover:border-slate-200'}`}>{acc}</button>
-                            ))}
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 col-span-2">
-                            {BANK_ACCOUNTS.slice(2).map(acc => (
-                                <button key={acc} onClick={() => {setCuentaDestino(acc); if(touched) setTouched(false); setError(null);}} className={`px-2 py-4 rounded-xl border-2 font-black text-[10px] uppercase transition-all truncate ${cuentaDestino === acc ? 'border-emerald-600 bg-emerald-50 text-emerald-600' : 'border-slate-100 dark:border-slate-800 text-slate-600 opacity-90 hover:border-slate-200'}`}>{acc}</button>
-                            ))}
-                        </div>
+                    <div ref={accountDropdownRef} className="relative">
+                        <label className="text-[9px] font-black uppercase tracking-[0.2em] block mb-2 text-slate-400">Cuenta de Destino</label>
+                        <button
+                            type="button"
+                            onClick={() => setAccountDropdownOpen(o => !o)}
+                            className={`w-full px-4 py-4 rounded-xl border-2 font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-between gap-3 ${
+                                cuentaDestino === 'Efectivo'
+                                    ? 'border-indigo-600 bg-indigo-50 text-indigo-600'
+                                    : 'border-emerald-600 bg-emerald-50 text-emerald-600'
+                            }`}
+                        >
+                            <span className="flex items-center gap-3 truncate">
+                                <Banknote className="w-4 h-4 flex-shrink-0" />
+                                <span className="truncate">{cuentaDestino}</span>
+                            </span>
+                            <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${accountDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {accountDropdownOpen && (
+                            <div className="absolute left-0 right-0 mt-2 z-30 bg-white rounded-xl border border-slate-200 shadow-[0_20px_45px_rgba(0,0,0,0.12)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                {ALL_ACCOUNTS.map(acc => {
+                                    const isSelected = cuentaDestino === acc.value;
+                                    const accentColor = acc.type === 'EFECTIVO' ? 'text-indigo-600' : 'text-emerald-600';
+                                    return (
+                                        <button
+                                            key={acc.value}
+                                            type="button"
+                                            onClick={() => {
+                                                setCuentaDestino(acc.value);
+                                                setAccountDropdownOpen(false);
+                                                if (touched) setTouched(false);
+                                                setError(null);
+                                            }}
+                                            className={`w-full px-4 py-3 flex items-center justify-between gap-3 font-black text-[11px] uppercase tracking-widest transition-all ${
+                                                isSelected ? `${accentColor} bg-slate-50` : 'text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <span className="flex items-center gap-3 truncate">
+                                                <Banknote className={`w-4 h-4 flex-shrink-0 ${isSelected ? accentColor : 'text-slate-400'}`} />
+                                                <span className="truncate">{acc.label}</span>
+                                                {acc.type === 'EFECTIVO' && (
+                                                    <span className="text-[8px] font-black text-slate-300 tracking-widest">CAJA</span>
+                                                )}
+                                            </span>
+                                            {isSelected && <Check className={`w-4 h-4 flex-shrink-0 ${accentColor}`} />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     {cuentaDestino !== 'Efectivo' && (

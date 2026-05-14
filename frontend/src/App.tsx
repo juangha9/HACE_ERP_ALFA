@@ -15,6 +15,7 @@ import PresupuestadorLayout from './pages/Presupuestador/PresupuestadorLayout';
 import PresupuestadorWizard from './pages/Presupuestador/PresupuestadorWizard';
 import PresupuestadorDashboard from './pages/Presupuestador/PresupuestadorDashboard';
 import { SalesTreasuryPage } from './pages/SalesTreasuryPage';
+import AdministradorPage from './pages/AdministradorPage';
 import { SolicitudesPage } from './pages/SolicitudesPage';
 import { CotizacionesPage } from './pages/CotizacionesPage';
 import { OptimizationLayout } from './pages/Optimization/OptimizationLayout';
@@ -54,6 +55,7 @@ const App = () => {
             <Route path="configuracion-almacen" element={<WarehouseConfigurationPage />} />
             <Route path="base-de-datos" element={<DatabaseExportPage />} />
             <Route path="sales-treasury" element={<SalesTreasuryPage />} />
+            <Route path="administrador" element={<AdministradorPage />} />
             <Route path="cotizaciones" element={<CotizacionesPage />} />
             <Route path="solicitudes" element={<SolicitudesPage />} />
 

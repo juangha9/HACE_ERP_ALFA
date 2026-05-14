@@ -12,6 +12,7 @@ const ALL_MENU_ITEMS = [
     { to: '/cotizaciones',  label: 'Cotizaciones',      icon: 'receipt_long',        roles: ['admin', 'ventas'] as UserRole[] },
     { to: '/solicitudes',   label: 'Solicitudes',       icon: 'request_quote',       roles: ['admin'] as UserRole[] },
     { to: '/sales-treasury',label: 'Ventas y Tesorería',icon: 'account_balance_wallet', roles: ['admin', 'asistente_admin'] as UserRole[] },
+    { to: '/administrador', label: 'Administrador',     icon: 'admin_panel_settings',roles: ['admin'] as UserRole[] },
     { to: '/inventory',     label: 'Inventario',        icon: 'inventory_2',         roles: ['admin'] as UserRole[] },
     { to: '/personnel',     label: 'Personal',          icon: 'groups',              roles: ['admin'] as UserRole[] },
     { to: '/settings',      label: 'Configuración',     icon: 'settings',            roles: ['admin'] as UserRole[] },
