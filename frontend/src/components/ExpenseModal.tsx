@@ -232,7 +232,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     };
 
     return (
-        <div className={`treasury-ui fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
+        <div className={`treasury-ui fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)', fontFamily: "'Manrope', sans-serif" }}>
             <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full ${hasInvoice ? 'max-w-5xl' : 'max-w-2xl'} border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden transition-all ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                 <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
@@ -293,7 +293,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                     />
                                 </div>
                                 <textarea
-                                    placeholder="Descripción / Glosa..."
+                                    placeholder="Descripción..."
                                     value={gastoData.desc}
                                     onChange={(e) => setGastoData({...gastoData, desc: e.target.value})}
                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-transparent focus:border-rose-400 px-4 py-3 rounded-2xl text-[11px] font-bold outline-none h-20 transition-all uppercase resize-none shadow-inner"
@@ -441,26 +441,34 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-white/40 shrink-0">
-                    <div className="flex-1 min-w-[180px]">
-                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 leading-none">Total</p>
-                         <div className="flex items-baseline gap-3">
-                            <span className={`text-3xl font-black tabular-nums tracking-tighter transition-colors ${hasInsufficientFunds ? 'text-rose-600' : 'text-slate-950 dark:text-white'}`}>S/ {totalToSpend.toFixed(2)}</span>
-                            <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-full border tracking-widest shadow-sm ${currentBalance - totalToSpend < 0 ? 'bg-rose-50 text-rose-500 border-rose-100 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                                Remanente: S/ {(currentBalance - totalToSpend).toFixed(2)}
-                            </span>
-                         </div>
+                    {/* Total */}
+                    <div className="shrink-0">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 leading-none">Total</p>
+                        <span className={`text-3xl font-black tabular-nums tracking-tighter transition-colors ${hasInsufficientFunds ? 'text-rose-600' : 'text-slate-950 dark:text-white'}`}>
+                            S/ {totalToSpend.toFixed(2)}
+                        </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-inner">
-                        {['Efectivo', ...BANK_ACCOUNTS].map(acc => (
-                            <button
-                                key={acc}
-                                onClick={() => setGastoData({...gastoData, cuenta: acc})}
-                                className={`h-9 px-3 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${gastoData.cuenta === acc ? 'bg-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-100 dark:border-slate-700 hover:text-slate-600'}`}
-                            >
-                                {acc.split('/')[0]}
-                            </button>
-                        ))}
+                    {/* Cuenta + Saldo + Remanente */}
+                    <div className="flex-1 min-w-[200px] space-y-1.5">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Cuenta</p>
+                        <select
+                            value={gastoData.cuenta}
+                            onChange={(e) => setGastoData({...gastoData, cuenta: e.target.value})}
+                            className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-rose-400 px-3 py-2 rounded-xl text-[11px] font-black uppercase outline-none cursor-pointer transition-all shadow-inner appearance-none"
+                        >
+                            {['Efectivo', ...BANK_ACCOUNTS].map(acc => (
+                                <option key={acc} value={acc}>{acc}</option>
+                            ))}
+                        </select>
+                        <div className="flex items-center gap-2 pl-0.5">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                                Saldo: S/ {currentBalance.toFixed(2)}
+                            </span>
+                            <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full border tracking-widest shadow-sm ${currentBalance - totalToSpend < 0 ? 'bg-rose-50 text-rose-500 border-rose-100 animate-pulse' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                                Remanente: S/ {(currentBalance - totalToSpend).toFixed(2)}
+                            </span>
+                        </div>
                     </div>
 
                     <button

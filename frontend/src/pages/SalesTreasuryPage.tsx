@@ -1416,6 +1416,7 @@ export const SalesTreasuryPage = () => {
                                         isOpen={showKardexDatePicker}
                                         startDate={kardexStart}
                                         endDate={kardexEnd}
+                                        triggerRef={kardexDatePickerRef}
                                         onApply={(s, e) => { setKardexStart(s); setKardexEnd(e); setShowKardexDatePicker(false); }}
                                         onCancel={() => setShowKardexDatePicker(false)}
                                     />
