@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
     format, 
     addMonths, 
@@ -27,9 +28,10 @@ interface RangeDatePickerProps {
     onApply: (start: string, end: string) => void;
     onCancel: () => void;
     align?: 'left' | 'right';
+    triggerRef?: React.RefObject<HTMLElement>;
 }
 
-export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startDate, endDate, onApply, onCancel, align = 'right' }) => {
+export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startDate, endDate, onApply, onCancel, align = 'right', triggerRef }) => {
     const [leftMonthDate, setLeftMonthDate] = useState(new Date(startDate || Date.now()));
     const [rightMonthDate, setRightMonthDate] = useState(addMonths(new Date(startDate || Date.now()), 1));
     const [selectionStart, setSelectionStart] = useState<Date | null>(startDate ? new Date(startDate + 'T12:00:00') : null);
@@ -38,6 +40,16 @@ export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startD
 
     const leftRef = useRef<HTMLDivElement>(null);
     const rightRef = useRef<HTMLDivElement>(null);
+    const [portalStyle, setPortalStyle] = useState<React.CSSProperties>({});
+
+    useEffect(() => {
+        if (!triggerRef?.current) return;
+        const rect = triggerRef.current.getBoundingClientRect();
+        const base: React.CSSProperties = { position: 'fixed', top: rect.bottom + 8, zIndex: 9999 };
+        setPortalStyle(align === 'right'
+            ? { ...base, right: window.innerWidth - rect.right }
+            : { ...base, left: rect.left });
+    }, [isOpen, triggerRef, align]);
 
     const handleDayClick = (day: Date, side: 'left' | 'right') => {
         if (!selectionStart && !selectionEnd) {
@@ -152,11 +164,12 @@ export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startD
         return "Seleccione rango";
     }, [selectionStart, selectionEnd]);
 
-    return (
-        <div 
-            className={`absolute top-full ${align === 'left' ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} mt-3 bg-white/70 backdrop-blur-xl rounded-[24px] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.1)] border border-white/40 z-[100] transition-all duration-200 w-[480px]
+    const pickerNode = (
+        <div
+            className={`${triggerRef ? '' : `absolute top-full ${align === 'left' ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} mt-3 `}bg-white/70 backdrop-blur-xl rounded-[24px] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.1)] border border-white/40 transition-all duration-200 w-[480px]
                 ${isOpen ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}
             `}
+            style={triggerRef ? portalStyle : undefined}
         >
             <div className="flex gap-6">
                 {/* Left Calendar */}
@@ -245,6 +258,11 @@ export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startD
             </div>
         </div>
     );
+
+    if (triggerRef) {
+        return createPortal(pickerNode, document.body);
+    }
+    return pickerNode;
 };
 
 interface CalendarGridProps {

@@ -32,6 +32,7 @@ import {
   BarChart2
 } from 'lucide-react';
 import { api } from '../services/api';
+import { supabase } from '../services/supabase';
 import type { NodrizaTesoreria, VentaCabecera, VentaDetalle, VentaCobro, OrdenPago } from '../services/types';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -83,6 +84,7 @@ export const SalesTreasuryPage = () => {
     const [exitingDesglose, setExitingDesglose] = useState<string | null>(null);
     const [expandedCompra, setExpandedCompra] = useState<string | null>(null);
     const [ventaDetails, setVentaDetails] = useState<Record<string, VentaDetalle[]>>({});
+    const [ventaCotizacionItems, setVentaCotizacionItems] = useState<Record<string, { descripcion: string; unidad: string; cantidad: number; total: number }[]>>({});
     const [loadingHistory, setLoadingHistory] = useState(false);
     
     // View state
@@ -262,6 +264,25 @@ export const SalesTreasuryPage = () => {
         } finally {
             setLoading(false);
         }
+    }, []);
+
+    // Real-time: reload when ventas_cabecera changes (new cotización reaches LISTO state)
+    const loadDataRef = useRef(loadData);
+    useEffect(() => { loadDataRef.current = loadData; }, [loadData]);
+    useEffect(() => {
+        const reloadDebounce = { t: null as ReturnType<typeof setTimeout> | null };
+        const triggerReload = () => {
+            if (reloadDebounce.t) clearTimeout(reloadDebounce.t);
+            reloadDebounce.t = setTimeout(() => loadDataRef.current(), 800);
+        };
+        const channel = supabase
+            .channel('treasury-ventas-realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas_cabecera' }, triggerReload)
+            .subscribe();
+        return () => {
+            if (reloadDebounce.t) clearTimeout(reloadDebounce.t);
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     // Optimized balance calculations: O(N) single pass instead of repetitive filtered reductions
@@ -467,8 +488,30 @@ export const SalesTreasuryPage = () => {
         // Stubs (no ventas_cabecera yet) have no details to fetch
         if (!ventaDetails[ventaId] && !ventaId.startsWith('opt::')) {
             try {
-                const details = await api.getVentaDetalle(ventaId);
+                const venta = ventas.find(v => v.id === ventaId);
+                const codigoCot = venta?.codigo_cotizacion;
+                const [details, itemsRes] = await Promise.all([
+                    api.getVentaDetalle(ventaId),
+                    codigoCot
+                        ? supabase
+                            .from('cotizaciones_items')
+                            .select('descripcion,unidad,cantidad,total,cotizaciones!inner(codigo)')
+                            .eq('cotizaciones.codigo', codigoCot)
+                            .order('created_at', { ascending: true })
+                        : Promise.resolve({ data: null, error: null }),
+                ]);
                 setVentaDetails(prev => ({ ...prev, [ventaId]: details }));
+                if (itemsRes.data && (itemsRes.data as any[]).length > 0) {
+                    setVentaCotizacionItems(prev => ({
+                        ...prev,
+                        [ventaId]: (itemsRes.data as any[]).map(d => ({
+                            descripcion: d.descripcion || '',
+                            unidad: d.unidad || '',
+                            cantidad: Number(d.cantidad) || 0,
+                            total: Number(d.total) || 0,
+                        })),
+                    }));
+                }
             } catch (error) {
                 console.error("Error loading details", error);
             }
@@ -1001,27 +1044,55 @@ export const SalesTreasuryPage = () => {
                                                                     <div className={`px-10 py-4 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
                                                                         <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm">
                                                                             <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] mb-6 border-b border-[#d3dcdb]/10 pb-4 italic">Desglose Técnico del Proyecto</p>
-                                                                            <table className="desglose-table w-full">
-                                                                                <thead className="text-[#366480]/40 uppercase border-b border-[#d3dcdb]/10">
-                                                                                    <tr>
-                                                                                        <th className="pb-4 text-left">Componente / Recurso</th>
-                                                                                        <th className="pb-4 text-left">Cantidad</th>
-                                                                                        <th className="pb-4 text-left">Subtotal</th>
-                                                                                    </tr>
-                                                                                </thead>
-                                                                                <tbody className="divide-y divide-[#d3dcdb]/10">
-                                                                                    {ventaDetails[venta.id]?.map(det => (
-                                                                                        <tr key={det.id} className="hover:bg-[#f7faf9] transition-all">
-                                                                                            <td className="py-4 text-left uppercase text-[#366480]/70 tracking-tight">{det.material_insumo}</td>
-                                                                                            <td className="py-4 text-left tabular-nums">{Number(det.cantidad).toFixed(2)}</td>
-                                                                                            <td className="py-4 text-left text-[#2c3434]">S/ {formatCurrency(det.total)}</td>
-                                                                                        </tr>
-                                                                                    ))}
-                                                                                    {!ventaDetails[venta.id] && (
-                                                                                        <tr><td colSpan={3} className="py-10 text-center"><div className="flex flex-col items-center gap-3"><RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" /><span className="font-black text-[#366480]/20 uppercase tracking-widest text-[9px]">Consultando desglose...</span></div></td></tr>
-                                                                                    )}
-                                                                                </tbody>
-                                                                            </table>
+                                                                            {(() => {
+                                                                                const cotItems = ventaCotizacionItems[venta.id];
+                                                                                const fallbackItems = ventaDetails[venta.id];
+                                                                                const desgloseRows = cotItems || fallbackItems?.map(d => ({ descripcion: d.material_insumo, unidad: '', cantidad: d.cantidad, total: d.total }));
+                                                                                const subtotal = desgloseRows?.reduce((s, d) => s + d.total, 0) ?? 0;
+                                                                                const igv = subtotal * 0.18;
+                                                                                const grandTotal = subtotal + igv;
+                                                                                return (
+                                                                                    <table className="desglose-table w-full">
+                                                                                        <thead className="text-[#366480]/40 uppercase border-b border-[#d3dcdb]/10">
+                                                                                            <tr>
+                                                                                                <th className="pb-4 text-left">Componente / Recurso</th>
+                                                                                                <th className="pb-4 text-left">Cantidad</th>
+                                                                                                <th className="pb-4 text-left">Unidad</th>
+                                                                                                <th className="pb-4 text-left">Subtotal</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody className="divide-y divide-[#d3dcdb]/10">
+                                                                                            {desgloseRows?.map((det, idx) => (
+                                                                                                <tr key={idx} className="hover:bg-[#f7faf9] transition-all">
+                                                                                                    <td className="py-4 text-left uppercase text-[#366480]/70 tracking-tight">{det.descripcion}</td>
+                                                                                                    <td className="py-4 text-left tabular-nums">{Number(det.cantidad).toFixed(2)}</td>
+                                                                                                    <td className="py-4 text-left text-[#366480]/50 uppercase text-[11px] tracking-widest">{det.unidad}</td>
+                                                                                                    <td className="py-4 text-left text-[#2c3434]">S/ {formatCurrency(det.total)}</td>
+                                                                                                </tr>
+                                                                                            ))}
+                                                                                            {!ventaDetails[venta.id] && !cotItems && (
+                                                                                                <tr><td colSpan={4} className="py-10 text-center"><div className="flex flex-col items-center gap-3"><RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" /><span className="font-black text-[#366480]/20 uppercase tracking-widest text-[9px]">Consultando desglose...</span></div></td></tr>
+                                                                                            )}
+                                                                                            {desgloseRows && desgloseRows.length > 0 && (
+                                                                                                <>
+                                                                                                    <tr className="border-t-2 border-[#d3dcdb]/20">
+                                                                                                        <td colSpan={3} className="pt-4 pb-1 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">Subtotal</td>
+                                                                                                        <td className="pt-4 pb-1 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(subtotal)}</td>
+                                                                                                    </tr>
+                                                                                                    <tr>
+                                                                                                        <td colSpan={3} className="py-1 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">IGV (18%)</td>
+                                                                                                        <td className="py-1 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(igv)}</td>
+                                                                                                    </tr>
+                                                                                                    <tr className="border-t border-[#d3dcdb]/20">
+                                                                                                        <td colSpan={3} className="pt-3 text-right text-[11px] font-black text-[#2c3434] uppercase tracking-widest pr-4">Total</td>
+                                                                                                        <td className="pt-3 text-left text-[15px] font-black text-[#2c3434] tabular-nums">S/ {formatCurrency(grandTotal)}</td>
+                                                                                                    </tr>
+                                                                                                </>
+                                                                                            )}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                );
+                                                                            })()}
                                                                         </div>
                                                                     </div>
                                                                 </td>

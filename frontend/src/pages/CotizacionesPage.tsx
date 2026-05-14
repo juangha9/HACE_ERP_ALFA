@@ -200,8 +200,8 @@ const StatusBadge = ({ estado }: { estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO' })
             <CheckCircle2 className="w-3 h-3" /> Listo
         </span>
     ) : estado === 'ELIMINADO' ? (
-        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-400 text-[10px] font-black uppercase tracking-widest">
-            <Trash2 className="w-3 h-3" /> Eliminado
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-black uppercase tracking-widest">
+            <Trash2 className="w-3 h-3" /> Anulado
         </span>
     ) : (
         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">
@@ -756,6 +756,8 @@ export function CotizacionesPage() {
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const PAGE_SIZE = 20;
 
     // Item IDs whose unit was manually selected by the user — auto-detection
     // from description keywords (CANTO→MTS, SERVICIO→SERV) is suppressed for these.
@@ -811,6 +813,8 @@ export function CotizacionesPage() {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    useEffect(() => { setCurrentPage(1); }, [searchTerm, filterEstado, startDate, endDate]);
+
     const filtered = useMemo(() => {
         if (!searchTerm.trim()) return cotizaciones;
         const q = searchTerm.toLowerCase();
@@ -820,6 +824,12 @@ export function CotizacionesPage() {
             c.cliente_doi?.toLowerCase().includes(q)
         );
     }, [cotizaciones, searchTerm]);
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const paginated = useMemo(
+        () => filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+        [filtered, currentPage]
+    );
 
     // ── Quick date filter ─────────────────────────────────────────────────────
 
@@ -1195,71 +1205,121 @@ export function CotizacionesPage() {
                     </button>
                 </div>
 
-                {/* Cards grid */}
-                <div className="flex-1 overflow-y-auto p-8">
+                {/* Table view */}
+                <div className="flex-1 flex flex-col overflow-hidden">
                     {fetchError && (
-                        <div className="mb-6 flex items-start gap-3 px-5 py-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700">
+                        <div className="m-6 flex items-start gap-3 px-5 py-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700">
                             <span className="material-icons-round text-sm mt-0.5">error_outline</span>
                             <div>
                                 <p className="text-xs font-black uppercase tracking-widest mb-0.5">Error al cargar cotizaciones</p>
                                 <p className="text-xs font-medium">{fetchError}</p>
-                                <button onClick={fetchData} className="mt-2 text-xs font-black text-rose-600 underline underline-offset-2">
-                                    Reintentar
-                                </button>
+                                <button onClick={fetchData} className="mt-2 text-xs font-black text-rose-600 underline underline-offset-2">Reintentar</button>
                             </div>
                         </div>
                     )}
-                    {loading ? (
-                        <div className="flex items-center justify-center h-40">
-                            <div className="w-8 h-8 border-2 border-[#366480] border-t-transparent rounded-full animate-spin" />
-                        </div>
-                    ) : !fetchError && filtered.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-60 gap-4 text-[#8b9ba5]">
-                            <Receipt className="w-12 h-12 opacity-30" />
-                            <p className="text-[12px] font-bold uppercase tracking-widest">Sin cotizaciones</p>
-                            <button onClick={openNew} className="text-[11px] font-black text-[#366480] underline underline-offset-2">
-                                Crear la primera
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                            {filtered.map(c => (
-                                <div
-                                    key={c.id}
-                                    onClick={() => openEdit(c)}
-                                    className="bg-white/40 backdrop-blur-[16px] rounded-[28px] p-5 border border-white/50 shadow-[0_4px_20px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.10)] hover:-translate-y-0.5 cursor-pointer transition-all group"
-                                >
-                                    <div className="flex items-start justify-between mb-3">
-                                        <div>
-                                            <p className="text-[10px] font-black text-[#366480] uppercase tracking-widest">{c.codigo}</p>
-                                            <p className="text-[13px] font-black text-[#2c3434] mt-0.5 line-clamp-1">
-                                                {c.cliente_nombre || '—'}
-                                            </p>
-                                        </div>
-                                        <StatusBadge estado={c.estado} />
-                                    </div>
-                                    <p className="text-[10px] font-bold text-[#8b9ba5] mb-4">
-                                        {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
-                                    </p>
-                                    <div className="bg-[#f0f7fb] rounded-2xl px-4 py-2.5 mb-4">
-                                        <p className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Total</p>
-                                        <p className="text-[16px] font-black text-[#366480] tabular-nums">{fmtSol(c.total)}</p>
-                                    </div>
-                                    {c.estado === 'BORRADOR' && (
-                                        <div
-                                            className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={e => e.stopPropagation()}
+                    <div className="flex-1 overflow-y-auto">
+                        {loading ? (
+                            <div className="flex items-center justify-center h-40">
+                                <div className="w-8 h-8 border-2 border-[#366480] border-t-transparent rounded-full animate-spin" />
+                            </div>
+                        ) : !fetchError && filtered.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-60 gap-4 text-[#8b9ba5]">
+                                <Receipt className="w-12 h-12 opacity-30" />
+                                <p className="text-[12px] font-bold uppercase tracking-widest">Sin cotizaciones</p>
+                                <button onClick={openNew} className="text-[11px] font-black text-[#366480] underline underline-offset-2">Crear la primera</button>
+                            </div>
+                        ) : (
+                            <div className="mx-6 my-4 border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                                <table className="w-full text-left" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                                    <thead>
+                                        <tr className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 bg-slate-50 border-b border-slate-200">
+                                            <th className="px-5 py-4">ID De Cotización</th>
+                                            <th className="px-5 py-4">Cliente / Título</th>
+                                            <th className="px-5 py-4">Fecha</th>
+                                            <th className="px-5 py-4">Estado</th>
+                                            <th className="px-5 py-4 text-right">Total</th>
+                                            <th className="px-4 py-4 w-12"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {paginated.map(c => (
+                                            <tr key={c.id} className="hover:bg-slate-50/60 transition-colors">
+                                                <td className="px-5 py-4">
+                                                    <button
+                                                        onClick={() => openEdit(c)}
+                                                        className="text-[13px] font-black text-[#4A90E2] hover:text-[#366480] hover:underline underline-offset-2 transition-colors"
+                                                    >
+                                                        {c.codigo}
+                                                    </button>
+                                                </td>
+                                                <td className="px-5 py-4 text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
+                                                    {c.cliente_nombre || '—'}
+                                                </td>
+                                                <td className="px-5 py-4 text-[12px] font-medium text-slate-500">
+                                                    {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <StatusBadge estado={c.estado} />
+                                                </td>
+                                                <td className="px-5 py-4 text-right text-[13px] font-black text-[#2c3434] tabular-nums">
+                                                    {fmtSol(c.total)}
+                                                </td>
+                                                <td className="px-4 py-4 text-center">
+                                                    {c.estado === 'BORRADOR' && (
+                                                        <button
+                                                            onClick={() => setDeleteConfirmId(c.id)}
+                                                            className="w-7 h-7 flex items-center justify-center rounded-xl bg-slate-50 text-slate-300 hover:text-rose-400 hover:bg-rose-50 transition-all"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                    {!loading && !fetchError && filtered.length > 0 && (
+                        <div className="flex items-center justify-between px-8 py-4 border-t border-slate-100 bg-white/60 shrink-0">
+                            <span className="text-[11px] font-bold text-slate-400">
+                                Mostrando {paginated.length} de {filtered.length} registros
+                            </span>
+                            {totalPages > 1 && (
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                    >
+                                        <ChevronDown className="w-3.5 h-3.5 rotate-90" />
+                                    </button>
+                                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                        const start = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+                                        return start + i;
+                                    }).map(page => (
+                                        <button
+                                            key={page}
+                                            onClick={() => setCurrentPage(page)}
+                                            className={`w-8 h-8 rounded-lg text-[11px] font-black transition-all ${
+                                                currentPage === page
+                                                    ? 'bg-[#2c3434] text-white shadow-sm'
+                                                    : 'text-slate-500 hover:bg-slate-100'
+                                            }`}
                                         >
-                                            <button
-                                                onClick={() => setDeleteConfirmId(c.id)}
-                                                className="w-7 h-7 flex items-center justify-center rounded-xl bg-[#f8faf9] text-[#c5d0d4] hover:text-red-400 hover:bg-red-50 transition-all"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    )}
+                                            {page}
+                                        </button>
+                                    ))}
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-30 disabled:pointer-events-none transition-all"
+                                    >
+                                        <ChevronDown className="w-3.5 h-3.5 -rotate-90" />
+                                    </button>
                                 </div>
-                            ))}
+                            )}
                         </div>
                     )}
                 </div>

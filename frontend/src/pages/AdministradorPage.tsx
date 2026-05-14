@@ -14,7 +14,6 @@ import {
     LayoutGrid,
     Ruler,
     Wrench,
-    Plus,
     Calendar,
     RefreshCw,
     X,
@@ -25,6 +24,9 @@ import {
     Check,
     Users,
     AlertCircle,
+    UserPlus,
+    Phone,
+    Pencil,
 } from 'lucide-react';
 import {
     format,
@@ -64,14 +66,24 @@ interface CotizacionItemRow {
     } | null;
 }
 
+interface MaterialDetalle {
+    desc: string;
+    unidad: string;
+    qty: number;
+    total: number;
+}
+
 interface ServicioRecientePresentacion {
     id: string;
     codigo: string;
     cliente: string;
     material: string;
+    materialesDetalle: MaterialDetalle[];
     estado: string;
     monto: number;
     fecha: string;
+    estadoPago: string | null;
+    saldoPendiente: number | null;
 }
 
 type GroupingMode = 'DIARIO' | 'SEMANAL' | 'MENSUAL';
@@ -87,7 +99,9 @@ const formatNumber = (n: number, digits = 0) =>
 const ESTADO_BADGE: Record<string, string> = {
     LISTO: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     COMPLETADO: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    CANCELADO: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     BORRADOR: 'bg-amber-100 text-amber-700 border-amber-200',
+    PARCIAL: 'bg-amber-100 text-amber-700 border-amber-200',
     PENDIENTE: 'bg-rose-100 text-rose-700 border-rose-200',
     EN_PROCESO: 'bg-sky-100 text-sky-700 border-sky-200',
 };
@@ -144,12 +158,36 @@ export default function AdministradorPage() {
     const clientsDatePickerWrapRef = useRef<HTMLDivElement>(null);
     const [clientsDebtFilter, setClientsDebtFilter] = useState<'TODOS' | 'CON_DEUDA' | 'SIN_DEUDA'>('TODOS');
     const [ventasCabecera, setVentasCabecera] = useState<{ cliente_nombre: string; saldo_pendiente: number; estado_pago: string }[]>([]);
+    // Local input value (decoupled from filter state to avoid re-rendering chart on every keystroke)
+    const [clientsInputValue, setClientsInputValue] = useState('');
+    const clientsSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // New client sub-modal state
+    const [newClientOpen, setNewClientOpen] = useState(false);
+    const [newClientClosing, setNewClientClosing] = useState(false);
+    const [newClientData, setNewClientData] = useState<{ name: string; type: 'CLIENT' | 'SUPPLIER' | 'BOTH'; tax_id: string; phone: string }>({ name: '', type: 'CLIENT', tax_id: '', phone: '' });
+    const [newClientSaving, setNewClientSaving] = useState(false);
+    const [newClientError, setNewClientError] = useState<string | null>(null);
+    const [newClientSuccess, setNewClientSuccess] = useState(false);
+    const [newClientIsEdit, setNewClientIsEdit] = useState(false);
+    const [newClientEditId, setNewClientEditId] = useState<string | null>(null);
+    // Contacts cache for edit-in-place (type = CLIENT)
+    const [clientContacts, setClientContacts] = useState<{ id: string; name: string; type: string; tax_id: string | null; phone: string | null }[]>([]);
+    const [editClientListOpen, setEditClientListOpen] = useState(false);
+    const [editClientListClosing, setEditClientListClosing] = useState(false);
+    const [editClientSearch, setEditClientSearch] = useState('');
+
+    // Payment info from ventas_cabecera for the dashboard (KPIs, últimos servicios, history filter)
+    const [ventasParaDashboard, setVentasParaDashboard] = useState<{ codigo_cotizacion: string | null; saldo_pendiente: number; estado_pago: string }[]>([]);
+
+    // Tooltip for Material column in Últimos Servicios (portal-based to avoid overflow clipping)
+    const [matTooltip, setMatTooltip] = useState<{ x: number; y: number; items: MaterialDetalle[] } | null>(null);
+    const matTooltipLeaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // History modal state
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyClosing, setHistoryClosing] = useState(false);
     const [historySearch, setHistorySearch] = useState('');
-    const [historyEstado, setHistoryEstado] = useState<'TODOS' | 'LISTO' | 'BORRADOR'>('TODOS');
+    const [historyEstado, setHistoryEstado] = useState<'TODOS' | 'PENDIENTE' | 'PARCIAL' | 'CANCELADO'>('TODOS');
     const [historyQuickFilter, setHistoryQuickFilter] = useState<'ULTIMOS_7' | 'ULTIMOS_30' | 'MES_ACTUAL' | 'PERSONALIZADO'>('ULTIMOS_30');
     const [historyStart, setHistoryStart] = useState(format(subDays(today, 30), 'yyyy-MM-dd'));
     const [historyEnd, setHistoryEnd] = useState(format(today, 'yyyy-MM-dd'));
@@ -169,19 +207,25 @@ export default function AdministradorPage() {
             const minStart = ranges.reduce((acc, r) => (r.start < acc ? r.start : acc), ranges[0].start);
             const maxEnd = ranges.reduce((acc, r) => (r.end > acc ? r.end : acc), ranges[0].end);
 
-            const { data, error } = await supabase
-                .from('cotizaciones_items')
-                .select(
-                    'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                        'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total)'
-                )
-                .neq('cotizaciones.estado', 'ELIMINADO')
-                .gte('cotizaciones.fecha_emision', minStart)
-                .lte('cotizaciones.fecha_emision', maxEnd)
-                .order('created_at', { ascending: false });
+            const [itemsRes, ventasDashRes] = await Promise.all([
+                supabase
+                    .from('cotizaciones_items')
+                    .select(
+                        'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
+                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total)'
+                    )
+                    .neq('cotizaciones.estado', 'ELIMINADO')
+                    .gte('cotizaciones.fecha_emision', minStart)
+                    .lte('cotizaciones.fecha_emision', maxEnd)
+                    .order('created_at', { ascending: false }),
+                supabase
+                    .from('ventas_cabecera')
+                    .select('codigo_cotizacion,saldo_pendiente,estado_pago'),
+            ]);
 
-            if (error) throw error;
-            setItems(((data ?? []) as unknown) as CotizacionItemRow[]);
+            if (itemsRes.error) throw itemsRes.error;
+            setItems(((itemsRes.data ?? []) as unknown) as CotizacionItemRow[]);
+            if (ventasDashRes.data) setVentasParaDashboard(ventasDashRes.data as any);
         } catch (e: any) {
             console.error(e);
             setFetchError(e?.message || 'Error desconocido al cargar datos');
@@ -193,6 +237,26 @@ export default function AdministradorPage() {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    // Real-time: reload when cotizaciones or ventas_cabecera change
+    const fetchDataRef = useRef(fetchData);
+    useEffect(() => { fetchDataRef.current = fetchData; }, [fetchData]);
+    useEffect(() => {
+        const debounce = { t: null as ReturnType<typeof setTimeout> | null };
+        const triggerReload = () => {
+            if (debounce.t) clearTimeout(debounce.t);
+            debounce.t = setTimeout(() => fetchDataRef.current(), 800);
+        };
+        const channel = supabase
+            .channel('admin-dashboard-realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'cotizaciones' }, triggerReload)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas_cabecera' }, triggerReload)
+            .subscribe();
+        return () => {
+            if (debounce.t) clearTimeout(debounce.t);
+            supabase.removeChannel(channel);
+        };
+    }, []);
 
     // ── Click-away for date pickers / menus ─────────────────────────────────
     useEffect(() => {
@@ -215,6 +279,17 @@ export default function AdministradorPage() {
         document.addEventListener('mousedown', onClick);
         return () => document.removeEventListener('mousedown', onClick);
     }, []);
+
+    // Debounce search to avoid triggering heavy re-renders on every keystroke
+    useEffect(() => {
+        if (clientsSearchDebounceRef.current) clearTimeout(clientsSearchDebounceRef.current);
+        clientsSearchDebounceRef.current = setTimeout(() => {
+            setClientsSearch(clientsInputValue);
+        }, 300);
+        return () => {
+            if (clientsSearchDebounceRef.current) clearTimeout(clientsSearchDebounceRef.current);
+        };
+    }, [clientsInputValue]);
 
     // ── Slice items by range ────────────────────────────────────────────────
     const sliceByRange = useCallback(
@@ -352,26 +427,43 @@ export default function AdministradorPage() {
 
     // ── Últimos servicios (last 4 cotizaciones with at least one item) ──────
     const ultimosServicios: ServicioRecientePresentacion[] = useMemo(() => {
-        const grouped = new Map<string, ServicioRecientePresentacion>();
+        // Group all items by cotización first
+        const grouped = new Map<string, { cot: NonNullable<CotizacionItemRow['cotizaciones']>; items: CotizacionItemRow[] }>();
         for (const it of currentRangeItems) {
             const c = it.cotizaciones;
             if (!c) continue;
-            if (!grouped.has(c.id)) {
-                grouped.set(c.id, {
-                    id: c.id,
-                    codigo: c.codigo,
-                    cliente: c.cliente_nombre || '—',
-                    material: it.descripcion || '—',
-                    estado: friendlyEstado(c.estado),
-                    monto: Number(c.total) || 0,
-                    fecha: c.fecha_emision,
-                });
-            }
+            const entry = grouped.get(c.id);
+            if (entry) entry.items.push(it);
+            else grouped.set(c.id, { cot: c, items: [it] });
         }
-        return Array.from(grouped.values())
-            .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
-            .slice(0, 4);
-    }, [currentRangeItems]);
+        const result: ServicioRecientePresentacion[] = [];
+        for (const [, { cot, items }] of grouped) {
+            const ventaEntry = ventasParaDashboard.find(v => v.codigo_cotizacion === cot.codigo);
+            // Pick item with highest monetary total as the display material
+            let topItem = items[0];
+            for (const it of items) {
+                if ((Number(it.total) || 0) > (Number(topItem?.total) || 0)) topItem = it;
+            }
+            result.push({
+                id: cot.id,
+                codigo: cot.codigo,
+                cliente: cot.cliente_nombre || '—',
+                material: topItem?.descripcion || '—',
+                materialesDetalle: items.map(it => ({
+                    desc: it.descripcion || '—',
+                    unidad: it.unidad || '',
+                    qty: Number(it.cantidad) || 0,
+                    total: Number(it.total) || 0,
+                })),
+                estado: friendlyEstado(cot.estado),
+                monto: Number(cot.total) || 0,
+                fecha: cot.fecha_emision,
+                estadoPago: ventaEntry?.estado_pago ?? null,
+                saldoPendiente: ventaEntry ? Number(ventaEntry.saldo_pendiente) : null,
+            });
+        }
+        return result.sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 5);
+    }, [currentRangeItems, ventasParaDashboard]);
 
     const formatRangeLabel = (s: string, e: string) =>
         `${format(parseISO(s), 'dd MMM, yyyy', { locale: es })} — ${format(
@@ -464,6 +556,74 @@ export default function AdministradorPage() {
         }, 220);
     };
 
+    const openNewClient = (prefillName?: string) => {
+        setNewClientData({ name: prefillName || '', type: 'CLIENT', tax_id: '', phone: '' });
+        setNewClientError(null);
+        setNewClientSuccess(false);
+        setNewClientIsEdit(false);
+        setNewClientEditId(null);
+        setNewClientOpen(true);
+        setNewClientClosing(false);
+    };
+
+    const openEditClient = (contact: { id: string; name: string; type: string; tax_id: string | null; phone: string | null }) => {
+        setNewClientData({
+            name: contact.name,
+            type: contact.type as 'CLIENT' | 'SUPPLIER' | 'BOTH',
+            tax_id: contact.tax_id ?? '',
+            phone: contact.phone ?? '',
+        });
+        setNewClientError(null);
+        setNewClientSuccess(false);
+        setNewClientIsEdit(true);
+        setNewClientEditId(contact.id);
+        setNewClientOpen(true);
+        setNewClientClosing(false);
+    };
+    const closeNewClient = () => {
+        setNewClientClosing(true);
+        window.setTimeout(() => {
+            setNewClientOpen(false);
+            setNewClientClosing(false);
+        }, 220);
+    };
+    const saveNewClient = async () => {
+        if (!newClientData.name.trim()) {
+            setNewClientError('El nombre es requerido');
+            return;
+        }
+        setNewClientSaving(true);
+        setNewClientError(null);
+        try {
+            const payload = {
+                name: newClientData.name.trim(),
+                type: newClientData.type,
+                tax_id: newClientData.tax_id.trim() || null,
+                phone: newClientData.phone.trim() || null,
+            };
+            const { error } = newClientIsEdit && newClientEditId
+                ? await supabase.from('contacts').update(payload).eq('id', newClientEditId)
+                : await supabase.from('contacts').insert(payload);
+            if (error) {
+                if (error.code === '23505' || error.message?.includes('contacts_tax_id_key')) {
+                    setNewClientError('El DNI / RUC ingresado ya está registrado en el sistema.');
+                } else {
+                    setNewClientError(error.message || 'Error al guardar');
+                }
+                return;
+            }
+            // Refresh contacts cache so pencil stays in sync
+            const refreshed = await supabase.from('contacts').select('id,name,type,tax_id,phone').eq('type', 'CLIENT');
+            if (refreshed.data) setClientContacts(refreshed.data as any);
+            setNewClientSuccess(true);
+            window.setTimeout(() => closeNewClient(), 2000);
+        } catch (e: any) {
+            setNewClientError(e?.message || 'Error al guardar');
+        } finally {
+            setNewClientSaving(false);
+        }
+    };
+
     const applyClientsQuickFilter = (val: typeof clientsQuickFilter) => {
         setClientsQuickFilter(val);
         const n = new Date();
@@ -523,6 +683,14 @@ export default function AdministradorPage() {
                 }
                 if (ventasRes.data) {
                     setVentasCabecera(ventasRes.data as any);
+                }
+                // Also load contacts of type CLIENT for the edit pencil
+                const contactsRes = await supabase
+                    .from('contacts')
+                    .select('id,name,type,tax_id,phone')
+                    .eq('type', 'CLIENT');
+                if (!cancelled && contactsRes.data) {
+                    setClientContacts(contactsRes.data as any);
                 }
             } catch {
                 /* ignore */
@@ -644,7 +812,10 @@ export default function AdministradorPage() {
         for (const it of inRange) {
             const c = it.cotizaciones;
             if (!c) continue;
-            if (historyEstado !== 'TODOS' && c.estado !== historyEstado) continue;
+            if (historyEstado !== 'TODOS') {
+                const ventaEntry = ventasParaDashboard.find(v => v.codigo_cotizacion === c.codigo);
+                if (!ventaEntry || ventaEntry.estado_pago !== historyEstado) continue;
+            }
             if (historySearch.trim()) {
                 const q = historySearch.toLowerCase();
                 if (
@@ -661,7 +832,7 @@ export default function AdministradorPage() {
         return Array.from(grouped.values()).sort((a, b) =>
             a.cot.fecha_emision < b.cot.fecha_emision ? 1 : -1
         );
-    }, [items, historyStart, historyEnd, historyEstado, historySearch]);
+    }, [items, historyStart, historyEnd, historyEstado, historySearch, ventasParaDashboard]);
 
     // Make sure the underlying fetch covers the history range too
     useEffect(() => {
@@ -949,83 +1120,7 @@ export default function AdministradorPage() {
                 </div>
 
                 <div className="w-full h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                            data={chartData}
-                            margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-                        >
-                            <CartesianGrid
-                                stroke="#f1f5f9"
-                                vertical={false}
-                                strokeDasharray="0"
-                            />
-                            <XAxis
-                                dataKey="label"
-                                tick={{
-                                    fill: '#94a3b8',
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    fontFamily: 'Manrope',
-                                }}
-                                axisLine={false}
-                                tickLine={false}
-                            />
-                            <YAxis
-                                tick={{
-                                    fill: '#94a3b8',
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    fontFamily: 'Manrope',
-                                }}
-                                axisLine={false}
-                                tickLine={false}
-                                width={40}
-                            />
-                            <Tooltip
-                                contentStyle={{
-                                    background: '#0f172a',
-                                    border: 'none',
-                                    borderRadius: 12,
-                                    fontFamily: 'Manrope',
-                                    fontWeight: 700,
-                                    color: '#fff',
-                                }}
-                                labelStyle={{ color: '#94a3b8', fontWeight: 700 }}
-                                itemStyle={{ color: '#fff', fontWeight: 800 }}
-                            />
-                            <Legend
-                                iconType="circle"
-                                wrapperStyle={{
-                                    fontFamily: 'Manrope',
-                                    fontWeight: 800,
-                                    fontSize: 11,
-                                    color: '#64748b',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.1em',
-                                }}
-                            />
-                            {compareEnabled && (
-                                <Line
-                                    type="monotone"
-                                    dataKey="proyectado"
-                                    name="Comparación"
-                                    stroke="#bae6fd"
-                                    strokeWidth={3}
-                                    dot={false}
-                                    activeDot={{ r: 5 }}
-                                />
-                            )}
-                            <Line
-                                type="monotone"
-                                dataKey="real"
-                                name="Periodo Actual"
-                                stroke="#0f172a"
-                                strokeWidth={3}
-                                dot={false}
-                                activeDot={{ r: 5 }}
-                            />
-                        </LineChart>
-                    </ResponsiveContainer>
+                    <AdministratorChart chartData={chartData} compareEnabled={compareEnabled} />
                 </div>
             </div>
 
@@ -1049,7 +1144,7 @@ export default function AdministradorPage() {
                                 <th className="px-7 py-4">ID Servicio</th>
                                 <th className="px-7 py-4">Cliente</th>
                                 <th className="px-7 py-4">Material</th>
-                                <th className="px-7 py-4">Estado</th>
+                                <th className="px-7 py-4">Balance de Pago</th>
                                 <th className="px-7 py-4 text-right">Monto</th>
                             </tr>
                         </thead>
@@ -1075,18 +1170,47 @@ export default function AdministradorPage() {
                                         <td className="px-7 py-5 text-[13px] font-black text-slate-700">
                                             {s.cliente}
                                         </td>
-                                        <td className="px-7 py-5 text-[12px] font-bold text-slate-500">
-                                            {s.material}
+                                        <td
+                                            className="px-7 py-5"
+                                            onMouseEnter={e => {
+                                                if (matTooltipLeaveRef.current) clearTimeout(matTooltipLeaveRef.current);
+                                                if (s.materialesDetalle.length === 0) return;
+                                                const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                                const tooltipH = Math.min(s.materialesDetalle.length * 28 + 40, 300);
+                                                const spaceBelow = window.innerHeight - r.bottom;
+                                                const x = Math.min(r.left, window.innerWidth - 250);
+                                                const y = spaceBelow < tooltipH + 12 ? r.top - tooltipH - 6 : r.bottom + 6;
+                                                setMatTooltip({ x, y, items: s.materialesDetalle });
+                                            }}
+                                            onMouseLeave={() => {
+                                                matTooltipLeaveRef.current = setTimeout(() => setMatTooltip(null), 120);
+                                            }}
+                                        >
+                                            <span className="text-[12px] font-bold text-slate-500 cursor-default underline decoration-dashed decoration-slate-300 underline-offset-2">
+                                                {s.material}
+                                            </span>
                                         </td>
                                         <td className="px-7 py-5">
-                                            <span
-                                                className={`px-3 py-1 text-[9px] font-black rounded-full border tracking-widest uppercase ${
-                                                    ESTADO_BADGE[s.estado] ||
-                                                    'bg-slate-100 text-slate-500 border-slate-200'
-                                                }`}
-                                            >
-                                                {s.estado}
-                                            </span>
+                                            {s.estadoPago ? (
+                                                <div className="flex items-center gap-3">
+                                                    <span className={`px-3 py-1 text-[9px] font-black rounded-full border tracking-widest uppercase ${
+                                                        s.estadoPago === 'CANCELADO'
+                                                            ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]'
+                                                            : 'bg-amber-50 text-amber-700 border-amber-100'
+                                                    }`}>
+                                                        {s.estadoPago}
+                                                    </span>
+                                                    {s.saldoPendiente !== null && s.saldoPendiente > 0 && (
+                                                        <span className="text-[11px] font-black text-[#366480]/60 tabular-nums">
+                                                            S/ {formatNumber(s.saldoPendiente, 2)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="px-3 py-1 text-[9px] font-black rounded-full border tracking-widest uppercase bg-slate-100 text-slate-400 border-slate-200">
+                                                    {s.estado}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-7 py-5 text-right text-[13px] font-black text-slate-900 tabular-nums">
                                             S/ {formatNumber(s.monto, 2)}
@@ -1099,13 +1223,26 @@ export default function AdministradorPage() {
                 </div>
             </div>
 
-            {/* Floating action button (matches reference image) */}
-            <button
-                className="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-slate-900 text-white flex items-center justify-center shadow-2xl hover:scale-105 transition-transform"
-                title="Acción rápida"
-            >
-                <Plus className="w-6 h-6" />
-            </button>
+            {/* Material tooltip portal */}
+            {matTooltip && createPortal(
+                <div
+                    style={{ position: 'fixed', left: matTooltip.x, top: matTooltip.y, zIndex: 9999, fontFamily: "'Manrope', sans-serif", minWidth: '200px', maxWidth: '245px' }}
+                    onMouseEnter={() => { if (matTooltipLeaveRef.current) clearTimeout(matTooltipLeaveRef.current); }}
+                    onMouseLeave={() => setMatTooltip(null)}
+                    className="bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] p-3"
+                >
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Items del servicio</p>
+                    <div className="space-y-1.5">
+                        {matTooltip.items.map((m, i) => (
+                            <div key={i} className="flex items-start justify-between gap-2">
+                                <span className="text-[10px] font-semibold text-slate-700 uppercase leading-tight">{m.desc}</span>
+                                <span className="text-[10px] text-slate-500 whitespace-nowrap tabular-nums shrink-0">{m.qty % 1 === 0 ? m.qty : m.qty.toFixed(2)} {m.unidad} · S/{formatNumber(m.total, 2)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* HISTORY MODAL */}
             {historyOpen && createPortal(
@@ -1160,8 +1297,9 @@ export default function AdministradorPage() {
                                     className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
                                 >
                                     <option value="TODOS">Todos</option>
-                                    <option value="LISTO">Completado</option>
-                                    <option value="BORRADOR">Pendiente</option>
+                                    <option value="PENDIENTE">Pendiente</option>
+                                    <option value="PARCIAL">Parcial</option>
+                                    <option value="CANCELADO">Cancelado</option>
                                 </select>
                                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
                             </div>
@@ -1193,6 +1331,7 @@ export default function AdministradorPage() {
                                         startDate={historyStart}
                                         endDate={historyEnd}
                                         align="right"
+                                        triggerRef={historyDatePickerWrapRef}
                                         onApply={(s, e) => {
                                             setHistoryStart(s);
                                             setHistoryEnd(e);
@@ -1228,26 +1367,29 @@ export default function AdministradorPage() {
                                             >
                                                 <div className="flex items-center gap-6 min-w-0">
                                                     <div className="flex flex-col">
-                                                        <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
+                                                        <span className="text-[13px] font-bold text-[#2c3434] uppercase tracking-tight">
                                                             #{cot.codigo}
                                                         </span>
-                                                        <span className="text-[10px] font-bold text-[#366480]/50 uppercase tracking-widest mt-0.5">
+                                                        <span className="text-[10px] font-medium text-[#366480]/50 uppercase tracking-widest mt-0.5">
                                                             {format(parseISO(cot.fecha_emision), "dd MMM, yyyy", { locale: es })}
                                                         </span>
                                                     </div>
                                                     <div className="w-px h-10 bg-[#d3dcdb]/30 hidden sm:block" />
-                                                    <p className="text-[13px] font-black text-[#366480] uppercase tracking-tight truncate">
+                                                    <p className="text-[13px] font-semibold text-[#366480] uppercase tracking-tight truncate">
                                                         {cot.cliente_nombre || '—'}
                                                     </p>
                                                 </div>
                                                 <div className="flex items-center gap-4 flex-shrink-0">
-                                                    <span className={`px-4 py-1.5 text-[10px] font-black rounded-full border tracking-widest uppercase ${
-                                                        ESTADO_BADGE[friendlyEstado(cot.estado)] ||
-                                                        'bg-slate-100 text-slate-500 border-slate-200'
-                                                    }`}>
-                                                        {friendlyEstado(cot.estado)}
-                                                    </span>
-                                                    <span className="text-[14px] font-black text-[#2c3434] tabular-nums">
+                                                    {(() => {
+                                                        const ve = ventasParaDashboard.find(v => v.codigo_cotizacion === cot.codigo);
+                                                        const ds = ve?.estado_pago || (cot.estado === 'BORRADOR' ? 'BORRADOR' : 'LISTO');
+                                                        return (
+                                                            <span className={`px-4 py-1.5 text-[10px] font-bold rounded-full border tracking-widest uppercase ${ESTADO_BADGE[ds] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                                                {ds}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                    <span className="text-[14px] font-bold text-[#2c3434] tabular-nums">
                                                         S/ {formatNumber(Number(cot.total) || 0, 2)}
                                                     </span>
                                                     {isExpanded ? <ChevronUp className="w-4 h-4 text-[#4A90E2]" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
@@ -1256,35 +1398,56 @@ export default function AdministradorPage() {
                                             {isExpanded && (
                                                 <div className="px-7 pb-6 animate-desglose">
                                                     <div className="bg-[#f7faf9]/40 border border-[#d3dcdb]/20 rounded-[20px] p-6">
-                                                        <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] mb-5 border-b border-[#d3dcdb]/20 pb-3 italic">
+                                                        <p className="text-[10px] font-semibold text-[#366480]/40 uppercase tracking-[0.2em] mb-5 border-b border-[#d3dcdb]/20 pb-3 italic">
                                                             Desglose Técnico del Proyecto
                                                         </p>
                                                         <table className="w-full text-[12px]">
                                                             <thead className="text-[#366480]/40 uppercase border-b border-[#d3dcdb]/10">
                                                                 <tr className="text-[10px] tracking-[0.2em]">
-                                                                    <th className="pb-3 text-left font-black">Componente / Recurso</th>
-                                                                    <th className="pb-3 text-left font-black">Unidad</th>
-                                                                    <th className="pb-3 text-left font-black">Cantidad</th>
-                                                                    <th className="pb-3 text-right font-black">Subtotal</th>
+                                                                    <th className="pb-3 text-left font-semibold">Componente / Recurso</th>
+                                                                    <th className="pb-3 text-left font-semibold">Unidad</th>
+                                                                    <th className="pb-3 text-left font-semibold">Cantidad</th>
+                                                                    <th className="pb-3 text-right font-semibold">Subtotal</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-[#d3dcdb]/10">
                                                                 {rows.map((r, idx) => (
                                                                     <tr key={`${cot.id}-${idx}`} className="hover:bg-white/60 transition-colors">
-                                                                        <td className="py-3 text-left uppercase text-[#366480]/80 font-black tracking-tight">
+                                                                        <td className="py-3 text-left uppercase text-[#366480]/80 font-semibold tracking-tight">
                                                                             {r.descripcion || '—'}
                                                                         </td>
-                                                                        <td className="py-3 text-left text-[#366480]/60 font-bold uppercase tracking-widest text-[10px]">
+                                                                        <td className="py-3 text-left text-[#366480]/60 font-medium uppercase tracking-widest text-[10px]">
                                                                             {r.unidad}
                                                                         </td>
-                                                                        <td className="py-3 text-left tabular-nums font-black text-[#2c3434]">
+                                                                        <td className="py-3 text-left tabular-nums font-semibold text-[#2c3434]">
                                                                             {Number(r.cantidad).toFixed(2)}
                                                                         </td>
-                                                                        <td className="py-3 text-right text-[#2c3434] font-black tabular-nums">
+                                                                        <td className="py-3 text-right text-[#2c3434] font-bold tabular-nums">
                                                                             S/ {formatNumber(Number(r.total) || 0, 2)}
                                                                         </td>
                                                                     </tr>
                                                                 ))}
+                                                                {(() => {
+                                                                    const subtotal = rows.reduce((s, r) => s + (Number(r.total) || 0), 0);
+                                                                    const igv = subtotal * 0.18;
+                                                                    const grandTotal = subtotal + igv;
+                                                                    return (
+                                                                        <>
+                                                                            <tr className="border-t-2 border-[#d3dcdb]/20">
+                                                                                <td colSpan={3} className="pt-4 pb-1 text-right text-[10px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">Subtotal</td>
+                                                                                <td className="pt-4 pb-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(subtotal, 2)}</td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <td colSpan={3} className="py-1 text-right text-[10px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">IGV (18%)</td>
+                                                                                <td className="py-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(igv, 2)}</td>
+                                                                            </tr>
+                                                                            <tr className="border-t border-[#d3dcdb]/20">
+                                                                                <td colSpan={3} className="pt-3 text-right text-[11px] font-bold text-[#2c3434] uppercase tracking-widest pr-3">Total</td>
+                                                                                <td className="pt-3 text-right text-[14px] font-extrabold text-[#2c3434] tabular-nums">S/ {formatNumber(grandTotal, 2)}</td>
+                                                                            </tr>
+                                                                        </>
+                                                                    );
+                                                                })()}
                                                             </tbody>
                                                         </table>
                                                     </div>
@@ -1324,12 +1487,28 @@ export default function AdministradorPage() {
                                     </p>
                                 </div>
                             </div>
-                            <button
-                                onClick={closeClients}
-                                className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all"
-                            >
-                                <X className="w-6 h-6" />
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => { setEditClientSearch(''); setEditClientListOpen(true); setEditClientListClosing(false); }}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    <span>Editar</span>
+                                </button>
+                                <button
+                                    onClick={openNewClient}
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all"
+                                >
+                                    <UserPlus className="w-3.5 h-3.5" />
+                                    <span>Registrar</span>
+                                </button>
+                                <button
+                                    onClick={closeClients}
+                                    className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Filter bar */}
@@ -1338,8 +1517,8 @@ export default function AdministradorPage() {
                                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8b9ba5]" />
                                 <input
                                     type="text"
-                                    value={clientsSearch}
-                                    onChange={e => setClientsSearch(e.target.value)}
+                                    value={clientsInputValue}
+                                    onChange={e => setClientsInputValue(e.target.value)}
                                     placeholder="Buscar cliente..."
                                     className="w-full pl-12 pr-6 py-3 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#8b9ba5]"
                                 />
@@ -1430,8 +1609,9 @@ export default function AdministradorPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
-                                        {clientsRows.map(row => (
-                                            <tr key={row.cliente} className="hover:bg-slate-50/40 transition-colors">
+                                        {clientsRows.map(row => {
+                                            return (
+                                            <tr key={row.cliente} className="hover:bg-slate-50/40 transition-colors group">
                                                 <td className="px-7 py-4">
                                                     <div className="flex flex-col">
                                                         <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
@@ -1464,10 +1644,208 @@ export default function AdministradorPage() {
                                                     )}
                                                 </td>
                                             </tr>
-                                        ))}
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+            {/* EDIT CLIENT LIST SUB-MODAL */}
+            {editClientListOpen && createPortal(
+                <div
+                    className={`fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-[#2c3434]/30 ${editClientListClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+                    style={{ backdropFilter: 'blur(8px)', fontFamily: "'Manrope', sans-serif" }}
+                    onClick={() => { setEditClientListClosing(true); window.setTimeout(() => { setEditClientListOpen(false); setEditClientListClosing(false); }, 220); }}
+                >
+                    <div
+                        className={`bg-white/97 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-lg border border-white/60 relative overflow-hidden flex flex-col max-h-[80vh] ${editClientListClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10" />
+                        <div className="px-7 pt-7 pb-5 flex items-center justify-between border-b border-[#d3dcdb]/30">
+                            <div>
+                                <h2 className="text-[16px] font-black text-[#2c3434] tracking-tight">Editar Cliente</h2>
+                                <p className="text-[10px] font-bold text-slate-400 mt-0.5 tracking-wide">Selecciona un cliente registrado para editar sus datos</p>
+                            </div>
+                            <button
+                                onClick={() => { setEditClientListClosing(true); window.setTimeout(() => { setEditClientListOpen(false); setEditClientListClosing(false); }, 220); }}
+                                className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="px-7 py-4 border-b border-[#f0f5f4]">
+                            <div className="relative">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8b9ba5]" />
+                                <input
+                                    type="text"
+                                    value={editClientSearch}
+                                    onChange={e => setEditClientSearch(e.target.value)}
+                                    placeholder="Buscar cliente..."
+                                    className="w-full pl-10 pr-5 py-2.5 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none placeholder:text-[#8b9ba5]"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            {clientContacts.filter(c => !editClientSearch.trim() || c.name.toLowerCase().includes(editClientSearch.toLowerCase())).length === 0 ? (
+                                <div className="py-16 text-center">
+                                    <p className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">Sin clientes registrados</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-slate-50">
+                                    {clientContacts
+                                        .filter(c => !editClientSearch.trim() || c.name.toLowerCase().includes(editClientSearch.toLowerCase()))
+                                        .map(contact => (
+                                            <div key={contact.id} className="flex items-center justify-between px-7 py-4 hover:bg-slate-50/50 transition-colors">
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight truncate">{contact.name}</span>
+                                                    {contact.tax_id && (
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">RUC/DNI: {contact.tax_id}</span>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        setEditClientListOpen(false);
+                                                        setEditClientListClosing(false);
+                                                        openEditClient(contact);
+                                                    }}
+                                                    title="Editar datos del cliente"
+                                                    className="w-8 h-8 rounded-full bg-slate-100 hover:bg-[#e8f0fe] hover:text-[#4A90E2] text-slate-400 flex items-center justify-center transition-all flex-shrink-0 ml-4"
+                                                >
+                                                    <Pencil className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+            {/* NEW CLIENT SUB-MODAL */}
+            {newClientOpen && createPortal(
+                <div
+                    className={`fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-[#2c3434]/30 ${newClientClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+                    style={{ backdropFilter: 'blur(8px)', fontFamily: "'Manrope', sans-serif" }}
+                >
+                    <div
+                        className={`bg-white/97 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-md border border-white/60 relative overflow-hidden ${newClientClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}
+                    >
+                        <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10" />
+                        {/* Header */}
+                        <div className="px-8 pt-8 pb-6">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <h2 className="text-[18px] font-black text-[#2c3434] tracking-tight leading-snug">
+                                        {newClientIsEdit ? 'Editar Cliente / Empresa' : 'Registrar Nuevo Cliente / Empresa'}
+                                    </h2>
+                                    <p className="text-[11px] font-bold text-slate-400 mt-1.5 tracking-wide leading-relaxed">
+                                        {newClientIsEdit
+                                            ? 'Modifica los datos fiscales o de contacto del registro.'
+                                            : 'Ingrese los datos fiscales y de contacto para dar de alta en el sistema.'}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={closeNewClient}
+                                    className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all flex-shrink-0 ml-4 mt-0.5"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                        {/* Form */}
+                        <div className="px-8 pb-8 flex flex-col gap-5">
+                            {/* Nombre */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">
+                                    Nombre / Razón Social
+                                </label>
+                                <input
+                                    type="text"
+                                    value={newClientData.name}
+                                    onChange={e => setNewClientData(d => ({ ...d, name: e.target.value }))}
+                                    placeholder="Ej: Corporación Industrial S.A."
+                                    className="w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
+                                />
+                            </div>
+                            {/* Tipo + DNI/RUC */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Tipo</label>
+                                    <div className="relative">
+                                        <select
+                                            value={newClientData.type}
+                                            onChange={e => setNewClientData(d => ({ ...d, type: e.target.value as 'CLIENT' | 'SUPPLIER' | 'BOTH' }))}
+                                            className="appearance-none w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none cursor-pointer transition-all focus:border-[#4A90E2]/40 focus:bg-white pr-10"
+                                        >
+                                            <option value="CLIENT">Cliente</option>
+                                            <option value="SUPPLIER">Proveedor</option>
+                                            <option value="BOTH">Ambos</option>
+                                        </select>
+                                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#366480] pointer-events-none" />
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">DNI / RUC</label>
+                                    <input
+                                        type="text"
+                                        value={newClientData.tax_id}
+                                        onChange={e => setNewClientData(d => ({ ...d, tax_id: e.target.value }))}
+                                        placeholder="20XXXXXXXXX"
+                                        className="w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
+                                    />
+                                </div>
+                            </div>
+                            {/* Teléfono */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Teléfono</label>
+                                <div className="relative">
+                                    <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#b0bec5] pointer-events-none" />
+                                    <input
+                                        type="tel"
+                                        value={newClientData.phone}
+                                        onChange={e => setNewClientData(d => ({ ...d, phone: e.target.value }))}
+                                        placeholder="+51 900 000.000"
+                                        className="w-full px-5 pr-12 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
+                                    />
+                                </div>
+                            </div>
+                            {/* Feedback banners */}
+                            {newClientSuccess && (
+                                <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-2xl">
+                                    <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                                    <p className="text-[11px] font-bold text-emerald-700">
+                                        {newClientIsEdit ? 'Datos actualizados con éxito. Cerrando…' : 'Cliente registrado con éxito. Cerrando…'}
+                                    </p>
+                                </div>
+                            )}
+                            {newClientError && !newClientSuccess && (
+                                <p className="text-[11px] font-bold text-rose-500 bg-rose-50 px-4 py-3 rounded-2xl border border-rose-100">
+                                    {newClientError}
+                                </p>
+                            )}
+                            {/* Actions */}
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    onClick={closeNewClient}
+                                    className="px-6 py-3 text-[10px] font-black text-slate-500 hover:text-slate-700 transition-all uppercase tracking-widest"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={saveNewClient}
+                                    disabled={newClientSaving || newClientSuccess}
+                                    className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all disabled:opacity-60"
+                                >
+                                    <Check className="w-3.5 h-3.5" />
+                                    {newClientSaving ? 'Guardando...' : newClientIsEdit ? 'Guardar Cambios' : 'Guardar Registro'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>,
@@ -1510,3 +1888,62 @@ const KpiCard: React.FC<KpiCardProps> = ({ label, value, helper, icon, accent })
         </div>
     );
 };
+
+// ─── Memoized chart (insulated from unrelated parent state changes) ───────────
+
+interface AdministratorChartProps {
+    chartData: { label: string; real: number; proyectado: number | null }[];
+    compareEnabled: boolean;
+}
+
+const AdministratorChart = React.memo<AdministratorChartProps>(({ chartData, compareEnabled }) => (
+    <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+            <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="0" />
+            <XAxis
+                dataKey="label"
+                tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700, fontFamily: 'Manrope' }}
+                axisLine={false}
+                tickLine={false}
+            />
+            <YAxis
+                tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700, fontFamily: 'Manrope' }}
+                axisLine={false}
+                tickLine={false}
+                width={40}
+            />
+            <Tooltip
+                contentStyle={{ background: '#0f172a', border: 'none', borderRadius: 12, fontFamily: 'Manrope', fontWeight: 700, color: '#fff' }}
+                labelStyle={{ color: '#94a3b8', fontWeight: 700 }}
+                itemStyle={{ color: '#fff', fontWeight: 800 }}
+            />
+            <Legend
+                iconType="circle"
+                wrapperStyle={{ fontFamily: 'Manrope', fontWeight: 800, fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}
+            />
+            {compareEnabled && (
+                <Line
+                    type="monotone"
+                    dataKey="proyectado"
+                    name="Comparación"
+                    stroke="#bae6fd"
+                    strokeWidth={3}
+                    dot={false}
+                    activeDot={{ r: 5 }}
+                    animationDuration={800}
+                />
+            )}
+            <Line
+                type="monotone"
+                dataKey="real"
+                name="Periodo Actual"
+                stroke="#0f172a"
+                strokeWidth={3}
+                dot={false}
+                activeDot={{ r: 5 }}
+                animationDuration={800}
+            />
+        </LineChart>
+    </ResponsiveContainer>
+));
+AdministratorChart.displayName = 'AdministratorChart';
