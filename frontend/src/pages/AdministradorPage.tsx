@@ -64,6 +64,7 @@ interface CotizacionItemRow {
         fecha_emision: string;
         estado: string;
         total: number;
+        descripcion?: string | null;
     } | null;
 }
 
@@ -85,6 +86,7 @@ interface ServicioRecientePresentacion {
     fecha: string;
     estadoPago: string | null;
     saldoPendiente: number | null;
+    ventaCreatedAt: string | null;
 }
 
 type GroupingMode = 'DIARIO' | 'SEMANAL' | 'MENSUAL';
@@ -196,7 +198,7 @@ export default function AdministradorPage() {
     const [editClientSearch, setEditClientSearch] = useState('');
 
     // Payment info from ventas_cabecera for the dashboard (KPIs, últimos servicios, history filter)
-    const [ventasParaDashboard, setVentasParaDashboard] = useState<{ codigo_cotizacion: string | null; saldo_pendiente: number; estado_pago: string }[]>([]);
+    const [ventasParaDashboard, setVentasParaDashboard] = useState<{ codigo_cotizacion: string | null; saldo_pendiente: number; estado_pago: string; created_at: string }[]>([]);
 
     // Tooltip for Material column in Últimos Servicios (portal-based to avoid overflow clipping)
     const [matTooltip, setMatTooltip] = useState<{ x: number; y: number; items: MaterialDetalle[] } | null>(null);
@@ -231,7 +233,7 @@ export default function AdministradorPage() {
                     .from('cotizaciones_items')
                     .select(
                         'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total)'
+                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
                     )
                     .neq('cotizaciones.estado', 'ELIMINADO')
                     .gte('cotizaciones.fecha_emision', minStart)
@@ -239,7 +241,7 @@ export default function AdministradorPage() {
                     .order('created_at', { ascending: false }),
                 supabase
                     .from('ventas_cabecera')
-                    .select('codigo_cotizacion,saldo_pendiente,estado_pago'),
+                    .select('codigo_cotizacion,saldo_pendiente,estado_pago,created_at'),
             ]);
 
             if (itemsRes.error) throw itemsRes.error;
@@ -486,9 +488,17 @@ export default function AdministradorPage() {
                 fecha: cot.fecha_emision,
                 estadoPago: ventaEntry?.estado_pago ?? null,
                 saldoPendiente: ventaEntry ? Number(ventaEntry.saldo_pendiente) : null,
+                ventaCreatedAt: ventaEntry?.created_at ?? null,
             });
         }
-        return result.sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 5);
+        return result
+            .sort((a, b) => {
+                // Primary: by when it was registered as a sale (most recent LISTO first)
+                const aKey = a.ventaCreatedAt ?? a.fecha;
+                const bKey = b.ventaCreatedAt ?? b.fecha;
+                return aKey < bKey ? 1 : -1;
+            })
+            .slice(0, 5);
     }, [currentRangeItems, ventasParaDashboard]);
 
     const formatRangeLabel = (s: string, e: string) =>
@@ -685,7 +695,7 @@ export default function AdministradorPage() {
                         .from('cotizaciones_items')
                         .select(
                             'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                                'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total)'
+                                'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
                         )
                         .neq('cotizaciones.estado', 'ELIMINADO')
                         .gte('cotizaciones.fecha_emision', clientsStart)
@@ -865,9 +875,17 @@ export default function AdministradorPage() {
             if (entry) entry.items.push(it);
             else grouped.set(c.id, { cot: c, items: [it] });
         }
-        return Array.from(grouped.values()).sort((a, b) =>
-            a.cot.fecha_emision < b.cot.fecha_emision ? 1 : -1
-        );
+        return Array.from(grouped.values()).sort((a, b) => {
+            if (a.cot.fecha_emision !== b.cot.fecha_emision) {
+                return a.cot.fecha_emision < b.cot.fecha_emision ? 1 : -1;
+            }
+            // Same emission date: sort by when it was registered as a sale
+            const aVenta = ventasParaDashboard.find(v => v.codigo_cotizacion === a.cot.codigo);
+            const bVenta = ventasParaDashboard.find(v => v.codigo_cotizacion === b.cot.codigo);
+            const aCreated = aVenta?.created_at ?? '';
+            const bCreated = bVenta?.created_at ?? '';
+            return aCreated < bCreated ? 1 : -1;
+        });
     }, [items, historyStart, historyEnd, historyEstado, historySearch, ventasParaDashboard]);
 
     // Make sure the underlying fetch covers the history range too
@@ -887,7 +905,7 @@ export default function AdministradorPage() {
                             .from('cotizaciones_items')
                             .select(
                                 'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                                    'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total)'
+                                    'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
                             )
                             .neq('cotizaciones.estado', 'ELIMINADO')
                             .gte('cotizaciones.fecha_emision', historyStart)
@@ -1423,9 +1441,16 @@ export default function AdministradorPage() {
                                                         </span>
                                                     </div>
                                                     <div className="w-px h-10 bg-[#d3dcdb]/30 hidden sm:block" />
-                                                    <p className="text-[13px] font-semibold text-[#366480] uppercase tracking-tight truncate">
-                                                        {highlight(cot.cliente_nombre || '—', historySearch)}
-                                                    </p>
+                                                    <div className="flex flex-col min-w-0">
+                                                        <p className="text-[13px] font-semibold text-[#366480] uppercase tracking-tight truncate">
+                                                            {highlight(cot.cliente_nombre || '—', historySearch)}
+                                                        </p>
+                                                        {cot.descripcion && (
+                                                            <span className="text-[10px] font-medium text-slate-400 truncate max-w-[200px]" title={cot.descripcion}>
+                                                                {cot.descripcion}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center gap-4 flex-shrink-0">
                                                     {(() => {

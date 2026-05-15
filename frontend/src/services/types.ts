@@ -198,6 +198,7 @@ export interface VentaCabecera {
     motivo_pago_excedente?: string | null;
     user_id?: string | null;
     usuario_nombre?: string | null;
+    cotizacion_descripcion?: string | null;
 }
 
 

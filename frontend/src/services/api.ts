@@ -956,7 +956,7 @@ export const api = {
 
     getVentas: async (): Promise<VentaCabecera[]> => {
         // Phase 1: Fetch all necessary data
-        const [optsResult, ventasResult, quotesResult, profilesResult] = await Promise.all([
+        const [optsResult, ventasResult, quotesResult, profilesResult, cotizacionesResult] = await Promise.all([
             supabase
                 .from('optimizations')
                 .select('id, code, client_name, project_name, created_at')
@@ -971,6 +971,9 @@ export const api = {
             supabase
                 .from('profiles')
                 .select('id, display_name'),
+            supabase
+                .from('cotizaciones')
+                .select('codigo, descripcion'),
         ]);
 
         const opts = optsResult.data || [];
@@ -980,6 +983,11 @@ export const api = {
         const profileMap = new Map<string, string>();
         (profilesResult.data || []).forEach((p: any) => {
             if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+        });
+
+        const cotDescMap = new Map<string, string>();
+        (cotizacionesResult.data || []).forEach((c: any) => {
+            if (c.codigo && c.descripcion) cotDescMap.set(c.codigo, c.descripcion);
         });
 
         // Build mappings for efficient lookup
@@ -1014,7 +1022,8 @@ export const api = {
                 // Use the real sale, deduplicating by sale ID
                 finalVentasMap.set(matchedVenta.id, {
                     ...matchedVenta,
-                    usuario_nombre: matchedVenta.user_id ? (profileMap.get(matchedVenta.user_id) ?? null) : null,
+                    usuario_nombre: matchedVenta.usuario_nombre ?? (matchedVenta.user_id ? (profileMap.get(matchedVenta.user_id) ?? null) : null),
+                    cotizacion_descripcion: matchedVenta.codigo_cotizacion ? (cotDescMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
                 } as VentaCabecera);
             } else {
                 // Only if no sale exists, use a stub (deduplicated by opt id)
@@ -1042,7 +1051,8 @@ export const api = {
             if (!finalVentasMap.has(v.id) && v.codigo_cotizacion?.startsWith('COT-')) {
                 finalVentasMap.set(v.id, {
                     ...v,
-                    usuario_nombre: v.user_id ? (profileMap.get(v.user_id) ?? null) : null,
+                    usuario_nombre: v.usuario_nombre ?? (v.user_id ? (profileMap.get(v.user_id) ?? null) : null),
+                    cotizacion_descripcion: v.codigo_cotizacion ? (cotDescMap.get(v.codigo_cotizacion) ?? null) : null,
                 } as VentaCabecera);
             }
         });

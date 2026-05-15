@@ -1035,6 +1035,11 @@ export const SalesTreasuryPage = () => {
                                                             </td>
                                                             <td className="py-5 text-left">
                                                                 <p className="text-[13px] font-black text-[#366480] uppercase tracking-tight">{venta.cliente_nombre}</p>
+                                                                {venta.cotizacion_descripcion && (
+                                                                    <p className="text-[10px] font-bold text-slate-400 truncate max-w-[180px] mt-0.5" title={venta.cotizacion_descripcion}>
+                                                                        {venta.cotizacion_descripcion}
+                                                                    </p>
+                                                                )}
                                                             </td>
                                                             <td className="py-5 text-left font-[900] text-[15px] text-[#2c3434] tabular-nums">
                                                                 {isStub ? '—' : `S/ ${formatCurrency(venta.monto_total)}`}

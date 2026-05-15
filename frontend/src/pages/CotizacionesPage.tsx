@@ -45,6 +45,7 @@ interface Cotizacion {
     saldo_pendiente: number;
     notas: string;
     condiciones_pago: string;
+    descripcion: string;
     created_at: string;
 }
 
@@ -69,6 +70,7 @@ interface FormState {
     saldo_pendiente: number;
     notas: string;
     condiciones_pago: string;
+    descripcion: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -95,6 +97,7 @@ const emptyForm = (): FormState => ({
     saldo_pendiente: 0,
     notas: '',
     condiciones_pago: '',
+    descripcion: '',
 });
 
 // ─── Search Input (isolated to avoid re-render on parent state) ───────────────
@@ -240,6 +243,10 @@ interface EditorModalProps {
     onDuplicate?: () => void;
     isReadOnly: boolean;
     pendingFocusRowId?: string | null;
+    doiLocked: boolean;
+    nameLocked: boolean;
+    onDoiLocked: (v: boolean) => void;
+    onNameLocked: (v: boolean) => void;
 }
 
 const EditorModal: React.FC<EditorModalProps> = ({
@@ -248,6 +255,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
     onUpdateItem, onAddRow, onRemoveRow, onDescuentoChange,
     onAdelantoChange, onTipoDocumento,
     onExportPDF, onPrint, onDuplicate, isReadOnly, pendingFocusRowId,
+    doiLocked, nameLocked, onDoiLocked, onNameLocked,
 }) => {
     const [showClientDrop, setShowClientDrop] = useState(false);
     const clientDropRef = useRef<HTMLDivElement>(null);
@@ -267,6 +275,21 @@ const EditorModal: React.FC<EditorModalProps> = ({
         ),
         [contacts, form.cliente_nombre]
     );
+
+    const highlightText = (text: string, query: string) => {
+        if (!query.trim()) return <>{text}</>;
+        const idx = text.toLowerCase().indexOf(query.toLowerCase());
+        if (idx === -1) return <>{text}</>;
+        return (
+            <>
+                {text.slice(0, idx)}
+                <mark className="bg-amber-100 text-amber-900 not-italic rounded-[2px] px-0">
+                    {text.slice(idx, idx + query.length)}
+                </mark>
+                {text.slice(idx + query.length)}
+            </>
+        );
+    };
     const [showProcesarConfirm, setShowProcesarConfirm] = useState(false);
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -438,22 +461,34 @@ const EditorModal: React.FC<EditorModalProps> = ({
 
                             {/* Client form */}
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="col-span-2 relative" ref={clientDropRef}>
+                                <div className="relative" ref={clientDropRef}>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
                                     <input
                                         type="text"
                                         value={form.cliente_nombre}
                                         onChange={e => {
-                                            onFormChange({ ...form, cliente_nombre: e.target.value });
-                                            onClientSelect(false);
+                                            const val = e.target.value;
+                                            const exact = contacts.find(c => c.name.toLowerCase() === val.toLowerCase());
+                                            if (exact) {
+                                                onFormChange({ ...form, cliente_nombre: val, cliente_doi: exact.tax_id || '' });
+                                                onDoiLocked(!!exact.tax_id);
+                                            } else {
+                                                onFormChange({ ...form, cliente_nombre: val });
+                                                onDoiLocked(false);
+                                            }
+                                            onClientSelect(!!exact);
+                                            onNameLocked(false);
                                             setShowClientDrop(true);
                                         }}
-                                        onFocus={() => setShowClientDrop(true)}
-                                        readOnly={isReadOnly}
-                                        className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
+                                        onFocus={() => !nameLocked && setShowClientDrop(true)}
+                                        readOnly={isReadOnly || nameLocked}
+                                        className={`w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all${nameLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
                                         placeholder="Nombre o Razón Social..."
                                     />
-                                    {showClientDrop && !isReadOnly && filteredContacts.length > 0 && (
+                                    {nameLocked && !isReadOnly && (
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 material-icons-round text-[14px] text-slate-300 pointer-events-none" title="Autorellenado por DOI — modifica el DOI para cambiar">lock</span>
+                                    )}
+                                    {showClientDrop && !isReadOnly && !nameLocked && filteredContacts.length > 0 && (
                                         <div className="absolute top-full mt-1 left-0 right-0 bg-white rounded-xl shadow-xl border border-slate-100 z-50 max-h-48 overflow-y-auto">
                                             {filteredContacts.map(c => (
                                                 <button
@@ -462,27 +497,58 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                     className="w-full text-left px-4 py-2.5 text-[13px] font-bold text-[#2c3434] hover:bg-[#eef4f7] transition-colors"
                                                     onMouseDown={e => {
                                                         e.preventDefault();
-                                                        onFormChange({ ...form, cliente_nombre: c.name });
+                                                        onFormChange({ ...form, cliente_nombre: c.name, cliente_doi: c.tax_id || '' });
                                                         onClientSelect(true);
+                                                        onDoiLocked(!!c.tax_id);
+                                                        onNameLocked(false);
                                                         setShowClientDrop(false);
                                                     }}
                                                 >
-                                                    {c.name}
+                                                    {highlightText(c.name, form.cliente_nombre)}
                                                 </button>
                                             ))}
                                         </div>
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Descripción / Observaciones</label>
                                     <CellInput
                                         type="text"
-                                        value={form.cliente_doi}
-                                        onChange={v => onFormChange({ ...form, cliente_doi: v })}
+                                        value={form.descripcion}
+                                        onChange={v => onFormChange({ ...form, descripcion: v })}
                                         readOnly={isReadOnly}
                                         className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
-                                        placeholder="RUC / DNI..."
+                                        placeholder="Ej: Fabricación de puerta metálica..."
                                     />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={form.cliente_doi}
+                                            onChange={e => {
+                                                const val = e.target.value;
+                                                const matched = contacts.find(c => c.tax_id && c.tax_id.trim() === val.trim());
+                                                if (matched && val.trim().length > 0) {
+                                                    onFormChange({ ...form, cliente_doi: val, cliente_nombre: matched.name });
+                                                    onClientSelect(true);
+                                                    onNameLocked(true);
+                                                    onDoiLocked(false);
+                                                } else {
+                                                    onFormChange({ ...form, cliente_doi: val });
+                                                    onNameLocked(false);
+                                                    onClientSelect(false);
+                                                }
+                                            }}
+                                            readOnly={isReadOnly || doiLocked}
+                                            className={`w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all${doiLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
+                                            placeholder="RUC / DNI..."
+                                        />
+                                        {doiLocked && !isReadOnly && (
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 material-icons-round text-[14px] text-slate-300 pointer-events-none" title="Bloqueado — la edición es en el módulo de Contactos">lock</span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex items-center justify-center gap-4 bg-white/40 border border-white/50 rounded-xl px-4 py-3">
                                     <label className="flex items-center gap-2 cursor-pointer">
@@ -803,6 +869,8 @@ export function CotizacionesPage() {
     const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [clientFromList, setClientFromList] = useState(false);
+    const [doiLocked, setDoiLocked] = useState(false);
+    const [nameLocked, setNameLocked] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
@@ -909,6 +977,8 @@ export function CotizacionesPage() {
         setEditingCode('');
         setIsDirty(false);
         setClientFromList(false);
+        setDoiLocked(false);
+        setNameLocked(false);
         manualUnitsRef.current = new Set();
         setEditorOpen(true);
     };
@@ -938,10 +1008,13 @@ export function CotizacionesPage() {
             saldo_pendiente: c.saldo_pendiente || 0,
             notas: c.notas || '',
             condiciones_pago: c.condiciones_pago || '',
+            descripcion: c.descripcion || '',
         });
         setEditingId(c.id);
         setEditingCode(c.codigo || '');
         setIsDirty(false);
+        setDoiLocked(false);
+        setNameLocked(false);
         // Existing items came from the DB → treat their units as manually chosen
         manualUnitsRef.current = new Set((c.items || []).map(it => it.id));
         document.body.style.overflow = 'hidden';
@@ -1163,6 +1236,10 @@ export function CotizacionesPage() {
                 onDuplicate={editingId ? duplicateFromModal : undefined}
                 isReadOnly={form.estado === 'LISTO'}
                 pendingFocusRowId={pendingFocusRowId}
+                doiLocked={doiLocked}
+                nameLocked={nameLocked}
+                onDoiLocked={setDoiLocked}
+                onNameLocked={setNameLocked}
             />
 
             <div className="min-h-screen flex flex-col animate-premium-fade">
