@@ -1,22 +1,18 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-    format, 
-    addMonths, 
-    subMonths, 
-    startOfMonth, 
-    endOfMonth, 
-    startOfWeek, 
-    endOfWeek, 
-    eachDayOfInterval, 
-    isSameMonth, 
-    isSameDay, 
-    isWithinInterval, 
+import {
+    format,
+    addMonths,
+    subMonths,
+    startOfWeek,
+    eachDayOfInterval,
+    isSameMonth,
+    isSameDay,
+    isWithinInterval,
     differenceInDays,
     isBefore,
     isAfter,
-    parseISO
 } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Info } from 'lucide-react';
@@ -149,8 +145,8 @@ export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startD
         return false;
     };
 
-    const isSelectedStart = (day: Date) => selectionStart && isSameDay(day, selectionStart);
-    const isSelectedEnd = (day: Date) => selectionEnd && isSameDay(day, selectionEnd);
+    const isSelectedStart = (day: Date) => !!selectionStart && isSameDay(day, selectionStart);
+    const isSelectedEnd = (day: Date) => !!selectionEnd && isSameDay(day, selectionEnd);
 
     const rangeInfo = useMemo(() => {
         if (selectionStart && selectionEnd) {
@@ -166,6 +162,7 @@ export const RangeDatePicker: React.FC<RangeDatePickerProps> = ({ isOpen, startD
 
     const pickerNode = (
         <div
+            data-range-picker="true"
             className={`${triggerRef ? '' : `absolute top-full ${align === 'left' ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} mt-3 z-[200] `}bg-white/95 backdrop-blur-2xl rounded-[24px] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-white/60 transition-all duration-200 w-[480px]
                 ${isOpen ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : 'opacity-0 -translate-y-4 scale-95 pointer-events-none'}
             `}

@@ -624,6 +624,8 @@ export const api = {
 
     // Called only when optimization transitions to LISTO_CORTE
     syncQuotationToTreasury: async (optimizationId: string) => {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+
         const { data: quote } = await supabase
             .from('quotations')
             .select('*')
@@ -716,7 +718,7 @@ export const api = {
 
         const { data: existingVenta } = await supabase
             .from('ventas_cabecera')
-            .select('id, saldo_a_favor, motivo_pago_excedente')
+            .select('id, saldo_a_favor, motivo_pago_excedente, user_id')
             .eq('codigo_cotizacion', effectiveQuote.code)
             .maybeSingle();
 
@@ -775,6 +777,11 @@ export const api = {
 
             if (existingVenta?.id) {
                 ventaPayload.id = existingVenta.id;
+                if (currentUser?.id && !existingVenta.user_id) {
+                    ventaPayload.user_id = currentUser.id;
+                }
+            } else if (currentUser?.id) {
+                ventaPayload.user_id = currentUser.id;
             }
 
             const { data: savedVenta, error: vError } = await supabase
@@ -949,7 +956,7 @@ export const api = {
 
     getVentas: async (): Promise<VentaCabecera[]> => {
         // Phase 1: Fetch all necessary data
-        const [optsResult, ventasResult, quotesResult] = await Promise.all([
+        const [optsResult, ventasResult, quotesResult, profilesResult] = await Promise.all([
             supabase
                 .from('optimizations')
                 .select('id, code, client_name, project_name, created_at')
@@ -960,12 +967,20 @@ export const api = {
                 .select('*'),
             supabase
                 .from('quotations')
-                .select('code, optimization_id')
+                .select('code, optimization_id'),
+            supabase
+                .from('profiles')
+                .select('id, display_name'),
         ]);
 
         const opts = optsResult.data || [];
         const allVentas = ventasResult.data || [];
         const allQuotes = quotesResult.data || [];
+
+        const profileMap = new Map<string, string>();
+        (profilesResult.data || []).forEach((p: any) => {
+            if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+        });
 
         // Build mappings for efficient lookup
         const ventaByOptId = new Map<string, any>();
@@ -997,7 +1012,10 @@ export const api = {
 
             if (matchedVenta) {
                 // Use the real sale, deduplicating by sale ID
-                finalVentasMap.set(matchedVenta.id, matchedVenta as VentaCabecera);
+                finalVentasMap.set(matchedVenta.id, {
+                    ...matchedVenta,
+                    usuario_nombre: matchedVenta.user_id ? (profileMap.get(matchedVenta.user_id) ?? null) : null,
+                } as VentaCabecera);
             } else {
                 // Only if no sale exists, use a stub (deduplicated by opt id)
                 const stubId = `opt::${opt.id}`;
@@ -1022,7 +1040,10 @@ export const api = {
         // so the opts loop above never picks them up.
         allVentas.forEach((v: any) => {
             if (!finalVentasMap.has(v.id) && v.codigo_cotizacion?.startsWith('COT-')) {
-                finalVentasMap.set(v.id, v as VentaCabecera);
+                finalVentasMap.set(v.id, {
+                    ...v,
+                    usuario_nombre: v.user_id ? (profileMap.get(v.user_id) ?? null) : null,
+                } as VentaCabecera);
             }
         });
 

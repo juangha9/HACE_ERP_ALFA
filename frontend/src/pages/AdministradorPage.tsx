@@ -27,6 +27,7 @@ import {
     UserPlus,
     Phone,
     Pencil,
+    ArrowUpDown,
 } from 'lucide-react';
 import {
     format,
@@ -109,6 +110,22 @@ const ESTADO_BADGE: Record<string, string> = {
 const friendlyEstado = (s: string) =>
     s === 'LISTO' ? 'COMPLETADO' : s === 'BORRADOR' ? 'PENDIENTE' : s;
 
+const highlight = (text: string, query: string): React.ReactNode => {
+    if (!query.trim() || !text) return <>{text}</>;
+    const q = query.trim().toLowerCase();
+    const idx = text.toLowerCase().indexOf(q);
+    if (idx === -1) return <>{text}</>;
+    return (
+        <>
+            {text.slice(0, idx)}
+            <mark style={{ backgroundColor: '#fde68a', color: '#78350f', borderRadius: '3px', padding: '0 2px', fontStyle: 'normal' }}>
+                {text.slice(idx, idx + q.length)}
+            </mark>
+            {text.slice(idx + q.length)}
+        </>
+    );
+};
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function AdministradorPage() {
@@ -135,6 +152,7 @@ export default function AdministradorPage() {
     );
 
     const [groupingMode, setGroupingMode] = useState<GroupingMode>('DIARIO');
+    const [excludeWeekends, setExcludeWeekends] = useState(false);
 
     // Date pickers visibility
     const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -157,6 +175,7 @@ export default function AdministradorPage() {
     const [clientsDatePickerOpen, setClientsDatePickerOpen] = useState(false);
     const clientsDatePickerWrapRef = useRef<HTMLDivElement>(null);
     const [clientsDebtFilter, setClientsDebtFilter] = useState<'TODOS' | 'CON_DEUDA' | 'SIN_DEUDA'>('TODOS');
+    const [clientsSort, setClientsSort] = useState<{ col: 'ventas' | 'tableros'; dir: 'desc' | 'asc' } | null>(null);
     const [ventasCabecera, setVentasCabecera] = useState<{ cliente_nombre: string; saldo_pendiente: number; estado_pago: string }[]>([]);
     // Local input value (decoupled from filter state to avoid re-rendering chart on every keystroke)
     const [clientsInputValue, setClientsInputValue] = useState('');
@@ -332,10 +351,12 @@ export default function AdministradorPage() {
         // Build buckets based on grouping mode
         let buckets: { date: Date; label: string }[] = [];
         if (groupingMode === 'DIARIO') {
-            buckets = eachDayOfInterval({ start, end }).map(d => ({
-                date: d,
-                label: format(d, 'dd MMM', { locale: es }),
-            }));
+            buckets = eachDayOfInterval({ start, end })
+                .filter(d => !excludeWeekends || (d.getDay() !== 0 && d.getDay() !== 6))
+                .map(d => ({
+                    date: d,
+                    label: format(d, 'dd MMM', { locale: es }),
+                }));
         } else if (groupingMode === 'SEMANAL') {
             buckets = eachWeekOfInterval(
                 { start, end },
@@ -379,10 +400,14 @@ export default function AdministradorPage() {
             const cStart = parseISO(compareStartDate);
             const cBuckets: Date[] =
                 groupingMode === 'DIARIO'
-                    ? eachDayOfInterval({
-                          start: cStart,
-                          end: addDays(cStart, buckets.length - 1),
-                      })
+                    ? excludeWeekends
+                        ? eachDayOfInterval({ start: cStart, end: addDays(cStart, buckets.length + 13) })
+                              .filter(d => d.getDay() !== 0 && d.getDay() !== 6)
+                              .slice(0, buckets.length)
+                        : eachDayOfInterval({
+                              start: cStart,
+                              end: addDays(cStart, buckets.length - 1),
+                          })
                     : groupingMode === 'SEMANAL'
                     ? Array.from({ length: buckets.length }, (_, i) =>
                           addDays(cStart, i * 7)
@@ -423,6 +448,7 @@ export default function AdministradorPage() {
         compareStartDate,
         compareEndDate,
         groupingMode,
+        excludeWeekends,
     ]);
 
     // ── Últimos servicios (last 4 cotizaciones with at least one item) ──────
@@ -782,8 +808,18 @@ export default function AdministradorPage() {
         if (clientsDebtFilter === 'CON_DEUDA') rows = rows.filter(r => r.deuda > 0);
         else if (clientsDebtFilter === 'SIN_DEUDA') rows = rows.filter(r => r.deuda <= 0);
 
-        return rows.sort((a, b) => b.tableros - a.tableros);
-    }, [items, ventasCabecera, clientsStart, clientsEnd, clientsSearch, clientsDebtFilter]);
+        if (clientsSort) {
+            const { col, dir } = clientsSort;
+            rows = rows.sort((a, b) =>
+                dir === 'asc'
+                    ? a[col] - b[col]
+                    : b[col] - a[col]
+            );
+        } else {
+            rows = rows.sort((a, b) => a.cliente.localeCompare(b.cliente, 'es'));
+        }
+        return rows;
+    }, [items, ventasCabecera, clientsStart, clientsEnd, clientsSearch, clientsDebtFilter, clientsSort]);
 
     const applyHistoryQuickFilter = (val: typeof historyQuickFilter) => {
         setHistoryQuickFilter(val);
@@ -1020,6 +1056,19 @@ export default function AdministradorPage() {
                                 </button>
                             ))}
                         </div>
+                        {/* Exclude weekends toggle (only relevant in DIARIO mode) */}
+                        {groupingMode === 'DIARIO' && (
+                            <button
+                                onClick={() => setExcludeWeekends(v => !v)}
+                                className={`flex items-center gap-2 px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-full border transition-all ${
+                                    excludeWeekends
+                                        ? 'bg-slate-900 text-white border-slate-900'
+                                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                }`}
+                            >
+                                Sin S/D
+                            </button>
+                        )}
                         {/* Comparison: opens a small menu with quick presets */}
                         <div ref={compareWrapRef} className="relative">
                             <button
@@ -1249,7 +1298,6 @@ export default function AdministradorPage() {
                 <div
                     className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${historyClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`}
                     style={{ backdropFilter: 'blur(6px)', fontFamily: "'Manrope', sans-serif" }}
-                    onClick={closeHistory}
                 >
                     <div
                         className={`bg-white/95 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[92vh] relative overflow-hidden ${historyClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}
@@ -1368,7 +1416,7 @@ export default function AdministradorPage() {
                                                 <div className="flex items-center gap-6 min-w-0">
                                                     <div className="flex flex-col">
                                                         <span className="text-[13px] font-bold text-[#2c3434] uppercase tracking-tight">
-                                                            #{cot.codigo}
+                                                            #{highlight(cot.codigo, historySearch)}
                                                         </span>
                                                         <span className="text-[10px] font-medium text-[#366480]/50 uppercase tracking-widest mt-0.5">
                                                             {format(parseISO(cot.fecha_emision), "dd MMM, yyyy", { locale: es })}
@@ -1376,7 +1424,7 @@ export default function AdministradorPage() {
                                                     </div>
                                                     <div className="w-px h-10 bg-[#d3dcdb]/30 hidden sm:block" />
                                                     <p className="text-[13px] font-semibold text-[#366480] uppercase tracking-tight truncate">
-                                                        {cot.cliente_nombre || '—'}
+                                                        {highlight(cot.cliente_nombre || '—', historySearch)}
                                                     </p>
                                                 </div>
                                                 <div className="flex items-center gap-4 flex-shrink-0">
@@ -1602,8 +1650,42 @@ export default function AdministradorPage() {
                                     <thead className="sticky top-0 bg-white/90 backdrop-blur-md z-10">
                                         <tr className="text-slate-400 text-[9px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/30">
                                             <th className="px-7 py-4">Cliente</th>
-                                            <th className="px-7 py-4 text-right">Ventas</th>
-                                            <th className="px-7 py-4 text-right">Tableros (PLS)</th>
+                                            <th className="px-7 py-4 text-right">
+                                                <button
+                                                    onClick={() => setClientsSort(prev => {
+                                                        if (!prev || prev.col !== 'ventas') return { col: 'ventas', dir: 'desc' };
+                                                        if (prev.dir === 'desc') return { col: 'ventas', dir: 'asc' };
+                                                        return null;
+                                                    })}
+                                                    className="inline-flex items-center gap-1 ml-auto hover:text-[#366480] transition-colors"
+                                                >
+                                                    Ventas
+                                                    {clientsSort?.col === 'ventas'
+                                                        ? clientsSort.dir === 'desc'
+                                                            ? <ChevronDown className="w-3 h-3 text-[#366480]" />
+                                                            : <ChevronUp className="w-3 h-3 text-[#366480]" />
+                                                        : <ArrowUpDown className="w-3 h-3 opacity-30" />
+                                                    }
+                                                </button>
+                                            </th>
+                                            <th className="px-7 py-4 text-right">
+                                                <button
+                                                    onClick={() => setClientsSort(prev => {
+                                                        if (!prev || prev.col !== 'tableros') return { col: 'tableros', dir: 'desc' };
+                                                        if (prev.dir === 'desc') return { col: 'tableros', dir: 'asc' };
+                                                        return null;
+                                                    })}
+                                                    className="inline-flex items-center gap-1 ml-auto hover:text-[#366480] transition-colors"
+                                                >
+                                                    Tableros (PLS)
+                                                    {clientsSort?.col === 'tableros'
+                                                        ? clientsSort.dir === 'desc'
+                                                            ? <ChevronDown className="w-3 h-3 text-[#366480]" />
+                                                            : <ChevronUp className="w-3 h-3 text-[#366480]" />
+                                                        : <ArrowUpDown className="w-3 h-3 opacity-30" />
+                                                    }
+                                                </button>
+                                            </th>
                                             <th className="px-7 py-4">Tablero más comprado</th>
                                             <th className="px-7 py-4 text-right">Deuda</th>
                                         </tr>
@@ -1615,7 +1697,7 @@ export default function AdministradorPage() {
                                                 <td className="px-7 py-4">
                                                     <div className="flex flex-col">
                                                         <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
-                                                            {row.cliente}
+                                                            {highlight(row.cliente, clientsInputValue)}
                                                         </span>
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                                                             Última compra: {format(parseISO(row.ultimaFecha), "dd MMM, yyyy", { locale: es })}
@@ -1702,15 +1784,13 @@ export default function AdministradorPage() {
                                         .map(contact => (
                                             <div key={contact.id} className="flex items-center justify-between px-7 py-4 hover:bg-slate-50/50 transition-colors">
                                                 <div className="flex flex-col min-w-0">
-                                                    <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight truncate">{contact.name}</span>
+                                                    <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight truncate">{highlight(contact.name, editClientSearch)}</span>
                                                     {contact.tax_id && (
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">RUC/DNI: {contact.tax_id}</span>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">RUC/DNI: {highlight(contact.tax_id, editClientSearch)}</span>
                                                     )}
                                                 </div>
                                                 <button
                                                     onClick={() => {
-                                                        setEditClientListOpen(false);
-                                                        setEditClientListClosing(false);
                                                         openEditClient(contact);
                                                     }}
                                                     title="Editar datos del cliente"

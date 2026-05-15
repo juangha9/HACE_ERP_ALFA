@@ -103,7 +103,10 @@ DECLARE
     v_cot    cotizaciones%ROWTYPE;
     v_venta_id UUID;
     v_item   JSONB;
+    v_user_id UUID;
 BEGIN
+    v_user_id := auth.uid();
+
     SELECT * INTO v_cot FROM cotizaciones WHERE id = p_cotizacion_id;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Cotización no encontrada: %', p_cotizacion_id;
@@ -117,14 +120,16 @@ BEGIN
             monto_total,
             saldo_pendiente,
             estado_pago,
-            descripcion_resumen
+            descripcion_resumen,
+            user_id
         ) VALUES (
             v_cot.codigo,
             v_cot.cliente_nombre,
             v_cot.total,
             v_cot.total,
             'PENDIENTE',
-            'Cotización ' || v_cot.codigo
+            'Cotización ' || v_cot.codigo,
+            v_user_id
         )
         RETURNING id INTO v_venta_id;
 
@@ -137,7 +142,8 @@ BEGIN
         SET cliente_nombre       = v_cot.cliente_nombre,
             monto_total          = v_cot.total,
             saldo_pendiente      = v_cot.total,
-            descripcion_resumen  = 'Cotización ' || v_cot.codigo
+            descripcion_resumen  = 'Cotización ' || v_cot.codigo,
+            user_id              = COALESCE(user_id, v_user_id)
         WHERE id = v_venta_id;
     END IF;
 

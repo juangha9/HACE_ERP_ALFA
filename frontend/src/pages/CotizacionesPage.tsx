@@ -5,7 +5,7 @@ import { api } from '../services/api';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { RangeDatePicker } from '../components/RangeDatePicker';
-import type { BusinessInfo } from '../services/types';
+import type { BusinessInfo, Contact } from '../services/types';
 import {
     Search, Plus, Trash2, ChevronDown,
     RefreshCw, FileText, CheckCircle2, Calendar, Receipt,
@@ -180,6 +180,11 @@ const blockNumericKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const stripPublicoGeneral = (name: string): string => {
+    const m = name?.match(/^PÚBLICO GENERAL \((.+)\)$/);
+    return m ? m[1] : (name || '');
+};
+
 const fmtSol = (n: number) =>
     `S/ ${(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -218,10 +223,12 @@ interface EditorModalProps {
     businessInfo: BusinessInfo | null;
     saveStatus: 'idle' | 'saving' | 'success' | 'error';
     isDirty: boolean;
+    contacts: Contact[];
     onClose: () => void;
     onSaveBorrador: () => void;
     onSaveListo: () => void;
     onFormChange: (f: FormState) => void;
+    onClientSelect: (fromList: boolean) => void;
     onUpdateItem: (id: string, field: keyof LineItem, raw: string) => void;
     onAddRow: () => void;
     onRemoveRow: (id: string) => void;
@@ -237,11 +244,29 @@ interface EditorModalProps {
 
 const EditorModal: React.FC<EditorModalProps> = ({
     isOpen, editingCode, form, businessInfo, saveStatus, isDirty,
-    onClose, onSaveBorrador, onSaveListo, onFormChange,
+    contacts, onClose, onSaveBorrador, onSaveListo, onFormChange, onClientSelect,
     onUpdateItem, onAddRow, onRemoveRow, onDescuentoChange,
     onAdelantoChange, onTipoDocumento,
     onExportPDF, onPrint, onDuplicate, isReadOnly, pendingFocusRowId,
 }) => {
+    const [showClientDrop, setShowClientDrop] = useState(false);
+    const clientDropRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const fn = (e: MouseEvent) => {
+            if (clientDropRef.current && !clientDropRef.current.contains(e.target as Node))
+                setShowClientDrop(false);
+        };
+        document.addEventListener('mousedown', fn);
+        return () => document.removeEventListener('mousedown', fn);
+    }, []);
+
+    const filteredContacts = useMemo(() =>
+        contacts.filter(c =>
+            !form.cliente_nombre || c.name.toLowerCase().includes(form.cliente_nombre.toLowerCase())
+        ),
+        [contacts, form.cliente_nombre]
+    );
     const [showProcesarConfirm, setShowProcesarConfirm] = useState(false);
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
     const [mounted, setMounted] = useState(false);
@@ -413,16 +438,40 @@ const EditorModal: React.FC<EditorModalProps> = ({
 
                             {/* Client form */}
                             <div className="grid grid-cols-2 gap-4">
-                                <div className="col-span-2">
+                                <div className="col-span-2 relative" ref={clientDropRef}>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
-                                    <CellInput
+                                    <input
                                         type="text"
                                         value={form.cliente_nombre}
-                                        onChange={v => onFormChange({ ...form, cliente_nombre: v })}
+                                        onChange={e => {
+                                            onFormChange({ ...form, cliente_nombre: e.target.value });
+                                            onClientSelect(false);
+                                            setShowClientDrop(true);
+                                        }}
+                                        onFocus={() => setShowClientDrop(true)}
                                         readOnly={isReadOnly}
                                         className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
                                         placeholder="Nombre o Razón Social..."
                                     />
+                                    {showClientDrop && !isReadOnly && filteredContacts.length > 0 && (
+                                        <div className="absolute top-full mt-1 left-0 right-0 bg-white rounded-xl shadow-xl border border-slate-100 z-50 max-h-48 overflow-y-auto">
+                                            {filteredContacts.map(c => (
+                                                <button
+                                                    key={c.id}
+                                                    type="button"
+                                                    className="w-full text-left px-4 py-2.5 text-[13px] font-bold text-[#2c3434] hover:bg-[#eef4f7] transition-colors"
+                                                    onMouseDown={e => {
+                                                        e.preventDefault();
+                                                        onFormChange({ ...form, cliente_nombre: c.name });
+                                                        onClientSelect(true);
+                                                        setShowClientDrop(false);
+                                                    }}
+                                                >
+                                                    {c.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">DOI / RUC</label>
@@ -752,6 +801,8 @@ export function CotizacionesPage() {
     const [form, setForm] = useState<FormState>(emptyForm());
     const [isDirty, setIsDirty] = useState(false);
     const [businessInfo, setBusinessInfo] = useState<BusinessInfo | null>(null);
+    const [contacts, setContacts] = useState<Contact[]>([]);
+    const [clientFromList, setClientFromList] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
@@ -773,10 +824,11 @@ export function CotizacionesPage() {
         return () => document.removeEventListener('mousedown', fn);
     }, []);
 
-    // Business info when editor opens
+    // Business info + contacts when editor opens
     useEffect(() => {
         if (editorOpen) {
             api.getBusinessInfo().then(setBusinessInfo).catch(() => {});
+            api.getContacts('CLIENT').then(setContacts).catch(() => {});
         }
     }, [editorOpen]);
 
@@ -856,16 +908,19 @@ export function CotizacionesPage() {
         setEditingId(null);
         setEditingCode('');
         setIsDirty(false);
+        setClientFromList(false);
         manualUnitsRef.current = new Set();
         setEditorOpen(true);
     };
 
     const openEdit = (c: Cotizacion) => {
         const tipo: TipoDoc = c.tipo_documento === 'BOLETA' ? 'BOLETA' : 'FACTURA';
+        const isPublicoGeneral = /^PÚBLICO GENERAL \((.+)\)$/.test(c.cliente_nombre || '');
+        setClientFromList(!isPublicoGeneral);
         setForm({
             estado: c.estado,
             tipo_documento: tipo,
-            cliente_nombre: c.cliente_nombre || '',
+            cliente_nombre: stripPublicoGeneral(c.cliente_nombre || ''),
             cliente_doi: c.cliente_doi || '',
             cliente_direccion: c.cliente_direccion || '',
             cliente_telefono: c.cliente_telefono || '',
@@ -1016,7 +1071,10 @@ export function CotizacionesPage() {
     const save = async (estadoOverride?: 'BORRADOR' | 'LISTO') => {
         setSaveStatus('saving');
         try {
-            const payload = { ...form, estado: estadoOverride ?? form.estado };
+            const clienteNombreFinal = (!clientFromList && form.cliente_nombre.trim())
+                ? `PÚBLICO GENERAL (${form.cliente_nombre.trim()})`
+                : form.cliente_nombre;
+            const payload = { ...form, cliente_nombre: clienteNombreFinal, estado: estadoOverride ?? form.estado };
             let cotizacionId = editingId;
 
             if (editingId) {
@@ -1088,10 +1146,12 @@ export function CotizacionesPage() {
                 businessInfo={businessInfo}
                 saveStatus={saveStatus}
                 isDirty={isDirty}
+                contacts={contacts}
                 onClose={closeEditor}
                 onSaveBorrador={() => save('BORRADOR')}
                 onSaveListo={() => save('LISTO')}
                 onFormChange={(f) => { setForm(f); setIsDirty(true); }}
+                onClientSelect={setClientFromList}
                 onUpdateItem={updateItem}
                 onAddRow={addRow}
                 onRemoveRow={removeRow}
@@ -1253,7 +1313,7 @@ export function CotizacionesPage() {
                                                     </button>
                                                 </td>
                                                 <td className="px-5 py-4 text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
-                                                    {c.cliente_nombre || '—'}
+                                                    {stripPublicoGeneral(c.cliente_nombre) || '—'}
                                                 </td>
                                                 <td className="px-5 py-4 text-[12px] font-medium text-slate-500">
                                                     {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}

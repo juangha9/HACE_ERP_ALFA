@@ -196,6 +196,8 @@ export interface VentaCabecera {
     optimization_id?: string | null;
     saldo_a_favor?: number;
     motivo_pago_excedente?: string | null;
+    user_id?: string | null;
+    usuario_nombre?: string | null;
 }
 
 

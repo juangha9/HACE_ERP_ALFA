@@ -124,6 +124,8 @@ export const SalesTreasuryPage = () => {
     const [kardexEnd, setKardexEnd] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
     const [showKardexDatePicker, setShowKardexDatePicker] = useState(false);
     const [showCashDatePicker, setShowCashDatePicker] = useState(false);
+    const [ventasPage, setVentasPage] = useState(1);
+    const VENTAS_PAGE_SIZE = 20;
 
     useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice);
     
@@ -172,10 +174,11 @@ export const SalesTreasuryPage = () => {
             if (cuentasPopupRef.current && !cuentasPopupRef.current.contains(event.target as Node)) {
                 setShowCuentasPopup(false);
             }
-            if (kardexDatePickerRef.current && !kardexDatePickerRef.current.contains(event.target as Node)) {
+            const inRangePicker = !!(event.target as Element).closest?.('[data-range-picker]');
+            if (kardexDatePickerRef.current && !kardexDatePickerRef.current.contains(event.target as Node) && !inRangePicker) {
                 setShowKardexDatePicker(false);
             }
-            if (cashDatePickerRef.current && !cashDatePickerRef.current.contains(event.target as Node)) {
+            if (cashDatePickerRef.current && !cashDatePickerRef.current.contains(event.target as Node) && !inRangePicker) {
                 setShowCashDatePicker(false);
             }
         };
@@ -586,6 +589,12 @@ export const SalesTreasuryPage = () => {
         });
     }, [ventas, deferredSearch, filterEstado, startDate, endDate]);
 
+    // Reset to page 1 whenever filters change
+    useEffect(() => { setVentasPage(1); }, [ventas, deferredSearch, filterEstado, startDate, endDate]);
+
+    const ventasPageTotal = Math.ceil(filteredVentas.length / VENTAS_PAGE_SIZE);
+    const paginatedVentas = filteredVentas.slice((ventasPage - 1) * VENTAS_PAGE_SIZE, ventasPage * VENTAS_PAGE_SIZE);
+
     const filteredCompras = useMemo(() => {
         const term = deferredSearch.toLowerCase();
         const start = startDate ? new Date(startDate) : null;
@@ -992,18 +1001,20 @@ export const SalesTreasuryPage = () => {
                             {/* Data Display Table */}
                             <div className="flex-1 overflow-x-auto min-h-[400px] px-10 pb-10">
                                 {viewMode === 'VENTAS' && (
+                                    <>
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
                                             <tr className="text-[#366480]/50 text-[11px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
-                                                <th className="py-5 pl-4 text-left w-[20%]">Transacción / OT</th>
-                                                <th className="py-5 text-left w-[30%]">Cliente</th>
-                                                <th className="py-5 text-left w-[15%]">Monto Total</th>
+                                                <th className="py-5 pl-4 text-left w-[18%]">Transacción / OT</th>
+                                                <th className="py-5 text-left w-[13%]">Usuario</th>
+                                                <th className="py-5 text-left w-[22%]">Cliente</th>
+                                                <th className="py-5 text-left w-[12%]">Monto Total</th>
                                                 <th className="py-5 text-left pl-8 w-[20%]">Balance de Pago</th>
                                                 <th className="py-5 text-left w-[15%]">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={5} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : filteredVentas.map(venta => {
+                                            {loading ? <tr><td colSpan={6} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={6} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : paginatedVentas.map(venta => {
                                                 const isStub = venta.id.startsWith('opt::');
                                                 return (
                                                     <React.Fragment key={venta.id}>
@@ -1016,6 +1027,11 @@ export const SalesTreasuryPage = () => {
                                                                         <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest">{format(new Date(venta.created_at), "dd MMM, yyyy")}</span>
                                                                     </div>
                                                                 </div>
+                                                            </td>
+                                                            <td className="py-5 text-left">
+                                                                <span className="text-[12px] font-bold text-[#2c3434]/60 uppercase tracking-tight truncate">
+                                                                    {venta.usuario_nombre || '—'}
+                                                                </span>
                                                             </td>
                                                             <td className="py-5 text-left">
                                                                 <p className="text-[13px] font-black text-[#366480] uppercase tracking-tight">{venta.cliente_nombre}</p>
@@ -1040,7 +1056,7 @@ export const SalesTreasuryPage = () => {
                                                         </tr>
                                                         {(expandedVenta === venta.id || exitingDesglose === venta.id) && (
                                                             <tr>
-                                                                <td colSpan={5} className="p-0 border-none bg-[#f7faf9]/30">
+                                                                <td colSpan={6} className="p-0 border-none bg-[#f7faf9]/30">
                                                                     <div className={`px-10 py-4 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
                                                                         <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm">
                                                                             <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] mb-6 border-b border-[#d3dcdb]/10 pb-4 italic">Desglose Técnico del Proyecto</p>
@@ -1103,6 +1119,34 @@ export const SalesTreasuryPage = () => {
                                             })}
                                         </tbody>
                                     </table>
+                                    {ventasPageTotal > 1 && (
+                                        <div className="flex items-center justify-center gap-2 py-6">
+                                            <button
+                                                onClick={() => setVentasPage(p => Math.max(1, p - 1))}
+                                                disabled={ventasPage === 1}
+                                                className="px-3 py-2 rounded-xl text-[11px] font-black text-[#366480] hover:bg-[#f0f5f4] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                <ChevronDown className="w-4 h-4 rotate-90" />
+                                            </button>
+                                            {Array.from({ length: ventasPageTotal }, (_, i) => i + 1).map(page => (
+                                                <button
+                                                    key={page}
+                                                    onClick={() => setVentasPage(page)}
+                                                    className={`w-8 h-8 rounded-xl text-[11px] font-black transition-all ${ventasPage === page ? 'bg-[#244c66] text-white shadow-sm' : 'text-[#366480]/60 hover:bg-[#f0f5f4]'}`}
+                                                >
+                                                    {page}
+                                                </button>
+                                            ))}
+                                            <button
+                                                onClick={() => setVentasPage(p => Math.min(ventasPageTotal, p + 1))}
+                                                disabled={ventasPage === ventasPageTotal}
+                                                className="px-3 py-2 rounded-xl text-[11px] font-black text-[#366480] hover:bg-[#f0f5f4] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                            >
+                                                <ChevronDown className="w-4 h-4 -rotate-90" />
+                                            </button>
+                                        </div>
+                                    )}
+                                    </>
                                 )}
 
                                 {viewMode === 'COMPRAS' && (
