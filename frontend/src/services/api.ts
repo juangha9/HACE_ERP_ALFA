@@ -1283,6 +1283,40 @@ export const api = {
         return publicUrl;
     },
 
+    actualizarComprobanteOrden: async (ordenId: string, newUrl: string): Promise<string> => {
+        const { data: orden, error } = await supabase
+            .from('ordenes_pago')
+            .select('url_factura')
+            .eq('id', ordenId)
+            .single();
+        if (error) throw new Error(error.message);
+        const existing = orden.url_factura ? orden.url_factura.split('|').filter(Boolean) : [];
+        const updated = [...existing, newUrl].join('|');
+        const { error: uError } = await supabase
+            .from('ordenes_pago')
+            .update({ url_factura: updated })
+            .eq('id', ordenId);
+        if (uError) throw new Error(uError.message);
+        return updated;
+    },
+
+    actualizarEvidenciaOrden: async (ordenId: string, newUrl: string): Promise<string> => {
+        const { data: orden, error } = await supabase
+            .from('ordenes_pago')
+            .select('url_evidencia')
+            .eq('id', ordenId)
+            .single();
+        if (error) throw new Error(error.message);
+        const existing = orden.url_evidencia ? orden.url_evidencia.split('|').filter(Boolean) : [];
+        const updated = [...existing, newUrl].join('|');
+        const { error: uError } = await supabase
+            .from('ordenes_pago')
+            .update({ url_evidencia: updated })
+            .eq('id', ordenId);
+        if (uError) throw new Error(uError.message);
+        return updated;
+    },
+
     pagarOrdenPago: async (ordenId: string, cuentaOrigen: string, fechaPago: string, numOperacion?: string, voucherUrl?: string) => {
         // 1. Obtener orden
         const { data: orden, error: oError } = await supabase

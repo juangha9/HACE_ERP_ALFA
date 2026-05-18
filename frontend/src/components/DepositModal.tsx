@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Banknote, Camera, RefreshCw, ChevronDown, Check } from 'lucide-react';
+import { X, Banknote, Camera, RefreshCw, ChevronDown } from 'lucide-react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { api } from '../services/api';
 import type { VentaCabecera } from '../services/types';
@@ -9,6 +9,8 @@ interface DepositModalProps {
     onClose: () => void;
     onRefresh: () => Promise<void>;
 }
+
+const FONT = { fontFamily: "'Manrope', sans-serif" } as const;
 
 export const DepositModal: React.FC<DepositModalProps> = ({ venta, onClose, onRefresh }) => {
     const [cobroMonto, setCobroMonto] = useState<string>('');
@@ -20,69 +22,51 @@ export const DepositModal: React.FC<DepositModalProps> = ({ venta, onClose, onRe
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [touched, setTouched] = useState(false);
-    const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const accountDropdownRef = useRef<HTMLDivElement>(null);
+
+    const handleClose = () => {
+        setIsClosing(true);
+        setTimeout(() => onClose(), 300);
+    };
 
     useScrollLock(true);
 
-    // Listen for Paste events (Ctrl+V)
     useEffect(() => {
         const handlePaste = async (event: ClipboardEvent) => {
-            // Only process paste if we are in a bank account mode (not cash)
             if (cuentaDestino === 'Efectivo') return;
-
             const items = event.clipboardData?.items;
             if (!items) return;
-
             for (let i = 0; i < items.length; i++) {
                 if (items[i].type.indexOf('image') !== -1) {
                     const file = items[i].getAsFile();
                     if (file) {
                         setError(null);
-                        try {
-                            const webpFile = await convertToWebP(file);
-                            setVoucherFile(webpFile);
-                            setVoucherPreview(URL.createObjectURL(webpFile));
-                        } catch (err) {
-                            setVoucherFile(file);
-                            setVoucherPreview(URL.createObjectURL(file));
-                        }
+                        try { const w = await convertToWebP(file); setVoucherFile(w); setVoucherPreview(URL.createObjectURL(w)); }
+                        catch { setVoucherFile(file); setVoucherPreview(URL.createObjectURL(file)); }
                     }
                 }
             }
         };
-
         window.addEventListener('paste', handlePaste);
         return () => window.removeEventListener('paste', handlePaste);
-    }, [cuentaDestino]); // Re-bind if account changes, though most importantly avoids stale closures
+    }, [cuentaDestino]);
 
-    const BANK_ACCOUNTS = ['2049/YAPE', '4071', '9001', '8059'];
-    const ALL_ACCOUNTS: { value: string; label: string; type: 'EFECTIVO' | 'BANCO' }[] = [
-        { value: 'Efectivo', label: 'Efectivo',  type: 'EFECTIVO' },
-        ...BANK_ACCOUNTS.map(acc => ({ value: acc, label: acc, type: 'BANCO' as const })),
+    const ALL_ACCOUNTS = [
+        { value: 'Efectivo',   label: 'Efectivo (Caja)' },
+        { value: '2049/YAPE', label: '2049 / YAPE' },
+        { value: '4071',      label: '4071' },
+        { value: '9001',      label: '9001' },
+        { value: '8059',      label: '8059' },
     ];
 
-    useEffect(() => {
-        const handleClickOutside = (e: MouseEvent) => {
-            if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) {
-                setAccountDropdownOpen(false);
-            }
-        };
-        if (accountDropdownOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-            return () => document.removeEventListener('mousedown', handleClickOutside);
-        }
-    }, [accountDropdownOpen]);
-
-    // Validaciones visuales
-    const missingMonto = touched && (!cobroMonto || Number(cobroMonto) <= 0);
-    const missingOp = touched && cuentaDestino !== 'Efectivo' && !numOperacion;
+    const missingMonto   = touched && (!cobroMonto || Number(cobroMonto) <= 0);
+    const missingOp      = touched && cuentaDestino !== 'Efectivo' && !numOperacion;
     const missingVoucher = touched && cuentaDestino !== 'Efectivo' && !voucherFile;
-    const missingMotivo = touched && Number(cobroMonto) > Number(venta.saldo_pendiente) && !motivoExcedente;
+    const missingMotivo  = touched && Number(cobroMonto) > Number(venta.saldo_pendiente) && !motivoExcedente;
 
-    const convertToWebP = (file: File): Promise<File> => {
-        return new Promise((resolve, reject) => {
+    const convertToWebP = (file: File): Promise<File> =>
+        new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (event) => {
@@ -90,256 +74,203 @@ export const DepositModal: React.FC<DepositModalProps> = ({ venta, onClose, onRe
                 img.src = event.target?.result as string;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const MAX_SIZE = 1200;
-                    if (width > MAX_SIZE || height > MAX_SIZE) {
-                        if (width > height) {
-                            height = (height / width) * MAX_SIZE;
-                            width = MAX_SIZE;
-                        } else {
-                            width = (width / height) * MAX_SIZE;
-                            height = MAX_SIZE;
-                        }
+                    let { width, height } = img;
+                    const MAX = 1200;
+                    if (width > MAX || height > MAX) {
+                        if (width > height) { height = (height / width) * MAX; width = MAX; }
+                        else { width = (width / height) * MAX; height = MAX; }
                     }
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx?.drawImage(img, 0, 0, width, height);
-                    canvas.toBlob((blob) => {
-                        if (blob) {
-                            const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", { type: 'image/webp' });
-                            resolve(newFile);
-                        } else {
-                            reject(new Error("Error al convertir"));
-                        }
+                    canvas.width = width; canvas.height = height;
+                    canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+                    canvas.toBlob(blob => {
+                        if (blob) resolve(new File([blob], file.name.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' }));
+                        else reject(new Error('Error al convertir'));
                     }, 'image/webp', 0.85);
                 };
             };
         });
-    };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            setError(null);
-            try {
-                const webpFile = await convertToWebP(file);
-                setVoucherFile(webpFile);
-                setVoucherPreview(URL.createObjectURL(webpFile));
-            } catch (err) {
-                setVoucherFile(file);
-                setVoucherPreview(URL.createObjectURL(file));
-            }
-        }
+        if (!file) return;
+        setError(null);
+        try { const w = await convertToWebP(file); setVoucherFile(w); setVoucherPreview(URL.createObjectURL(w)); }
+        catch { setVoucherFile(file); setVoucherPreview(URL.createObjectURL(file)); }
     };
 
+    const reset = () => { if (touched) setTouched(false); setError(null); };
+
     const handleConfirmCobro = async () => {
-        setTouched(true);
-        setError(null);
-
-        if (!cobroMonto || Number(cobroMonto) <= 0) {
-            setError("Por favor indique el monto del depósito");
-            return;
-        }
-
+        setTouched(true); setError(null);
+        if (!cobroMonto || Number(cobroMonto) <= 0)          { setError('Por favor indique el monto del depósito'); return; }
         if (cuentaDestino !== 'Efectivo') {
-            if (!numOperacion && !voucherFile) {
-                setError("Debe incluir el N° de operación y el Voucher");
-                return;
-            }
-            if (!numOperacion) {
-                setError("Falta el N° de operación");
-                return;
-            }
-            if (!voucherFile) {
-                setError("Falta adjuntar el Voucher");
-                return;
-            }
+            if (!numOperacion && !voucherFile)               { setError('Debe incluir el N° de operación y el Voucher'); return; }
+            if (!numOperacion)                               { setError('Falta el N° de operación'); return; }
+            if (!voucherFile)                                { setError('Falta adjuntar el Voucher'); return; }
         }
-
         if (Number(cobroMonto) > Number(venta.saldo_pendiente) && !motivoExcedente) {
-            setError("Debe justificar el pago de excedente");
-            return;
+            setError('Debe justificar el pago de excedente'); return;
         }
-
         setIsSubmitting(true);
         try {
             await api.registrarCobro(venta.id, Number(cobroMonto), cuentaDestino, motivoExcedente, numOperacion, voucherFile || undefined);
-            await onRefresh();
-            onClose();
-        } catch (error: any) {
-            setError(`Error: ${error.message}`);
-        } finally {
-            setIsSubmitting(false);
-        }
+            await onRefresh(); handleClose();
+        } catch (err: any) { setError(`Error: ${err.message}`); }
+        finally { setIsSubmitting(false); }
     };
 
+    const fmt = (n: number) => n.toLocaleString('es-PE', { minimumFractionDigits: 2 });
+
     return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-            <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-md border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden">
-                <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
-                
-                <div className="px-8 py-6 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
-                    <div className="flex items-center gap-4">
-                        <Banknote className="w-8 h-8 text-[#4A90E2] drop-shadow-sm" />
+        <div
+            className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/30 overflow-hidden ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+            style={{ backdropFilter: 'blur(8px)', ...FONT }}
+        >
+            {/* Modal */}
+            <div className={`bg-white/75 backdrop-blur-xl rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-xs border border-white/60 flex flex-col max-h-[95vh] relative overflow-hidden ${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
+                <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10" />
+
+                {/* Header */}
+                <div className="px-5 py-4 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-[#4A90E2] flex items-center justify-center shadow-sm">
+                            <Banknote className="w-4 h-4 text-white" />
+                        </div>
                         <div>
-                            <h2 className="text-xl font-black text-[#2c3434] uppercase tracking-tight">Registrar Depósito</h2>
+                            <h2 className="text-sm font-black text-[#2c3434] uppercase tracking-tight">Registrar Depósito</h2>
+                            <p className="text-[9px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">{venta.cliente_nombre}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
-                        <X className="w-6 h-6" />
+                    <button onClick={handleClose} className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
+                        <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-8 space-y-5 custom-scrollbar">
-                    <div className="mb-2 flex flex-wrap items-center gap-x-6 gap-y-1">
-                        <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Saldo Deuda:</span>
-                            <span className="text-xs font-black text-[#4A90E2] tabular-nums">S/ {Number(venta.saldo_pendiente).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 custom-scrollbar">
+
+                    {/* Saldo info — legible, no bold excesivo */}
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 px-1">
+                        <div className="flex flex-col">
+                            <span className="text-[9px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo deuda</span>
+                            <span className="text-base font-semibold text-[#366480] tabular-nums">S/ {fmt(Number(venta.saldo_pendiente))}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-black text-[#8b9ba5] uppercase tracking-widest">Saldo Final:</span>
-                            <span className={`text-xs font-black tabular-nums transition-colors ${Number(cobroMonto) > 0 ? 'text-[#166534]' : 'text-[#8b9ba5]'}`}>
-                                S/ {Math.max(0, Number(venta.saldo_pendiente) - Number(cobroMonto)).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                        <div className="w-px bg-[#e8eded] self-stretch hidden sm:block" />
+                        <div className="flex flex-col">
+                            <span className="text-[9px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo final</span>
+                            <span className={`text-base font-semibold tabular-nums transition-colors ${Number(cobroMonto) > 0 ? 'text-[#166534]' : 'text-[#8b9ba5]'}`}>
+                                S/ {fmt(Math.max(0, Number(venta.saldo_pendiente) - Number(cobroMonto)))}
                             </span>
                         </div>
                     </div>
+
+                    {/* Error */}
                     {error && (
-                        <div className="bg-rose-50 dark:bg-rose-900/10 p-4 rounded-2xl border-2 border-rose-100 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 text-[10px] font-black uppercase text-center animate-in shake duration-300 tracking-wider">
-                           ⚠️ {error}
+                        <div className="bg-rose-50/80 p-3 rounded-xl border border-rose-200 text-rose-600 text-[10px] font-semibold text-center tracking-wide">
+                            ⚠️ {error}
                         </div>
                     )}
 
-                    <div className={`p-6 rounded-3xl border-2 transition-all ${missingMonto ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800'}`}>
-                        <label className={`text-[9px] font-black uppercase tracking-[0.2em] block mb-2 ${missingMonto ? 'text-rose-500' : 'text-slate-400'}`}>Importe a Cobrar (S/)</label>
-                        <input 
-                            type="number" 
-                            value={cobroMonto} 
-                            onChange={(e) => {setCobroMonto(e.target.value); if(touched) setTouched(false); setError(null);}} 
+                    {/* Importe */}
+                    <div className={`p-4 rounded-2xl border-2 transition-all ${missingMonto ? 'bg-rose-50 border-rose-200' : 'bg-[#f8faf9] border-[#e8eded]'}`}>
+                        <label className={`text-[9px] font-semibold uppercase tracking-[0.2em] block mb-1 ${missingMonto ? 'text-rose-500' : 'text-[#8b9ba5]'}`}>Importe a Cobrar (S/)</label>
+                        <input
+                            type="number"
+                            value={cobroMonto}
+                            onChange={(e) => { setCobroMonto(e.target.value); reset(); }}
                             onKeyDown={(e) => ['e', 'E', '+', '-'].includes(e.key) && e.preventDefault()}
-                            className="w-full bg-transparent border-none p-0 text-3xl font-black outline-none tabular-nums text-indigo-600 placeholder:text-slate-200" 
+                            className="w-full bg-transparent border-none p-0 text-2xl font-black outline-none tabular-nums text-[#4A90E2] placeholder:text-[#d3dcdb]"
+                            style={FONT}
                             placeholder="0.00"
-                            autoFocus 
+                            autoFocus
                         />
                     </div>
 
+                    {/* Excedente */}
                     {Number(cobroMonto) > Number(venta.saldo_pendiente) && (
-                        <div className={`p-5 rounded-2xl border-2 animate-in slide-in-from-top-2 transition-all ${missingMotivo ? 'bg-rose-50 border-rose-300' : 'bg-rose-50/50 dark:bg-rose-900/10 border-rose-100 dark:border-rose-900/30'}`}>
-                            <div className="flex items-center gap-2 mb-3">
-                                <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${missingMotivo ? 'bg-rose-600' : 'bg-rose-500'}`}></div>
-                                <label className={`text-[10px] font-black uppercase tracking-widest leading-none ${missingMotivo ? 'text-rose-600' : 'text-rose-600'}`}>Justificación de Excedente (Obligatorio)</label>
-                            </div>
-                            <textarea 
+                        <div className={`p-3 rounded-xl border animate-in slide-in-from-top-2 transition-all ${missingMotivo ? 'bg-rose-50 border-rose-200' : 'bg-rose-50/60 border-rose-100'}`}>
+                            <label className="text-[9px] font-semibold uppercase tracking-wider text-rose-500 block mb-1.5">Justificación de Excedente (obligatorio)</label>
+                            <textarea
                                 value={motivoExcedente}
-                                onChange={(e) => {setMotivoExcedente(e.target.value); if(touched) setTouched(false); setError(null);}}
-                                placeholder="Indique por qué el cliente está abonando más de lo adeudado..."
-                                className="w-full bg-white/50 dark:bg-slate-900/50 border-none p-4 rounded-xl text-[11px] font-black text-slate-700 dark:text-rose-200 placeholder:text-rose-300 h-20 outline-none focus:ring-2 ring-rose-200 dark:ring-rose-500/20 transition-all resize-none uppercase"
+                                onChange={(e) => { setMotivoExcedente(e.target.value); reset(); }}
+                                placeholder="Indique por qué el cliente abona más de lo adeudado..."
+                                className="w-full bg-white/70 border-none p-2.5 rounded-lg text-[11px] font-medium text-[#2c3434] placeholder:text-rose-300 h-14 outline-none focus:ring-1 ring-rose-200 transition-all resize-none"
+                                style={FONT}
                             />
                         </div>
                     )}
-                    
-                    <div ref={accountDropdownRef} className="relative">
-                        <label className="text-[9px] font-black uppercase tracking-[0.2em] block mb-2 text-slate-400">Cuenta de Destino</label>
-                        <button
-                            type="button"
-                            onClick={() => setAccountDropdownOpen(o => !o)}
-                            className={`w-full px-4 py-4 rounded-xl border-2 font-black text-[11px] uppercase tracking-widest transition-all flex items-center justify-between gap-3 ${
-                                cuentaDestino === 'Efectivo'
-                                    ? 'border-indigo-600 bg-indigo-50 text-indigo-600'
-                                    : 'border-emerald-600 bg-emerald-50 text-emerald-600'
-                            }`}
-                        >
-                            <span className="flex items-center gap-3 truncate">
-                                <Banknote className="w-4 h-4 flex-shrink-0" />
-                                <span className="truncate">{cuentaDestino}</span>
-                            </span>
-                            <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${accountDropdownOpen ? 'rotate-180' : ''}`} />
-                        </button>
-                        {accountDropdownOpen && (
-                            <div className="absolute left-0 right-0 mt-2 z-30 bg-white rounded-xl border border-slate-200 shadow-[0_20px_45px_rgba(0,0,0,0.12)] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                {ALL_ACCOUNTS.map(acc => {
-                                    const isSelected = cuentaDestino === acc.value;
-                                    const accentColor = acc.type === 'EFECTIVO' ? 'text-indigo-600' : 'text-emerald-600';
-                                    return (
-                                        <button
-                                            key={acc.value}
-                                            type="button"
-                                            onClick={() => {
-                                                setCuentaDestino(acc.value);
-                                                setAccountDropdownOpen(false);
-                                                if (touched) setTouched(false);
-                                                setError(null);
-                                            }}
-                                            className={`w-full px-4 py-3 flex items-center justify-between gap-3 font-black text-[11px] uppercase tracking-widest transition-all ${
-                                                isSelected ? `${accentColor} bg-slate-50` : 'text-slate-600 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <span className="flex items-center gap-3 truncate">
-                                                <Banknote className={`w-4 h-4 flex-shrink-0 ${isSelected ? accentColor : 'text-slate-400'}`} />
-                                                <span className="truncate">{acc.label}</span>
-                                                {acc.type === 'EFECTIVO' && (
-                                                    <span className="text-[8px] font-black text-slate-300 tracking-widest">CAJA</span>
-                                                )}
-                                            </span>
-                                            {isSelected && <Check className={`w-4 h-4 flex-shrink-0 ${accentColor}`} />}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
+
+                    {/* Origen de Fondos */}
+                    <div>
+                        <label className="text-[9px] font-semibold uppercase tracking-[0.2em] block mb-1.5 text-[#8b9ba5]">Origen de Fondos</label>
+                        <div className="relative">
+                            <select
+                                value={cuentaDestino}
+                                onChange={(e) => { setCuentaDestino(e.target.value); reset(); }}
+                                className="w-full appearance-none px-3 py-2.5 pr-8 rounded-xl border border-[#e8eded] bg-[#f8faf9] text-[12px] font-semibold text-[#2c3434] outline-none focus:border-[#4A90E2] cursor-pointer transition-all"
+                                style={FONT}
+                            >
+                                {ALL_ACCOUNTS.map(a => (
+                                    <option key={a.value} value={a.value}>{a.label}</option>
+                                ))}
+                            </select>
+                            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8b9ba5] pointer-events-none" />
+                        </div>
                     </div>
 
+                    {/* Voucher + N° Op */}
                     {cuentaDestino !== 'Efectivo' && (
-                        <div className="space-y-3 animate-in fade-in duration-300">
-                            <input 
-                                type="text" 
-                                value={numOperacion} 
-                                onChange={(e) => {setNumOperacion(e.target.value); if(touched) setTouched(false); setError(null);}} 
-                                className={`w-full p-4 rounded-xl text-sm font-black outline-none border-2 transition-all uppercase placeholder:text-[9px] placeholder:text-slate-300 ${missingOp ? 'bg-rose-50 border-rose-300 text-rose-600' : 'bg-slate-50 dark:bg-slate-800 border-transparent focus:border-emerald-400'}`} 
-                                placeholder="NÚMERO DE OPERACIÓN BANCARIA" 
+                        <div className="space-y-2 animate-in fade-in duration-300">
+                            <input
+                                type="text"
+                                value={numOperacion}
+                                onChange={(e) => { setNumOperacion(e.target.value); reset(); }}
+                                className={`w-full px-3 py-2 rounded-xl text-[11px] font-medium outline-none border transition-all placeholder:text-[#d3dcdb] ${missingOp ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-[#f8faf9] border-[#e8eded] text-[#2c3434] focus:border-[#4A90E2]'}`}
+                                style={FONT}
+                                placeholder="N° de Operación Bancaria"
                             />
-                            
-                            <div 
-                                onClick={() => fileInputRef.current?.click()} 
-                                className={`group w-full h-28 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all relative ${missingVoucher ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 hover:border-emerald-400'}`}
+                            <div
+                                onClick={() => fileInputRef.current?.click()}
+                                className={`group w-full h-16 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all relative ${missingVoucher ? 'bg-rose-50 border-rose-200' : 'bg-[#f8faf9] border-[#e8eded] hover:border-[#4A90E2]'}`}
                             >
                                 {voucherPreview ? (
                                     <div className="relative w-full h-full group">
                                         <img src={voucherPreview} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                        <button 
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setVoucherFile(null);
-                                                setVoucherPreview(null);
-                                            }}
-                                            className="absolute top-2 right-2 p-2 bg-rose-500/90 text-white rounded-full shadow-lg hover:bg-rose-600 transition-all z-10 hover:scale-110 active:scale-95 flex items-center justify-center backdrop-blur-sm border border-rose-400/50"
-                                            title="Eliminar imagen"
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); setVoucherFile(null); setVoucherPreview(null); }}
+                                            className="absolute top-1.5 right-1.5 p-1.5 bg-rose-500/90 text-white rounded-full shadow hover:bg-rose-600 transition-all z-10 flex items-center justify-center"
                                         >
-                                            <X className="w-3 h-3" />
+                                            <X className="w-2.5 h-2.5" />
                                         </button>
                                     </div>
                                 ) : (
                                     <>
-                                        <Camera className={`w-7 h-7 mb-1 transition-transform group-hover:scale-110 ${missingVoucher ? 'text-rose-400' : 'text-slate-300'}`} />
-                                        <span className={`text-[8px] font-black uppercase tracking-widest ${missingVoucher ? 'text-rose-500' : 'text-slate-400'}`}>ADJUNTAR VOUCHER</span>
+                                        <Camera className={`w-4 h-4 mb-0.5 ${missingVoucher ? 'text-rose-400' : 'text-[#8b9ba5]'}`} />
+                                        <span className={`text-[8px] font-semibold uppercase tracking-widest ${missingVoucher ? 'text-rose-500' : 'text-[#8b9ba5]'}`}>Adjuntar Voucher</span>
                                     </>
                                 )}
-                                {isSubmitting && <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/60 flex items-center justify-center backdrop-blur-sm"><RefreshCw className="w-6 h-6 animate-spin text-indigo-600" /></div>}
+                                {isSubmitting && (
+                                    <div className="absolute inset-0 bg-white/60 flex items-center justify-center backdrop-blur-sm">
+                                        <RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" />
+                                    </div>
+                                )}
                             </div>
                             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                         </div>
                     )}
-                    
-                    <div className="pt-4">
-                        <button 
-                            onClick={handleConfirmCobro} 
-                            disabled={isSubmitting} 
-                            className="w-full py-5 bg-[#4A90E2] text-white rounded-2xl text-[11px] font-black uppercase shadow-xl shadow-[#4A90E2]/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-30 tracking-[0.2em] border-b-4 border-[#366480]"
+
+                    {/* Acciones */}
+                    <div className="pt-2">
+                        <button
+                            onClick={handleConfirmCobro}
+                            disabled={isSubmitting}
+                            className="w-full py-3.5 bg-[#4A90E2] text-white rounded-2xl text-[10px] font-black uppercase shadow-lg shadow-[#4A90E2]/20 hover:bg-[#357ABD] hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-30 tracking-[0.2em] border-b-4 border-[#366480]"
+                            style={FONT}
                         >
                             {isSubmitting ? 'PROCESANDO...' : 'CONFIRMAR DEPÓSITO'}
                         </button>
-                        <button onClick={onClose} className="w-full mt-3 py-1 text-[8px] font-black text-slate-300 uppercase tracking-widest hover:text-rose-500 transition-colors">Cerrar</button>
+                        <button onClick={handleClose} className="w-full mt-2 py-1 text-[8px] font-semibold text-[#8b9ba5] uppercase tracking-widest hover:text-rose-500 transition-colors" style={FONT}>
+                            Cerrar
+                        </button>
                     </div>
                 </div>
             </div>

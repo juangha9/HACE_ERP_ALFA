@@ -143,6 +143,16 @@ export const SalesTreasuryPage = () => {
     const [expandedCobro, setExpandedCobro] = useState<string | null>(null);
     const [cobroTrail, setCobroTrail] = useState<Record<string, NodrizaTesoreria[]>>({});
     const [loadingCobroTrail, setLoadingCobroTrail] = useState(false);
+    const [isClosingHistory, setIsClosingHistory] = useState(false);
+
+    const closeHistoryModal = () => {
+        setIsClosingHistory(true);
+        setTimeout(() => {
+            setShowHistoryModal(null);
+            setIsClosingHistory(false);
+            setExpandedCobro(null);
+        }, 300);
+    };
 
     const [showCuentasPopup, setShowCuentasPopup] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
@@ -1284,101 +1294,159 @@ export const SalesTreasuryPage = () => {
                 )}
 
                 {showHistoryModal && createPortal(
-                    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden animate-in fade-in duration-300" style={{ backdropFilter: 'blur(6px)' }}>
-                        <div className="bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-3xl border border-white/50 flex flex-col max-h-[95vh] relative overflow-hidden">
-                            <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
-                            
-                            <div className="px-8 py-6 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
-                                <div className="flex items-center gap-4">
-                                    <HistoryIcon className="w-8 h-8 text-[#4A90E2] drop-shadow-sm" />
-                                    <div>
-                                        <h2 className="text-2xl font-black text-[#2c3434] uppercase tracking-tight">Historial de Depósitos</h2>
-                                    </div>
-                                </div>
-                                <button onClick={() => setShowHistoryModal(null)} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
-                                    <X className="w-6 h-6" />
-                                </button>
-                            </div>
+                    (() => {
+                        const sortedHistory = historyData.slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+                        const ventaTotal = Number(showHistoryModal.monto_total);
+                        let running = ventaTotal;
+                        const rows = sortedHistory.map(cobro => {
+                            running = running - Number(cobro.monto);
+                            const saldoDespues = Math.max(0, running);
+                            return { cobro, saldoDespues };
+                        });
+                        return (
+                            <div
+                                className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/30 overflow-hidden ${isClosingHistory ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+                                style={{ backdropFilter: 'blur(8px)', fontFamily: "'Manrope', sans-serif" }}
+                            >
+                                <div className={`bg-white/75 backdrop-blur-xl rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-lg border border-white/60 flex flex-col max-h-[90vh] relative overflow-hidden ${isClosingHistory ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
+                                    <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10"></div>
 
-                            <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
-                                {loadingHistory ? (
-                                    <div className="py-20 flex flex-col items-center gap-4">
-                                        <RefreshCw className="w-8 h-8 animate-spin text-indigo-500" />
-                                        <p className="text-slate-300 font-black uppercase tracking-widest text-[10px]">Consultando historial...</p>
+                                    {/* Header */}
+                                    <div className="px-5 py-4 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-xl bg-[#4A90E2] flex items-center justify-center shadow-sm">
+                                                <HistoryIcon className="w-4 h-4 text-white" />
+                                            </div>
+                                            <div>
+                                                <h2 className="text-base font-black text-[#2c3434] uppercase tracking-tight">Historial de Depósitos</h2>
+                                                <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">{showHistoryModal.cliente_nombre}</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={closeHistoryModal} className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
+                                            <X className="w-4 h-4" />
+                                        </button>
                                     </div>
-                                ) : historyData.length === 0 ? (
-                                    <div className="py-24 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem]">
-                                        <p className="text-slate-300 font-black uppercase tracking-widest text-xs italic">Esta venta no registra ningún depósito hasta el momento</p>
+
+                                    {/* Totals strip */}
+                                    <div className="px-5 py-3 border-b border-[#d3dcdb]/20 bg-white/30 flex items-center gap-5">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Monto Total</span>
+                                            <span className="text-base font-bold text-[#2c3434] tabular-nums">S/ {ventaTotal.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                        </div>
+                                        <div className="w-px h-8 bg-[#e8eded]" />
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Pendiente</span>
+                                            <span className={`text-base font-bold tabular-nums ${Number(showHistoryModal.saldo_pendiente) > 0 ? 'text-[#366480]' : 'text-[#166534]'}`}>S/ {Number(showHistoryModal.saldo_pendiente).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                        </div>
                                     </div>
-                                ) : historyData.map(cobro => (
-                                    <div key={cobro.id} className="space-y-4">
-                                        <div 
-                                            onClick={() => toggleCobroTrail(cobro.id)}
-                                            className={`bg-slate-50 dark:bg-slate-800/50 p-8 rounded-[2.5rem] border-2 cursor-pointer transition-all flex items-center justify-between group ${expandedCobro === cobro.id ? 'border-indigo-500 shadow-xl' : 'border-slate-100 dark:border-slate-800 overflow-hidden'}`}
-                                        >
-                                            <div className="flex items-center gap-8">
-                                                <div className={`p-5 rounded-2xl border shadow-sm ${cobro.cuenta_destino === 'Efectivo' ? 'bg-amber-50 border-amber-100 text-amber-500' : 'bg-emerald-50 border-emerald-100 text-emerald-500'}`}>{cobro.cuenta_destino === 'Efectivo' ? <Banknote /> : <CreditCard />}</div>
-                                                <div>
-                                                    <p className="text-2xl font-black tabular-nums text-slate-900 dark:text-white">S/ {Number(cobro.monto).toFixed(2)}</p>
-                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                                                        {format(new Date(cobro.created_at), "dd MMMM, yyyy - HH:mm", { locale: es })}
-                                                    </p>
-                                                    {cobro.motivo_excedente && (
-                                                        <div className="mt-2 text-[9px] font-black text-rose-500 bg-rose-50 dark:bg-rose-900/10 px-3 py-1.5 rounded-lg border border-rose-100 dark:border-rose-900/30 uppercase">
-                                                            MOTIVO EXCEDENTE: {cobro.motivo_excedente}
+
+                                    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 custom-scrollbar">
+                                        {loadingHistory ? (
+                                            <div className="py-10 flex flex-col items-center gap-3">
+                                                <RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" />
+                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[11px]">Consultando historial...</p>
+                                            </div>
+                                        ) : sortedHistory.length === 0 ? (
+                                            <div className="py-10 text-center border-2 border-dashed border-[#e8eded] rounded-2xl">
+                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[11px] italic">No hay depósitos registrados</p>
+                                            </div>
+                                        ) : rows.map(({ cobro, saldoDespues }, idx) => {
+                                            const isExpanded = expandedCobro === cobro.id;
+                                            const isEfectivo = cobro.cuenta_destino === 'Efectivo';
+                                            return (
+                                                <div key={cobro.id} className={`rounded-2xl border bg-white/60 transition-all ${isExpanded ? 'border-[#4A90E2]/40 shadow-sm' : 'border-[#e8eded]'}`}>
+                                                    <div
+                                                        onClick={() => toggleCobroTrail(cobro.id)}
+                                                        className="grid grid-cols-2 gap-3 px-3.5 py-3 cursor-pointer items-center"
+                                                    >
+                                                        {/* Left: ingreso */}
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => { e.stopPropagation(); toggleCobroTrail(cobro.id); }}
+                                                                className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all ${isExpanded ? 'bg-[#4A90E2] text-white rotate-180' : 'bg-[#f0f5f4] text-[#8b9ba5] hover:bg-[#e8eded]'}`}
+                                                            >
+                                                                <ChevronDown className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${isEfectivo ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                                                                {isEfectivo ? <Banknote className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+                                                            </div>
+                                                            <div className="flex flex-col min-w-0">
+                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Ingreso #{idx + 1}</span>
+                                                                <span className="text-base font-bold tabular-nums text-emerald-600 leading-tight">+ S/ {Number(cobro.monto).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate">{format(new Date(cobro.created_at), "dd MMM yyyy · HH:mm", { locale: es })}</span>
+                                                            </div>
+                                                        </div>
+                                                        {/* Right: saldo restante */}
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Restante</span>
+                                                            <span className={`text-lg font-bold tabular-nums leading-tight ${saldoDespues === 0 ? 'text-[#166534]' : 'text-[#366480]'}`}>S/ {saldoDespues.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate max-w-[140px]">{cobro.cuenta_destino}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {isExpanded && (
+                                                        <div className="px-3.5 pb-3.5 pt-2 border-t border-[#e8eded]/60 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                            {cobro.motivo_excedente && (
+                                                                <div className="mb-2.5 text-[11px] font-semibold text-rose-500 bg-rose-50/70 px-2.5 py-2 rounded-lg border border-rose-100 uppercase tracking-wide">
+                                                                    Excedente: {cobro.motivo_excedente}
+                                                                </div>
+                                                            )}
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">N° Operación</p>
+                                                                    <p className="text-sm font-bold font-mono text-[#2c3434] truncate">
+                                                                        {cobro.numero_operacion ? `#${cobro.numero_operacion}` : '—'}
+                                                                    </p>
+                                                                </div>
+                                                                {cobro.voucher_url ? (
+                                                                    <div
+                                                                        onClick={(e) => { e.stopPropagation(); setZoomImage(cobro.voucher_url!); }}
+                                                                        className="shrink-0 w-16 h-16 rounded-lg overflow-hidden cursor-zoom-in border border-white shadow-sm hover:scale-105 transition-transform"
+                                                                    >
+                                                                        <img src={cobro.voucher_url} className="w-full h-full object-cover" />
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="shrink-0 w-16 h-16 rounded-lg border border-dashed border-[#e8eded] bg-[#f8faf9] flex items-center justify-center">
+                                                                        <Camera className="w-4 h-4 text-[#d3dcdb]" />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            {loadingCobroTrail && !cobroTrail[cobro.id] && (
+                                                                <div className="mt-2.5 flex items-center gap-2 text-[#8b9ba5] text-[11px] font-semibold uppercase tracking-widest">
+                                                                    <RefreshCw className="w-3 h-3 animate-spin" /> Rastreando fondos...
+                                                                </div>
+                                                            )}
+                                                            {cobroTrail[cobro.id] && cobroTrail[cobro.id].length > 0 && (
+                                                                <div className="mt-2.5 space-y-1.5">
+                                                                    <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider mb-1">Ruta del Depósito</p>
+                                                                    {cobroTrail[cobro.id].map((m, i) => (
+                                                                        <div key={m.id} className="flex items-center gap-2 px-2.5 py-2 bg-white/70 rounded-lg border border-[#e8eded]/70">
+                                                                            <span className="w-5 h-5 rounded-full bg-[#4A90E2]/10 text-[#4A90E2] flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <p className="text-[11px] font-bold uppercase text-[#2c3434] truncate">
+                                                                                    {m.tipo_movimiento === 'INGRESO'
+                                                                                        ? (sortedHistory[0]?.id === cobro.id ? 'PAGO INICIAL' : 'AMORTIZACIÓN')
+                                                                                        : m.tipo_movimiento}
+                                                                                </p>
+                                                                                <p className="text-[10px] text-[#8b9ba5] truncate">{m.cuenta_destino || m.cuenta_origen}</p>
+                                                                            </div>
+                                                                            <span className={`text-[12px] font-bold tabular-nums ${m.tipo_movimiento === 'INGRESO' ? 'text-emerald-600' : 'text-[#2c3434]'}`}>S/ {Number(m.monto).toFixed(2)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
-                                            </div>
-                                            <div className="flex items-center gap-8">
-                                                {cobro.numero_operacion && <div className="text-right hidden sm:block"><p className="text-[8px] font-black text-slate-400 uppercase mb-1">Operación</p><p className="text-[12px] font-black font-mono bg-slate-100 dark:bg-slate-900 px-4 py-1.5 rounded-xl uppercase">#{cobro.numero_operacion}</p></div>}
-                                                {cobro.voucher_url && <div onClick={(e) => {e.stopPropagation(); setZoomImage(cobro.voucher_url!);}} className="relative w-16 h-16 rounded-2xl overflow-hidden cursor-zoom-in border-4 border-white dark:border-slate-800 shadow-lg group-hover:scale-110 transition-transform"><img src={cobro.voucher_url} className="w-full h-full object-cover" /></div>}
-                                                <div className={`p-3 rounded-full ${expandedCobro === cobro.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400'}`}>{expandedCobro === cobro.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</div>
-                                            </div>
-                                        </div>
-                                        
-                                        {expandedCobro === cobro.id && (
-                                            <div className="mx-10 pl-10 border-l-4 border-indigo-100 dark:border-indigo-900 space-y-4 py-4 animate-in slide-in-from-top-4">
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-6">Ruta e Historial de este Depósito</p>
-                                                {loadingCobroTrail ? (
-                                                    <div className="py-6 flex items-center gap-3 text-slate-300 font-black text-[9px] uppercase"><RefreshCw className="w-3 h-3 animate-spin" /> Rastreando fondos...</div>
-                                                ) : cobroTrail[cobro.id]?.map((m, idx) => (
-                                                    <div key={m.id} className="flex items-center gap-6 relative">
-                                                        <div className="w-8 h-8 rounded-full bg-white dark:bg-slate-800 border-2 border-indigo-100 flex items-center justify-center text-indigo-500 font-black text-[10px] shadow-sm z-10">{idx + 1}</div>
-                                                        <div className="flex-1 bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center justify-between">
-                                                            <div>
-                                                                <p className="text-[10px] font-black text-slate-900 dark:text-white uppercase">
-                                                                    {m.tipo_movimiento === 'INGRESO' 
-                                                                        ? (historyData.slice().sort((a,b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())[0]?.id === cobro.id ? 'PAGO INICIAL' : 'AMORTIZACIÓN') 
-                                                                        : m.tipo_movimiento}
-                                                                </p>
-                                                                <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">{m.observaciones || 'Sin detalles'}</p>
-                                                            </div>
-                                                            <div className="text-right flex items-center gap-4">
-                                                                {m.voucher_url && (
-                                                                    <div onClick={(e) => {e.stopPropagation(); setZoomImage(m.voucher_url!);}} className="w-10 h-10 rounded-lg overflow-hidden border-2 border-slate-100 dark:border-slate-800 cursor-zoom-in group-hover:scale-105 transition-transform flex-shrink-0">
-                                                                        <img src={m.voucher_url} className="w-full h-full object-cover" />
-                                                                    </div>
-                                                                )}
-                                                                <div>
-                                                                    <p className={`text-[11px] font-black tabular-nums ${m.tipo_movimiento === 'INGRESO' ? 'text-emerald-500' : 'text-slate-900 dark:text-white'}`}>S/ {Number(m.monto).toFixed(2)}</p>
-                                                                    <p className="text-[8px] font-bold text-slate-300 uppercase">{m.cuenta_destino || m.cuenta_origen}</p>
-                                                                    {m.numero_operacion && <p className="text-[7px] font-black bg-slate-50 dark:bg-slate-900 px-1 py-0.5 rounded mt-1 text-slate-400 uppercase tracking-tighter">#{m.numero_operacion}</p>}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {(!loadingCobroTrail && (!cobroTrail[cobro.id] || cobroTrail[cobro.id].length === 0)) && (
-                                                    <p className="text-[10px] font-bold text-slate-300 italic uppercase">No se encontraron movimientos registrados en tesorería para este cobro.</p>
-                                                )}
-                                            </div>
-                                        )}
+                                            );
+                                        })}
                                     </div>
-                                ))}
+                                </div>
                             </div>
-                        </div>
-                    </div>,
+                        );
+                    })(),
                     document.body
                 )}
 
