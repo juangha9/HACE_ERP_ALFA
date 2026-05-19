@@ -593,7 +593,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                     )}
 
                     {/* Header */}
-                    <div className="px-8 py-5 border-b border-white/30 flex items-center justify-between shrink-0">
+                    <div className="px-8 py-5 border-b border-slate-200 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-4">
                             <span className="material-icons-round text-[36px] text-slate-700 drop-shadow-sm">request_quote</span>
                             <div>
@@ -652,7 +652,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         )}
 
                         {/* N° Comprobante — siempre editable, incluso en LISTO */}
-                        <div className="flex items-center gap-3 bg-white/50 border border-white/60 rounded-2xl px-4 py-3 shadow-sm">
+                        <div className="flex items-center gap-3 bg-white border-2 border-slate-400 focus-within:border-[#366480] focus-within:ring-2 focus-within:ring-[#366480]/15 rounded-2xl px-4 py-3 shadow-sm transition-all">
                             <div className="w-8 h-8 rounded-xl bg-[#366480]/10 flex items-center justify-center shrink-0">
                                 <Hash className="w-4 h-4 text-[#366480]" />
                             </div>
@@ -683,7 +683,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         </div>
 
                         {/* 1. Business info + Client form */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-3xl border-2 border-slate-400 shadow-sm">
                             {/* Business info */}
                             <div className="space-y-3">
                                 <h3 className="text-[10px] font-black text-[#366480] uppercase tracking-widest pl-1">Información de la Empresa</h3>
@@ -717,7 +717,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         }}
                                         onFocus={() => !nameLocked && setShowClientDrop(true)}
                                         readOnly={isReadOnly || nameLocked}
-                                        className={`w-full bg-white/50 border rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 transition-all${clientError && !form.cliente_nombre.trim() ? ' border-rose-400 ring-rose-200 focus:ring-rose-200' : ' border-white/60 focus:ring-[#366480]/20 focus:bg-white/80'}${nameLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
+                                        className={`w-full bg-white border-2 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 transition-all${clientError && !form.cliente_nombre.trim() ? ' border-rose-400 ring-rose-200 focus:ring-rose-200' : ' border-slate-400 focus:border-[#366480] focus:ring-[#366480]/15 focus:bg-white'}${nameLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
                                         placeholder="Nombre o Razón Social..."
                                     />
                                     {clientError && !form.cliente_nombre.trim() && (
@@ -755,7 +755,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         value={form.descripcion}
                                         onChange={v => onFormChange({ ...form, descripcion: v })}
                                         readOnly={isReadOnly}
-                                        className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all"
+                                        className="w-full bg-white border-2 border-slate-400 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-[#366480] focus:ring-2 focus:ring-[#366480]/15 transition-all"
                                         placeholder="Ej: Fabricación de puerta metálica..."
                                     />
                                 </div>
@@ -780,7 +780,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                 }
                                             }}
                                             readOnly={isReadOnly || doiLocked}
-                                            className={`w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all${doiLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
+                                            className={`w-full bg-white border-2 border-slate-400 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/15 focus:bg-white transition-all${doiLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
                                             placeholder="RUC / DNI..."
                                         />
                                         {doiLocked && !isReadOnly && (
@@ -788,7 +788,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         )}
                                     </div>
                                 </div>
-                                <div className="flex items-center justify-center gap-4 bg-white/40 border border-white/50 rounded-xl px-4 py-3">
+                                <div className="flex items-center justify-center gap-4 bg-white border-2 border-slate-400 rounded-xl px-4 py-3 shadow-sm">
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="radio"
@@ -813,7 +813,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                 <div className="col-span-2 grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Emisión</label>
-                                        <div className="w-full bg-white/30 border border-white/40 rounded-xl px-4 py-3 text-xs font-bold text-slate-500">
+                                        <div className="w-full bg-slate-50/50 border-2 border-slate-400 rounded-xl px-4 py-3 text-xs font-bold text-slate-500 shadow-sm">
                                             {form.fecha_emision
                                                 ? format(new Date(form.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy')
                                                 : new Date().toLocaleDateString()}
@@ -826,7 +826,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                             value={form.fecha_entrega || ''}
                                             onChange={e => onFormChange({ ...form, fecha_entrega: e.target.value || null })}
                                             readOnly={isReadOnly}
-                                            className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500/20 focus:bg-white/80 transition-all"
+                                            className="w-full bg-white border-2 border-slate-400 rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[#366480] focus:ring-2 focus:ring-[#366480]/15 transition-all"
                                         />
                                     </div>
                                 </div>
@@ -834,27 +834,27 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         </div>
 
                         {/* 2. Items table */}
-                        <div className="border border-white/40 rounded-3xl overflow-auto shadow-sm bg-white/30">
+                        <div className="border-2 border-slate-400 rounded-3xl overflow-auto shadow-sm bg-white">
                             <table className="w-full min-w-[640px] border-collapse">
                                 <thead>
-                                    <tr className="bg-white/40 text-slate-500 text-[10px] font-black uppercase tracking-widest">
-                                        <th className="px-4 py-4 text-left border-r border-white/50 w-20">Cant.</th>
-                                        <th className="px-4 py-4 text-left border-r border-white/50 w-24">Unidad</th>
-                                        <th className="px-4 py-4 text-left border-r border-white/50 min-w-[220px]">Descripción</th>
-                                        <th className="px-4 py-4 text-center border-r border-white/50 w-32">P. Unit</th>
+                                    <tr className="bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest border-b-2 border-slate-400">
+                                        <th className="px-4 py-4 text-left border-r border-slate-300 w-20">Cant.</th>
+                                        <th className="px-4 py-4 text-left border-r border-slate-300 w-24">Unidad</th>
+                                        <th className="px-4 py-4 text-left border-r border-slate-300 min-w-[220px]">Descripción</th>
+                                        <th className="px-4 py-4 text-center border-r border-slate-300 w-32">P. Unit</th>
                                         <th className="px-4 py-4 text-center w-32">Total</th>
                                         <th className="px-4 py-4 w-12"></th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-white/40">
+                                <tbody className="divide-y-2 divide-slate-300">
                                     {form.items.map((item, idx) => {
                                         const bound = boundProducts.get(item.id);
                                         const matches = itemMatchesMap.get(item.id) ?? [];
                                         const showCatalog = openCatalogRowId === item.id && !bound && !isReadOnly;
                                         const error = lineErrors.get(item.id);
                                         return (
-                                        <tr key={item.id} className={`group transition-colors ${error ? 'bg-rose-50/40' : 'hover:bg-white/40'}`}>
-                                            <td className="px-4 py-3 border-r border-white/30 align-top">
+                                        <tr key={item.id} className={`group transition-colors ${error ? 'bg-rose-50/40' : 'hover:bg-slate-50/50'}`}>
+                                            <td className="px-4 py-3 border-r border-slate-300 align-top">
                                                 <CellInput
                                                     type="number"
                                                     value={item.cantidad || ''}
@@ -869,7 +869,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                     placeholder="0"
                                                 />
                                             </td>
-                                            <td className="px-4 py-3 border-r border-white/30 align-top">
+                                            <td className="px-4 py-3 border-r border-slate-300 align-top">
                                                 {isReadOnly ? (
                                                     <span className="font-bold text-slate-500 text-[11px] uppercase">{item.unidad}</span>
                                                 ) : (
@@ -880,7 +880,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                     />
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 border-r border-white/30 min-w-[260px] align-top">
+                                            <td className="px-4 py-3 border-r border-slate-300 min-w-[260px] align-top">
                                                 <div className="flex flex-col gap-1.5">
                                                     <div className="flex items-center gap-1">
                                                         {bound && (
@@ -962,7 +962,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 border-r border-white/30 align-top">
+                                            <td className="px-4 py-3 border-r border-slate-300 align-top">
                                                 <div className="flex flex-col items-end gap-1">
                                                     <div className="flex items-center justify-end gap-1">
                                                         <span className="text-slate-400 text-[10px] font-bold">S/</span>
@@ -1006,7 +1006,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                             {!isReadOnly && (
                                 <button
                                     onClick={onAddRow}
-                                    className="w-full py-4 border-t border-white/40 text-xs font-bold text-slate-400 hover:text-[#366480] hover:bg-white/30 transition-all flex items-center justify-center gap-2"
+                                    className="w-full py-4 border-t-2 border-slate-300 text-xs font-black text-slate-400 hover:text-[#366480] hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
                                 >
                                     <span className="material-icons-round text-sm">add</span>
                                     AGREGAR FILA
@@ -1016,7 +1016,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
 
                         {/* 3. Totals */}
                         <div className="flex justify-end">
-                            <div className="w-full md:w-80 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
+                            <div className="w-full md:w-80 bg-white p-6 rounded-3xl border-2 border-slate-400 shadow-sm">
                                 {/* Two-column grid: label right-aligned | value right-aligned */}
                                 <div className="grid grid-cols-[1fr_auto] gap-x-5 gap-y-3 items-center">
                                     <span className="text-right text-xs text-slate-500 font-bold uppercase tracking-wider">Sub Total</span>
@@ -1043,14 +1043,14 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         </>
                                     )}
 
-                                    <div className="col-span-2 border-t border-white/50" />
+                                    <div className="col-span-2 border-t-2 border-slate-300" />
                                     <span className="text-right text-xs font-black tracking-widest uppercase text-slate-400">Total</span>
                                     <span className="text-right text-2xl font-black text-[#366480] tabular-nums">
                                         S/ {form.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                     </span>
 
                                     <span className="text-right text-xs text-emerald-600 font-bold uppercase tracking-wider">Adelanto</span>
-                                    <div className="flex items-center justify-end gap-1 bg-white/50 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
+                                    <div className="flex items-center justify-end gap-1 bg-white border-2 border-emerald-500 rounded-lg px-2 py-1 shadow-sm">
                                         <span className="text-[10px] text-emerald-600">S/</span>
                                         <CellInput
                                             type="number"
@@ -1063,7 +1063,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         />
                                     </div>
 
-                                    <div className="col-span-2 border-t-2 border-dashed border-white/50" />
+                                    <div className="col-span-2 border-t-2 border-dashed border-slate-300" />
                                     <span className="text-right text-[10px] font-black uppercase text-amber-600 tracking-widest">Saldo Pendiente</span>
                                     <span className="text-right text-lg font-black tracking-tighter text-amber-600 tabular-nums">
                                         S/ {(form.saldo_pendiente || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
@@ -1074,7 +1074,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                     </div>
 
                     {/* Footer */}
-                    <div className="px-8 py-5 border-t border-white/30 flex justify-between items-center shrink-0">
+                    <div className="px-8 py-5 border-t border-slate-200 flex justify-between items-center shrink-0">
                         <StatusBadge estado={form.estado} />
                         <div className="flex gap-3">
                             <button
@@ -1663,8 +1663,20 @@ export function CotizacionesPage() {
         businessInfo,
     });
 
-    const handleExportPDF = () => generateQuotePDF(buildExportData(), `Cotizacion_${editingCode || 'Nueva'}`);
-    const handlePrintPDF  = () => printQuotePDF(buildExportData());
+    const handleExportPDF = async () => {
+        try {
+            await generateQuotePDF(buildExportData(), `Cotizacion_${editingCode || 'Nueva'}`);
+        } catch (e) {
+            console.error('Failed to export PDF:', e);
+        }
+    };
+    const handlePrintPDF  = async () => {
+        try {
+            await printQuotePDF(buildExportData());
+        } catch (e) {
+            console.error('Failed to print PDF:', e);
+        }
+    };
 
     const syncItemsTable = async (cotizacionId: string, items: LineItem[]) => {
         await supabase.from('cotizaciones_items').delete().eq('cotizacion_id', cotizacionId);
