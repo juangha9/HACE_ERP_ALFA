@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { BusinessSettingsCard } from '../components/BusinessSettingsCard';
 import { SuppliersModal } from '../components/settings/SuppliersModal';
+import { ControlledMaterialsModal } from '../components/settings/ControlledMaterialsModal';
 import { useTheme } from '../context/ThemeContext';
 
 export default function SettingsPage() {
     const { theme, toggleTheme } = useTheme();
     const [showSuppliers, setShowSuppliers] = useState(false);
+    const [showControlled, setShowControlled] = useState(false);
     const [fontsLoaded, setFontsLoaded] = useState(false);
 
     useEffect(() => {
@@ -74,12 +76,18 @@ export default function SettingsPage() {
                     </div>
                 </Link>
 
-                {/* Placeholder for other settings */}
-                <div className="bg-slate-50 rounded-[2rem] p-8 border border-slate-100 flex flex-col items-center justify-center text-center opacity-60">
-                    <span className="material-symbols-outlined text-4xl text-slate-300 mb-4">lock</span>
-                    <h3 className="text-base font-black text-slate-400 uppercase tracking-tight">Seguridad y Usuarios</h3>
-                    <p className="text-xs text-slate-400 mt-2">Próximamente</p>
-                </div>
+                {/* Controlled Materials Card */}
+                <button onClick={() => setShowControlled(true)} className="group text-left focus:outline-none">
+                    <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-[0_2px_20px_-4px_rgba(6,11,40,0.1)] hover:shadow-xl hover:-translate-y-1 transition-all duration-300 h-full">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 mb-6 group-hover:bg-amber-500 group-hover:text-white transition-colors">
+                            <span className="material-symbols-outlined text-2xl">verified_user</span>
+                        </div>
+                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-2">Materiales Controlados</h3>
+                        <p className="text-sm text-slate-400 font-medium leading-relaxed">
+                            Define el umbral de similitud para detectar tableros del catálogo y aplicar precios mínimos en cotizaciones.
+                        </p>
+                    </div>
+                </button>
 
                 {/* Database Export Card */}
                 <Link to="/base-de-datos" className="group">
@@ -115,6 +123,10 @@ export default function SettingsPage() {
                 onClose={() => setShowSuppliers(false)}
             />
         )}
+        <ControlledMaterialsModal
+            isOpen={showControlled}
+            onClose={() => setShowControlled(false)}
+        />
     </>
     );
 };

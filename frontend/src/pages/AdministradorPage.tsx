@@ -348,6 +348,11 @@ export default function AdministradorPage() {
         };
     }, [clientsInputValue]);
 
+    useEffect(() => {
+        // Pre-fetch product taxonomy for add/edit product modals in the background
+        loadAddProdTaxonomy().catch(console.error);
+    }, []);
+
     // ── Slice items by range ────────────────────────────────────────────────
     const sliceByRange = useCallback(
         (start: string, end: string) =>
@@ -720,6 +725,10 @@ export default function AdministradorPage() {
         setFilterFam('');
         setFilterSub('');
         fetchControlProducts();
+        // Pre-fetch taxonomy in case it's not loaded yet
+        if (addProdCats.length === 0) {
+            loadAddProdTaxonomy().catch(console.error);
+        }
     };
     const closeAjuste = () => {
         setAjusteClosing(true);
@@ -791,16 +800,18 @@ export default function AdministradorPage() {
         return { fams, subs };
     };
 
-    const openAddProd = async () => {
+    const openAddProd = () => {
         setAddProdMode('create');
         setEditProdId(null);
         setAddProdForm({ base_name: '', presentation: '', unit: '', min_price: '', reference_cost: '' });
         setAddProdSelCat(''); setAddProdSelFam(''); setAddProdSelSub('');
         setAddProdFams([]); setAddProdSubs([]);
         setAddProdError(null);
-        try { await loadAddProdTaxonomy(); } catch (e) { console.error(e); }
         setAddProdOpen(true);
         setAddProdClosing(false);
+        if (addProdCats.length === 0) {
+            loadAddProdTaxonomy().catch(console.error);
+        }
     };
 
     const openEditProd = async (p: any) => {
@@ -810,8 +821,16 @@ export default function AdministradorPage() {
         setAddProdSelCat(''); setAddProdSelFam(''); setAddProdSelSub('');
         setAddProdFams([]); setAddProdSubs([]);
         setAddProdError(null);
+        setAddProdOpen(true);
+        setAddProdClosing(false);
         try {
-            const { fams, subs } = await loadAddProdTaxonomy();
+            let fams = addProdAllFams;
+            let subs = addProdAllSubs;
+            if (fams.length === 0 || subs.length === 0 || addProdCats.length === 0) {
+                const res = await loadAddProdTaxonomy();
+                fams = res.fams;
+                subs = res.subs;
+            }
             // Cascade: subfamily → family → category
             const sub = subs.find(s => s.id === p.subfamily_id);
             if (sub) {
@@ -826,8 +845,6 @@ export default function AdministradorPage() {
                 }
             }
         } catch (e) { console.error(e); }
-        setAddProdOpen(true);
-        setAddProdClosing(false);
     };
     const closeAddProd = () => {
         setAddProdClosing(true);
@@ -2399,8 +2416,14 @@ export default function AdministradorPage() {
                                         <div className="relative">
                                             <select value={addProdSelCat} onChange={e => handleCatChange(e.target.value)}
                                                 className="appearance-none w-full px-3 py-2.5 bg-white border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none cursor-pointer pr-8 focus:border-[#4A90E2]/40">
-                                                <option value="" disabled hidden>Seleccionar</option>
-                                                {addProdCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                {addProdCats.length === 0 ? (
+                                                    <option value="">Cargando...</option>
+                                                ) : (
+                                                    <>
+                                                        <option value="" disabled hidden>Seleccionar</option>
+                                                        {addProdCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                                    </>
+                                                )}
                                             </select>
                                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
                                         </div>

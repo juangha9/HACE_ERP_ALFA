@@ -12,6 +12,8 @@ import {
     Copy, X, Hash,
 } from 'lucide-react';
 import { generateQuotePDF, printQuotePDF } from '../services/pdfExport';
+import { findMatches, findMatchesPartial, sharedWordCount } from '../lib/fuzzyMatch';
+import { appSettingsService, SETTING_KEYS } from '../services/appSettingsService';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,22 @@ interface LineItem {
     descripcion: string;
     precio_unitario: number;
     total: number;
+}
+
+interface TablerosProduct {
+    id: string;
+    sku: string;
+    base_name: string;
+    presentation: string | null;
+    min_price: number;
+}
+
+interface BoundProduct {
+    catalog_product_id: string;
+    sku: string;
+    base_name: string;
+    presentation: string | null;
+    min_price: number;
 }
 
 interface Cotizacion {
@@ -79,6 +97,9 @@ interface FormState {
 
 const UNIDADES = ['PLS', 'MTS', 'SERV', 'UND', 'PLN', 'JGO', 'SET', 'PZA', 'M2', 'ML', 'KG', 'GLN', 'HRS'];
 const IGV_RATE = 0.18;
+
+const fmtLimaTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false });
 
 const emptyForm = (): FormState => ({
     estado: 'BORRADOR',
@@ -347,6 +368,15 @@ interface EditorModalProps {
     onNameLocked: (v: boolean) => void;
     cotizacionId: string | null;
     onSaveComprobante: (val: string) => Promise<void>;
+    tablerosCatalog: TablerosProduct[];
+    similarityThreshold: number;
+    boundProducts: Map<string, BoundProduct>;
+    lineErrors: Map<string, string>;
+    saveErrorKind: 'material' | 'price' | 'client' | 'other';
+    touchedDescriptionsRef: React.RefObject<Set<string>>;
+    onBindProduct: (lineId: string, product: TablerosProduct) => void;
+    onUnbindProduct: (lineId: string) => void;
+    clientError: boolean;
 }
 
 const EditorModal: React.FC<EditorModalProps> = ({
@@ -357,6 +387,9 @@ const EditorModal: React.FC<EditorModalProps> = ({
     onExportPDF, onPrint, onDuplicate, isReadOnly, pendingFocusRowId,
     doiLocked, nameLocked, onDoiLocked, onNameLocked,
     cotizacionId: _cotizacionId, onSaveComprobante,
+    tablerosCatalog, similarityThreshold, boundProducts, lineErrors,
+    saveErrorKind, touchedDescriptionsRef, onBindProduct, onUnbindProduct,
+    clientError,
 }) => {
     const [showClientDrop, setShowClientDrop] = useState(false);
     const clientDropRef = useRef<HTMLDivElement>(null);
@@ -393,6 +426,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
     };
     const [showProcesarConfirm, setShowProcesarConfirm] = useState(false);
     const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+    const [openCatalogRowId, setOpenCatalogRowId] = useState<string | null>(null);
     const [mounted, setMounted] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
     const [isAnimating, setIsAnimating] = useState(false);
@@ -470,16 +504,43 @@ const EditorModal: React.FC<EditorModalProps> = ({
         }
     };
 
+    // Pre-compute fuzzy matches for all items once — avoids running findMatchesPartial
+    // on every render for every row. Only recomputes when items, catalog, or bound state changes.
+    const itemMatchesMap = useMemo(() => {
+        const map = new Map<string, Array<{ item: TablerosProduct; score: number }>>();
+        if (isReadOnly || !tablerosCatalog.length) return map;
+        form.items.forEach(item => {
+            if (boundProducts.get(item.id)) return;
+            if (item.unidad === 'MTS' || item.unidad === 'SERV') return;
+            if (item.descripcion.trim().split(/\s+/).filter(Boolean).length < 2) return;
+            if (!touchedDescriptionsRef.current.has(item.id)) return;
+            const matches = findMatchesPartial(
+                item.descripcion,
+                tablerosCatalog,
+                p => p.presentation ? `${p.base_name} ${p.presentation}` : p.base_name,
+                0.6,
+                3,
+            ).filter(m => {
+                const productText = m.item.presentation
+                    ? `${m.item.base_name} ${m.item.presentation}`
+                    : m.item.base_name;
+                return sharedWordCount(item.descripcion, productText) >= 2;
+            });
+            if (matches.length > 0) map.set(item.id, matches);
+        });
+        return map;
+    }, [form.items, boundProducts, tablerosCatalog, isReadOnly]);
+
     if (!mounted) return null;
 
     return createPortal(
         <>
             <div
                 className={`${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'} fixed inset-0 z-[2000] flex items-center justify-center p-4 overflow-hidden`}
-                style={{ backdropFilter: 'blur(10px)', background: 'rgba(15, 23, 30, 0.35)' }}
+                style={{ backdropFilter: 'blur(6px)', background: 'rgba(15, 23, 30, 0.35)' }}
             >
                 <div
-                    className={`${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'} bg-white/88 backdrop-blur-[24px] rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-white/50${(isAnimating || isClosing) ? ' pointer-events-none' : ''}`}
+                    className={`${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'} bg-white rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-slate-100${(isAnimating || isClosing) ? ' pointer-events-none' : ''}`}
                     onAnimationEnd={handlePanelAnimEnd}
                 >
 
@@ -510,8 +571,21 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
                                             <span className="material-icons-round text-4xl">error_outline</span>
                                         </div>
-                                        <h3 className="text-xl font-black tracking-tight text-slate-800">Error al Guardar</h3>
-                                        <p className="text-sm text-slate-500 font-medium">Ocurrió un problema. Inténtalo de nuevo.</p>
+                                        <h3 className="text-xl font-black tracking-tight text-slate-800">
+                                            {saveErrorKind === 'material' ? 'Material Controlado Detectado' :
+                                             saveErrorKind === 'price'    ? 'Precio por Debajo del Mínimo' :
+                                             saveErrorKind === 'client'   ? 'Cliente / Razón Social Obligatorio' :
+                                                                            'Error al Guardar'}
+                                        </h3>
+                                        <p className="text-sm text-slate-500 font-medium">
+                                            {saveErrorKind === 'material'
+                                                ? 'Hay líneas con materiales controlados (TABLEROS). Selecciona el producto del catálogo en las filas marcadas en rojo.'
+                                                : saveErrorKind === 'price'
+                                                ? 'Una o más líneas tienen un precio menor al mínimo de catálogo. Ajusta el precio en las filas marcadas en rojo.'
+                                                : saveErrorKind === 'client'
+                                                ? 'El campo "Cliente / Razón Social" es obligatorio para poder guardar o procesar la cotización.'
+                                                : 'Ocurrió un problema. Inténtalo de nuevo.'}
+                                        </p>
                                     </>
                                 )}
                             </div>
@@ -623,7 +697,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                             {/* Client form */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="relative" ref={clientDropRef}>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social</label>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 pl-1">Cliente / Razón Social <span className="text-rose-500 font-bold">*</span></label>
                                     <input
                                         type="text"
                                         value={form.cliente_nombre}
@@ -643,9 +717,12 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         }}
                                         onFocus={() => !nameLocked && setShowClientDrop(true)}
                                         readOnly={isReadOnly || nameLocked}
-                                        className={`w-full bg-white/50 border border-white/60 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-[#366480]/20 focus:bg-white/80 transition-all${nameLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
+                                        className={`w-full bg-white/50 border rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 transition-all${clientError && !form.cliente_nombre.trim() ? ' border-rose-400 ring-rose-200 focus:ring-rose-200' : ' border-white/60 focus:ring-[#366480]/20 focus:bg-white/80'}${nameLocked && !isReadOnly ? ' bg-slate-50/60 text-slate-500 cursor-not-allowed pr-9' : ''}`}
                                         placeholder="Nombre o Razón Social..."
                                     />
+                                    {clientError && !form.cliente_nombre.trim() && (
+                                        <p className="text-[10px] font-black text-rose-500 pl-1 mt-1">Campo obligatorio</p>
+                                    )}
                                     {nameLocked && !isReadOnly && (
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 material-icons-round text-[14px] text-slate-300 pointer-events-none" title="Autorellenado por DOI — modifica el DOI para cambiar">lock</span>
                                     )}
@@ -770,9 +847,14 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/40">
-                                    {form.items.map((item, idx) => (
-                                        <tr key={item.id} className="group hover:bg-white/40 transition-colors">
-                                            <td className="px-4 py-3 border-r border-white/30">
+                                    {form.items.map((item, idx) => {
+                                        const bound = boundProducts.get(item.id);
+                                        const matches = itemMatchesMap.get(item.id) ?? [];
+                                        const showCatalog = openCatalogRowId === item.id && !bound && !isReadOnly;
+                                        const error = lineErrors.get(item.id);
+                                        return (
+                                        <tr key={item.id} className={`group transition-colors ${error ? 'bg-rose-50/40' : 'hover:bg-white/40'}`}>
+                                            <td className="px-4 py-3 border-r border-white/30 align-top">
                                                 <CellInput
                                                     type="number"
                                                     value={item.cantidad || ''}
@@ -787,7 +869,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                     placeholder="0"
                                                 />
                                             </td>
-                                            <td className="px-4 py-3 border-r border-white/30">
+                                            <td className="px-4 py-3 border-r border-white/30 align-top">
                                                 {isReadOnly ? (
                                                     <span className="font-bold text-slate-500 text-[11px] uppercase">{item.unidad}</span>
                                                 ) : (
@@ -798,42 +880,114 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                     />
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 border-r border-white/30 min-w-[220px]">
-                                                <CellInput
-                                                    type="text"
-                                                    value={item.descripcion}
-                                                    onChange={v => onUpdateItem(item.id, 'descripcion', v)}
-                                                    onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) onAddRow(); }}
-                                                    readOnly={isReadOnly}
-                                                    className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
-                                                    placeholder="Descripción del producto o servicio..."
-                                                    title={item.descripcion}
-                                                />
-                                            </td>
-                                            <td className="px-4 py-3 border-r border-white/30">
-                                                <div className="flex items-center justify-end gap-1">
-                                                    <span className="text-slate-400 text-[10px] font-bold">S/</span>
-                                                    <CellInput
-                                                        type="number"
-                                                        value={item.precio_unitario || ''}
-                                                        onChange={v => onUpdateItem(item.id, 'precio_unitario', v)}
-                                                        onKeyDown={e => {
-                                                            blockNumericKeys(e);
-                                                            if (e.key === 'Tab' && idx === form.items.length - 1) {
-                                                                e.preventDefault();
-                                                                onAddRow();
-                                                            }
-                                                        }}
-                                                        readOnly={isReadOnly}
-                                                        className="w-20 bg-transparent border-none font-black text-[#366480] text-right outline-none text-sm focus:bg-[#f0f5f4]/60 transition-colors rounded-lg"
-                                                        placeholder="0.00"
-                                                    />
+                                            <td className="px-4 py-3 border-r border-white/30 min-w-[260px] align-top">
+                                                <div className="flex flex-col gap-1.5">
+                                                    <div className="flex items-center gap-1">
+                                                        {bound && (
+                                                            <span className="material-icons-round text-[15px] text-emerald-600 shrink-0">lock</span>
+                                                        )}
+                                                        <CellInput
+                                                            type="text"
+                                                            value={item.descripcion}
+                                                            onChange={v => onUpdateItem(item.id, 'descripcion', v)}
+                                                            onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) onAddRow(); }}
+                                                            readOnly={isReadOnly || !!bound}
+                                                            className={`w-full bg-transparent border-none font-bold outline-none text-sm rounded-lg px-1 transition-colors ${bound ? 'text-emerald-700 cursor-default' : 'text-slate-700 focus:bg-white/60'}`}
+                                                            placeholder="Descripción del producto o servicio..."
+                                                            title={item.descripcion}
+                                                        />
+                                                        {bound && !isReadOnly && (
+                                                            <button
+                                                                onClick={() => onUnbindProduct(item.id)}
+                                                                className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-500 hover:bg-[#eef4f7] transition-all font-black text-xs"
+                                                                title="Desvincular del catálogo"
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        )}
+                                                        {item.unidad === 'PLS' && !bound && !isReadOnly && tablerosCatalog.length > 0 && (
+                                                            <button
+                                                                onClick={() => setOpenCatalogRowId(showCatalog ? null : item.id)}
+                                                                className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors ${showCatalog ? 'bg-[#366480] text-white' : 'text-slate-400 hover:text-[#366480] hover:bg-[#eef4f7]'}`}
+                                                                title="Ver catálogo de tableros"
+                                                            >
+                                                                <span className="material-icons-round text-[14px]">table_chart</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {/* Catálogo TAB desplegable para filas PLS */}
+                                                    {showCatalog && (
+                                                        <div className="flex flex-col bg-white border border-[#d3dcdb] rounded-xl shadow-lg max-h-52 overflow-y-auto py-1">
+                                                            {tablerosCatalog.map(product => (
+                                                                <button
+                                                                    key={product.id}
+                                                                    onClick={() => { onBindProduct(item.id, product); setOpenCatalogRowId(null); }}
+                                                                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#eef4f7] text-left transition-colors group/cat"
+                                                                >
+                                                                    <span className="text-[10px] font-black text-[#366480] tracking-wider shrink-0 w-20 truncate">{product.sku}</span>
+                                                                    <span className="text-[11px] font-bold text-slate-600 flex-1 truncate">
+                                                                        {product.base_name}{product.presentation ? ` ${product.presentation}` : ''}
+                                                                    </span>
+                                                                    <span className="text-[10px] font-black text-emerald-600 shrink-0">S/ {product.min_price.toFixed(2)}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {!bound && matches.length > 0 && (
+                                                        <div className="flex flex-col gap-1 bg-amber-50/60 border border-amber-200 rounded-lg px-2 py-1.5">
+                                                            <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest flex items-center gap-1">
+                                                                <span className="material-icons-round text-[11px]">warning</span>
+                                                                Material controlado — seleccione del catálogo
+                                                            </span>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {matches.map(m => (
+                                                                    <button
+                                                                        key={m.item.id}
+                                                                        onClick={() => onBindProduct(item.id, m.item)}
+                                                                        className="px-2 py-0.5 bg-white border border-amber-300 rounded-md text-[10px] font-bold text-amber-800 hover:bg-amber-100 transition-colors text-left"
+                                                                        title={`${Math.round(m.score * 100)}% similitud · Mín S/ ${m.item.min_price.toFixed(2)}`}
+                                                                    >
+                                                                        <span className="font-black tracking-wider">{m.item.sku}</span>
+                                                                        <span className="text-amber-700"> · {m.item.base_name}</span>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {error && (
+                                                        <p className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-200 rounded-md px-2 py-1 flex items-center gap-1">
+                                                            <span className="material-icons-round text-[11px]">error</span>
+                                                            {error}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 text-right font-black text-sm text-slate-800">
+                                            <td className="px-4 py-3 border-r border-white/30 align-top">
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <div className="flex items-center justify-end gap-1">
+                                                        <span className="text-slate-400 text-[10px] font-bold">S/</span>
+                                                        <CellInput
+                                                            type="number"
+                                                            value={item.precio_unitario || ''}
+                                                            onChange={v => onUpdateItem(item.id, 'precio_unitario', v)}
+                                                            onKeyDown={e => {
+                                                                blockNumericKeys(e);
+                                                                if (e.key === 'Tab' && idx === form.items.length - 1) {
+                                                                    e.preventDefault();
+                                                                    onAddRow();
+                                                                }
+                                                            }}
+                                                            readOnly={isReadOnly}
+                                                            className={`w-20 border-none font-black text-right outline-none text-sm focus:bg-[#f0f5f4]/60 transition-colors rounded-lg ${bound ? 'bg-emerald-50/40' : 'bg-transparent'} ${bound && item.precio_unitario > 0 && item.precio_unitario < bound.min_price ? 'text-rose-600' : 'text-[#366480]'}`}
+                                                            placeholder={bound ? `Mín: ${bound.min_price.toFixed(2)}` : '0.00'}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-black text-sm text-slate-800 align-top">
                                                 S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                             </td>
-                                            <td className="px-4 py-3 text-center">
+                                            <td className="px-4 py-3 text-center align-top">
                                                 {!isReadOnly && (
                                                     <button
                                                         onClick={() => onRemoveRow(item.id)}
@@ -845,7 +999,8 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                 )}
                                             </td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                             {!isReadOnly && (
@@ -1010,6 +1165,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
 export function CotizacionesPage() {
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const prevEditingIdRef = useRef<string | null>(null);
     const [editingCode, setEditingCode] = useState('');
 
     // List state
@@ -1040,6 +1196,91 @@ export function CotizacionesPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const PAGE_SIZE = 20;
 
+    // ── Materiales Controlados (TABLEROS) ─────────────────────────────────────
+    const [tablerosCatalog, setTablerosCatalog] = useState<TablerosProduct[]>([]);
+    const [similarityThreshold, setSimilarityThreshold] = useState(0.75);
+    const [boundProducts, setBoundProducts] = useState<Map<string, BoundProduct>>(new Map());
+    const [saveErrors, setSaveErrors] = useState<Map<string, string>>(new Map());
+    const [saveErrorKind, setSaveErrorKind] = useState<'material' | 'price' | 'client' | 'other'>('other');
+    const [clientError, setClientError] = useState(false);
+    // Tracks which row IDs had their description edited in the current editor session.
+    // Suggestions only show for touched rows — prevents auto-showing on reopen of borradores.
+    const touchedDescriptionsRef = useRef<Set<string>>(new Set());
+    // Always-current snapshot of form — used inside async callbacks to avoid stale closures.
+    const formRef = useRef(form);
+    useEffect(() => { formRef.current = form; }, [form]);
+    // Stable refs for values used inside useCallback closures (avoids deps on frequently-changing state)
+    const boundProductsRef = useRef(boundProducts);
+    boundProductsRef.current = boundProducts;
+    const saveRef = useRef<((estadoOverride?: 'BORRADOR' | 'LISTO') => Promise<void>) | null>(null);
+    const editingIdRef = useRef(editingId);
+    editingIdRef.current = editingId;
+    const saveComprobanteRef = useRef<typeof saveComprobante | null>(null);
+    const cotizacionesRef = useRef(cotizaciones);
+    cotizacionesRef.current = cotizaciones;
+    const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
+
+    const handleFormChange = useCallback((f: FormState) => {
+        setForm(f);
+        setIsDirty(true);
+    }, []);
+
+    const bindProduct = useCallback((lineId: string, product: TablerosProduct) => {
+        setBoundProducts(prev => {
+            const next = new Map(prev);
+            next.set(lineId, {
+                catalog_product_id: product.id,
+                sku: product.sku,
+                base_name: product.base_name,
+                presentation: product.presentation,
+                min_price: product.min_price,
+            });
+            return next;
+        });
+        setSaveErrors(prev => {
+            if (!prev.has(lineId)) return prev;
+            const next = new Map(prev);
+            next.delete(lineId);
+            return next;
+        });
+        // Fill description with canonical catalog name so what is saved matches the catalog
+        setForm(prev => ({
+            ...prev,
+            items: prev.items.map(it => it.id !== lineId
+                ? it
+                : { ...it, descripcion: product.presentation ? `${product.base_name} ${product.presentation}` : product.base_name }),
+        }));
+        setIsDirty(true);
+    }, []);
+
+    const unbindProduct = useCallback((lineId: string) => {
+        setBoundProducts(prev => {
+            if (!prev.has(lineId)) return prev;
+            const next = new Map(prev);
+            next.delete(lineId);
+            return next;
+        });
+    }, []);
+
+    // Derived inline errors (price < min_price on bound lines)
+    const priceErrors = useMemo(() => {
+        const errors = new Map<string, string>();
+        form.items.forEach(item => {
+            const bound = boundProducts.get(item.id);
+            if (bound && item.precio_unitario > 0 && item.precio_unitario < bound.min_price) {
+                errors.set(item.id, `Precio mínimo de catálogo: S/ ${bound.min_price.toFixed(2)}`);
+            }
+        });
+        return errors;
+    }, [form.items, boundProducts]);
+
+    // Combined errors shown in the modal
+    const lineErrors = useMemo(() => {
+        const combined = new Map<string, string>(priceErrors);
+        saveErrors.forEach((v, k) => { if (!combined.has(k)) combined.set(k, v); });
+        return combined;
+    }, [priceErrors, saveErrors]);
+
     // Item IDs whose unit was manually selected by the user — auto-detection
     // from description keywords (CANTO→MTS, SERVICIO→SERV) is suppressed for these.
     const manualUnitsRef = useRef<Set<string>>(new Set());
@@ -1061,6 +1302,127 @@ export function CotizacionesPage() {
             api.getContacts('CLIENT').then(setContacts).catch(() => {});
         }
     }, [editorOpen]);
+
+    // Fetches TABLEROS catalog + similarity threshold. Returns fresh values so save() can use
+    // them immediately (React state updates are async and won't reflect in the same closure).
+    const fetchCatalogAndThreshold = useCallback(async (): Promise<{ catalog: TablerosProduct[]; threshold: number }> => {
+        let threshold = 0.75;
+        try {
+            appSettingsService.invalidate(SETTING_KEYS.CONTROLLED_SIMILARITY_THRESHOLD);
+            const t = await appSettingsService.get<number>(
+                SETTING_KEYS.CONTROLLED_SIMILARITY_THRESHOLD,
+                0.75,
+            );
+            threshold = Number(t) || 0.75;
+            setSimilarityThreshold(threshold);
+        } catch { /* keep default */ }
+
+        const { data, error } = await supabase
+            .from('catalog_products')
+            .select('id,sku,base_name,presentation,min_price')
+            .like('sku', 'TAB%');
+        let catalog: TablerosProduct[] = [];
+        if (error) {
+            console.error('[TABLEROS] Error cargando catálogo:', error.message);
+        } else {
+            catalog = (data as TablerosProduct[]) || [];
+            setTablerosCatalog(catalog);
+            if (!catalog.length) console.warn('[TABLEROS] Catálogo vacío: no hay productos con SKU "TAB...".');
+        }
+        return { catalog, threshold };
+    }, []);
+
+    useEffect(() => {
+        if (!editorOpen) return;
+        fetchCatalogAndThreshold().then(({ catalog }) => {
+            if (!catalog.length) return;
+            // Auto-rebind rows whose description exactly matches a catalog product's canonical name.
+            // bindProduct() always sets the description to the canonical name, so this restores
+            // the bound state when reopening a saved cotización without a DB schema change.
+            setBoundProducts(prev => {
+                const items = formRef.current.items;
+                const toAdd: Array<[string, BoundProduct]> = [];
+                items.forEach(item => {
+                    if (prev.has(item.id) || !item.descripcion.trim()) return;
+                    const match = catalog.find(p => {
+                        const fullName = p.presentation ? `${p.base_name} ${p.presentation}` : p.base_name;
+                        return item.descripcion.trim().toLowerCase() === fullName.trim().toLowerCase();
+                    });
+                    if (match) {
+                        toAdd.push([item.id, {
+                            catalog_product_id: match.id,
+                            sku: match.sku,
+                            base_name: match.base_name,
+                            presentation: match.presentation,
+                            min_price: match.min_price,
+                        }]);
+                    }
+                });
+                if (!toAdd.length) return prev;
+                const next = new Map(prev);
+                toAdd.forEach(([id, bp]) => next.set(id, bp));
+                return next;
+            });
+        });
+    }, [editorOpen, fetchCatalogAndThreshold]);
+
+    // Realtime: keep TABLEROS catalog + bound min_prices in sync while the editor is open.
+    // Requires catalog_products to have Realtime enabled in Supabase (see SQL note below).
+    useEffect(() => {
+        if (!editorOpen) return;
+        const channel = supabase
+            .channel('catalog-products-live')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'catalog_products' },
+                (payload) => {
+                    const updated = payload.new as TablerosProduct & Record<string, unknown>;
+                    if (!updated.sku?.startsWith('TAB')) return;
+                    // Refresh the local catalog entry
+                    setTablerosCatalog(prev =>
+                        prev.map(p => p.id === updated.id
+                            ? { ...p, min_price: updated.min_price, base_name: updated.base_name, presentation: updated.presentation }
+                            : p
+                        )
+                    );
+                    // Update any bound row that references this product
+                    setBoundProducts(prev => {
+                        let changed = false;
+                        const next = new Map(prev);
+                        next.forEach((bp, lineId) => {
+                            if (bp.catalog_product_id === updated.id && bp.min_price !== updated.min_price) {
+                                next.set(lineId, { ...bp, min_price: updated.min_price });
+                                changed = true;
+                            }
+                        });
+                        return changed ? next : prev;
+                    });
+                },
+            )
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, [editorOpen]);
+
+    // Reset bindings + errors when editor closes
+    useEffect(() => {
+        if (!editorOpen) {
+            setBoundProducts(new Map());
+            setSaveErrors(new Map());
+            setSaveErrorKind('other');
+            setClientError(false);
+            touchedDescriptionsRef.current.clear();
+        }
+    }, [editorOpen]);
+    // Reset only when switching between two different existing cotizaciones.
+    // Do NOT reset when going null → newId (first borrador save of a new cotización).
+    useEffect(() => {
+        const prev = prevEditingIdRef.current;
+        prevEditingIdRef.current = editingId;
+        if (prev !== null && editingId !== null && prev !== editingId) {
+            setBoundProducts(new Map());
+            setSaveErrors(new Map());
+        }
+    }, [editingId]);
 
 
     // ── Data ─────────────────────────────────────────────────────────────────
@@ -1092,6 +1454,7 @@ export function CotizacionesPage() {
             setLoading(false);
         }
     }, [startDate, endDate, filterEstado]);
+    fetchDataRef.current = fetchData;
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -1185,11 +1548,27 @@ export function CotizacionesPage() {
         setEditorOpen(true);
     };
 
-    const closeEditor = () => setEditorOpen(false);
+    const closeEditor = useCallback(() => setEditorOpen(false), []);
 
-    const updateItem = (id: string, field: keyof LineItem, raw: string) => {
+    const updateItem = useCallback((id: string, field: keyof LineItem, raw: string) => {
         setIsDirty(true);
         if (field === 'unidad') manualUnitsRef.current.add(id);
+        if (field === 'descripcion') touchedDescriptionsRef.current.add(id);
+        // Editing description unbinds the line — text no longer represents the bound product
+        if (field === 'descripcion' && boundProductsRef.current.has(id)) {
+            setBoundProducts(prev => {
+                const next = new Map(prev);
+                next.delete(id);
+                return next;
+            });
+        }
+        // Clear save-time error for this line on any edit
+        setSaveErrors(prev => {
+            if (!prev.has(id)) return prev;
+            const next = new Map(prev);
+            next.delete(id);
+            return next;
+        });
         setForm(prev => {
             const items = prev.items.map(it => {
                 if (it.id !== id) return it;
@@ -1210,9 +1589,9 @@ export function CotizacionesPage() {
             });
             return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
         });
-    };
+    }, []);
 
-    const addRow = () => {
+    const addRow = useCallback(() => {
         setIsDirty(true);
         const newId = crypto.randomUUID();
         setForm(prev => ({
@@ -1220,23 +1599,23 @@ export function CotizacionesPage() {
             items: [...prev.items, { id: newId, cantidad: 1, unidad: 'PLS', descripcion: '', precio_unitario: 0, total: 0 }],
         }));
         setPendingFocusRowId(newId);
-    };
+    }, []);
 
-    const removeRow = (id: string) => {
+    const removeRow = useCallback((id: string) => {
         setIsDirty(true);
         setForm(prev => {
             const items = prev.items.filter(it => it.id !== id);
             return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
         });
-    };
+    }, []);
 
-    const setDescuento = (val: string) => {
+    const handleDescuentoChange = useCallback((val: string) => {
         setIsDirty(true);
         const d = parseFloat(val) || 0;
         setForm(prev => ({ ...prev, descuento: d, ...recalc(prev.items, d, prev.tipo_documento, prev.adelanto) }));
-    };
+    }, []);
 
-    const setAdelanto = (val: string) => {
+    const handleAdelantoChange = useCallback((val: string) => {
         setIsDirty(true);
         const a = parseFloat(val) || 0;
         setForm(prev => ({
@@ -1244,16 +1623,16 @@ export function CotizacionesPage() {
             adelanto: a,
             saldo_pendiente: parseFloat((prev.total - a).toFixed(2)),
         }));
-    };
+    }, []);
 
-    const setTipoDocumento = (tipo: TipoDoc) => {
+    const handleTipoDocumento = useCallback((tipo: TipoDoc) => {
         setIsDirty(true);
         setForm(prev => ({
             ...prev,
             tipo_documento: tipo,
             ...recalc(prev.items, prev.descuento, tipo, prev.adelanto),
         }));
-    };
+    }, []);
 
 
 
@@ -1306,6 +1685,60 @@ export function CotizacionesPage() {
     };
 
     const save = async (estadoOverride?: 'BORRADOR' | 'LISTO') => {
+        // ── Validate required fields ──────────────────────────────────────────
+        if (!form.cliente_nombre.trim()) {
+            setClientError(true);
+            setSaveStatus('error');
+            setSaveErrorKind('client');
+            window.setTimeout(() => setSaveStatus('idle'), 3500);
+            return;
+        }
+        setClientError(false);
+
+        // Refresh catalog + threshold — gets fresh values to use directly below
+        // (React state closures would have stale values if admin changed prices during this session)
+        const { catalog: freshCatalog, threshold: freshThreshold } = await fetchCatalogAndThreshold();
+
+        // ── Validate controlled materials (TABLEROS) before saving ───────────
+        const errors = new Map<string, string>();
+        form.items.forEach(item => {
+            if (!item.descripcion.trim()) return;
+            const bound = boundProducts.get(item.id);
+            if (bound) {
+                if (item.precio_unitario < bound.min_price) {
+                    errors.set(item.id, `Precio mínimo de catálogo: S/ ${bound.min_price.toFixed(2)}`);
+                }
+                return;
+            }
+            // Not bound: check fuzzy match against TABLEROS catalog.
+            // Skip for MTS (canto) and SERV (servicio) — these are never TABLEROS.
+            // Gate 1: need >= 2 words typed to avoid single-word false positives.
+            // Gate 2: Dice coefficient >= threshold (handles typos and variants).
+            if (item.unidad === 'MTS' || item.unidad === 'SERV') return;
+            const descWords = item.descripcion.trim().split(/\s+/).filter(Boolean);
+            if (descWords.length < 2) return;
+            const matches = findMatches(
+                item.descripcion,
+                freshCatalog,
+                p => p.presentation ? `${p.base_name} ${p.presentation}` : p.base_name,
+                freshThreshold,
+                1,
+            );
+            if (matches.length > 0) {
+                const m = matches[0].item;
+                errors.set(item.id, `Material controlado: "${m.base_name}". Seleccione del catálogo.`);
+            }
+        });
+        if (errors.size > 0) {
+            let hasMaterialDetection = false;
+            errors.forEach(msg => { if (msg.startsWith('Material controlado:')) hasMaterialDetection = true; });
+            setSaveErrorKind(hasMaterialDetection ? 'material' : 'price');
+            setSaveErrors(errors);
+            setSaveStatus('error');
+            window.setTimeout(() => setSaveStatus('idle'), 3500);
+            return;
+        }
+
         setSaveStatus('saving');
         try {
             const clienteNombreFinal = (!clientFromList && form.cliente_nombre.trim())
@@ -1349,10 +1782,16 @@ export function CotizacionesPage() {
             }
         } catch (e) {
             console.error(e);
+            setSaveErrorKind('other');
             setSaveStatus('error');
             setTimeout(() => setSaveStatus('idle'), 3000);
         }
     };
+
+    // Keep saveRef always pointing to the latest save closure (enables stable callbacks below)
+    saveRef.current = save;
+    const handleSaveBorrador = useCallback(() => { saveRef.current?.('BORRADOR'); }, []);
+    const handleSaveListo    = useCallback(() => { saveRef.current?.('LISTO'); }, []);
 
     const deleteCot = async (id: string) => {
         const { error } = await supabase.from('cotizaciones').update({ estado: 'ELIMINADO' }).eq('id', id);
@@ -1382,15 +1821,22 @@ export function CotizacionesPage() {
         await fetchData();
     };
 
-    const duplicateFromModal = async () => {
-        if (!editingId) return;
-        const cot = cotizaciones.find(c => c.id === editingId);
+    saveComprobanteRef.current = saveComprobante;
+    const handleSaveComprobante = useCallback((val: string): Promise<void> => {
+        const id = editingIdRef.current;
+        return id ? saveComprobanteRef.current!(id, val) : Promise.resolve();
+    }, []);
+
+    const duplicateFromModal = useCallback(async () => {
+        const eid = editingIdRef.current;
+        if (!eid) return;
+        const cot = cotizacionesRef.current.find(c => c.id === eid);
         if (!cot) return;
         const { codigo: _c, id: _i, created_at: _d, ...rest } = cot;
         await supabase.from('cotizaciones').insert({ ...rest, estado: 'BORRADOR' });
-        await fetchData();
+        await fetchDataRef.current();
         closeEditor();
-    };
+    }, [closeEditor]);
 
     // ─────────────────────────────────────────────────────────────────────────
     // LIST VIEW (always rendered)
@@ -1408,16 +1854,16 @@ export function CotizacionesPage() {
                 isDirty={isDirty}
                 contacts={contacts}
                 onClose={closeEditor}
-                onSaveBorrador={() => save('BORRADOR')}
-                onSaveListo={() => save('LISTO')}
-                onFormChange={(f) => { setForm(f); setIsDirty(true); }}
+                onSaveBorrador={handleSaveBorrador}
+                onSaveListo={handleSaveListo}
+                onFormChange={handleFormChange}
                 onClientSelect={setClientFromList}
                 onUpdateItem={updateItem}
                 onAddRow={addRow}
                 onRemoveRow={removeRow}
-                onDescuentoChange={setDescuento}
-                onAdelantoChange={setAdelanto}
-                onTipoDocumento={setTipoDocumento}
+                onDescuentoChange={handleDescuentoChange}
+                onAdelantoChange={handleAdelantoChange}
+                onTipoDocumento={handleTipoDocumento}
                 onExportPDF={handleExportPDF}
                 onPrint={handlePrintPDF}
                 onDuplicate={editingId ? duplicateFromModal : undefined}
@@ -1428,7 +1874,16 @@ export function CotizacionesPage() {
                 onDoiLocked={setDoiLocked}
                 onNameLocked={setNameLocked}
                 cotizacionId={editingId}
-                onSaveComprobante={val => editingId ? saveComprobante(editingId, val) : Promise.resolve()}
+                onSaveComprobante={handleSaveComprobante}
+                tablerosCatalog={tablerosCatalog}
+                similarityThreshold={similarityThreshold}
+                boundProducts={boundProducts}
+                lineErrors={lineErrors}
+                saveErrorKind={saveErrorKind}
+                touchedDescriptionsRef={touchedDescriptionsRef}
+                onBindProduct={bindProduct}
+                onUnbindProduct={unbindProduct}
+                clientError={clientError}
             />
 
             <div className="min-h-screen flex flex-col animate-premium-fade">
@@ -1589,8 +2044,13 @@ export function CotizacionesPage() {
                                                         </p>
                                                     )}
                                                 </td>
-                                                <td className="px-5 py-4 text-[12px] font-medium text-slate-500">
-                                                    {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
+                                                <td className="px-5 py-4">
+                                                    <p className="text-[12px] font-medium text-slate-500">
+                                                        {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
+                                                    </p>
+                                                    <p className="text-[10px] font-bold text-slate-400 mt-0.5 tabular-nums">
+                                                        {fmtLimaTime(c.created_at)}
+                                                    </p>
                                                 </td>
                                                 <td className="px-5 py-4">
                                                     <StatusBadge estado={c.estado} />

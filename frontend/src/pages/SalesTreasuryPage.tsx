@@ -46,6 +46,9 @@ import { exportToPDF, exportToExcel, exportImagesToPDF } from '../utils/exportUt
 import { ImageLightbox } from '../components/ImageLightbox';
 import { RangeDatePicker } from '../components/RangeDatePicker';
 
+const fmtLimaTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false });
+
 const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const highlightMatchHtml = (text: string | null | undefined, query: string): string => {
     const t = text ?? '';
@@ -1050,7 +1053,10 @@ export const SalesTreasuryPage = () => {
                                                                         <span className="text-[14px] font-[900] text-[#2c3434] tracking-tight uppercase"
                                                                             dangerouslySetInnerHTML={{ __html: '#' + highlightMatchHtml(venta.codigo_cotizacion || venta.id.slice(0,8), deferredSearch) }}
                                                                         />
-                                                                        <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest">{format(new Date(venta.created_at), "dd MMM, yyyy")}</span>
+                                                                        <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest">
+                                                            {format(new Date(venta.created_at), "dd MMM, yyyy")}
+                                                            <span className="normal-case tracking-normal ml-1 text-[#366480]/40">· {fmtLimaTime(venta.created_at)}</span>
+                                                        </span>
                                                                         {venta.cotizacion_numero_comprobante && (
                                                                             <span className="text-[10px] font-black text-[#366480]/60 bg-[#f0f5f4] px-1.5 py-0.5 rounded-md w-fit tracking-wide"
                                                                                 dangerouslySetInnerHTML={{ __html: highlightMatchHtml(venta.cotizacion_numero_comprobante, deferredSearch) }}
