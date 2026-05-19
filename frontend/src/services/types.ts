@@ -199,6 +199,7 @@ export interface VentaCabecera {
     user_id?: string | null;
     usuario_nombre?: string | null;
     cotizacion_descripcion?: string | null;
+    cotizacion_numero_comprobante?: string | null;
 }
 
 

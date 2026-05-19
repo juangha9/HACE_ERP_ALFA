@@ -46,6 +46,19 @@ import { exportToPDF, exportToExcel, exportImagesToPDF } from '../utils/exportUt
 import { ImageLightbox } from '../components/ImageLightbox';
 import { RangeDatePicker } from '../components/RangeDatePicker';
 
+const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const highlightMatchHtml = (text: string | null | undefined, query: string): string => {
+    const t = text ?? '';
+    if (!query.trim() || !t) return escHtml(t);
+    const idx = t.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) return escHtml(t);
+    return (
+        escHtml(t.slice(0, idx)) +
+        `<mark class="bg-amber-200/80 text-amber-900 not-italic rounded-sm">${escHtml(t.slice(idx, idx + query.length))}</mark>` +
+        escHtml(t.slice(idx + query.length))
+    );
+};
+
 // Isolated search input: owns its own value state so keystrokes never re-render the parent.
 // Debounces the parent callback to ~250 ms so filtering only kicks in when the user pauses.
 const SearchInput = React.memo(({ value, onSearch, placeholder, className }: {
@@ -291,6 +304,7 @@ export const SalesTreasuryPage = () => {
         const channel = supabase
             .channel('treasury-ventas-realtime')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas_cabecera' }, triggerReload)
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cotizaciones' }, triggerReload)
             .subscribe();
         return () => {
             if (reloadDebounce.t) clearTimeout(reloadDebounce.t);
@@ -592,7 +606,7 @@ export const SalesTreasuryPage = () => {
         const start = startDate ? new Date(startDate) : null;
         const end = endDate ? new Date(endDate + 'T23:59:59') : null;
         return ventas.filter(v => {
-            if (term && !v.cliente_nombre.toLowerCase().includes(term) && !(v.codigo_cotizacion || '').toLowerCase().includes(term)) return false;
+            if (term && !v.cliente_nombre.toLowerCase().includes(term) && !(v.codigo_cotizacion || '').toLowerCase().includes(term) && !(v.cotizacion_numero_comprobante || '').toLowerCase().includes(term)) return false;
             if (filterEstado !== 'TODOS' && v.estado_pago !== filterEstado) return false;
             const fecha = new Date(v.created_at);
             return (!start || fecha >= start) && (!end || fecha <= end);
@@ -1032,9 +1046,16 @@ export const SalesTreasuryPage = () => {
                                                             <td className="py-5 pl-4 text-left">
                                                                 <div className="flex items-center gap-4">
                                                                     <button onClick={() => toggleExpand(venta.id)} className={`p-2 rounded-xl border transition-all ${expandedVenta === venta.id ? 'bg-[#4A90E2] text-white border-[#4A90E2]' : 'bg-white border-[#d3dcdb]/40 text-[#366480]/40 hover:text-[#4A90E2] shadow-sm'}`}>{expandedVenta === venta.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
-                                                                    <div className="flex flex-col">
-                                                                        <span className="text-[14px] font-[900] text-[#2c3434] tracking-tight uppercase">#{venta.codigo_cotizacion || venta.id.slice(0,8)}</span>
+                                                                    <div className="flex flex-col gap-0.5">
+                                                                        <span className="text-[14px] font-[900] text-[#2c3434] tracking-tight uppercase"
+                                                                            dangerouslySetInnerHTML={{ __html: '#' + highlightMatchHtml(venta.codigo_cotizacion || venta.id.slice(0,8), deferredSearch) }}
+                                                                        />
                                                                         <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest">{format(new Date(venta.created_at), "dd MMM, yyyy")}</span>
+                                                                        {venta.cotizacion_numero_comprobante && (
+                                                                            <span className="text-[10px] font-black text-[#366480]/60 bg-[#f0f5f4] px-1.5 py-0.5 rounded-md w-fit tracking-wide"
+                                                                                dangerouslySetInnerHTML={{ __html: highlightMatchHtml(venta.cotizacion_numero_comprobante, deferredSearch) }}
+                                                                            />
+                                                                        )}
                                                                     </div>
                                                                 </div>
                                                             </td>
@@ -1044,7 +1065,9 @@ export const SalesTreasuryPage = () => {
                                                                 </span>
                                                             </td>
                                                             <td className="py-5 text-left">
-                                                                <p className="text-[13px] font-black text-[#366480] uppercase tracking-tight">{venta.cliente_nombre}</p>
+                                                                <p className="text-[13px] font-black text-[#366480] uppercase tracking-tight"
+                                                                    dangerouslySetInnerHTML={{ __html: highlightMatchHtml(venta.cliente_nombre, deferredSearch) }}
+                                                                />
                                                                 {venta.cotizacion_descripcion && (
                                                                     <p className="text-[10px] font-bold text-slate-400 truncate max-w-[180px] mt-0.5" title={venta.cotizacion_descripcion}>
                                                                         {venta.cotizacion_descripcion}

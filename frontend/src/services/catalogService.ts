@@ -29,6 +29,8 @@ export interface CatalogProduct {
     brand?: string;
     features?: string;
     min_stock: number;
+    min_price: number;
+    reference_cost: number;
     stock_alerts: boolean;
     status: 'Activo' | 'Descontinuado' | 'Inactivo';
     unit?: string;

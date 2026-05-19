@@ -9,7 +9,7 @@ import type { BusinessInfo, Contact } from '../services/types';
 import {
     Search, Plus, Trash2, ChevronDown,
     RefreshCw, FileText, CheckCircle2, Calendar, Receipt,
-    Copy,
+    Copy, X, Hash,
 } from 'lucide-react';
 import { generateQuotePDF, printQuotePDF } from '../services/pdfExport';
 
@@ -46,6 +46,7 @@ interface Cotizacion {
     notas: string;
     condiciones_pago: string;
     descripcion: string;
+    numero_comprobante?: string;
     created_at: string;
 }
 
@@ -71,6 +72,7 @@ interface FormState {
     notas: string;
     condiciones_pago: string;
     descripcion: string;
+    numero_comprobante: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -98,6 +100,7 @@ const emptyForm = (): FormState => ({
     notas: '',
     condiciones_pago: '',
     descripcion: '',
+    numero_comprobante: '',
 });
 
 // ─── Search Input (isolated to avoid re-render on parent state) ───────────────
@@ -217,6 +220,101 @@ const StatusBadge = ({ estado }: { estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO' })
         </span>
     );
 
+// ─── Voucher Edit Modal (inline comprobante from table) ───────────────────────
+
+interface VoucherEditModalProps {
+    isOpen: boolean;
+    cotizacion: Cotizacion | null;
+    onClose: () => void;
+    onSave: (value: string) => Promise<void>;
+}
+
+const VoucherEditModal: React.FC<VoucherEditModalProps> = ({ isOpen, cotizacion, onClose, onSave }) => {
+    const [value, setValue] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [mounted, setMounted] = useState(false);
+    const [isClosing, setIsClosing] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            setValue(cotizacion?.numero_comprobante || '');
+            setMounted(true);
+            setIsClosing(false);
+        }
+    }, [isOpen, cotizacion]);
+
+    const handleClose = () => {
+        setIsClosing(true);
+        setTimeout(() => { setMounted(false); setIsClosing(false); onClose(); }, 220);
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        try { await onSave(value); handleClose(); }
+        finally { setSaving(false); }
+    };
+
+    if (!mounted) return null;
+
+    return createPortal(
+        <div
+            className={`fixed inset-0 z-[9999] flex items-center justify-center p-4 ${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+            style={{ backdropFilter: 'blur(8px)', background: 'rgba(15, 23, 30, 0.22)' }}
+        >
+            <div
+                className={`${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'} bg-white/90 backdrop-blur-[20px] rounded-[20px] shadow-[0_24px_60px_rgba(0,0,0,0.15),0_0_0_1px_rgba(255,255,255,0.5)_inset] border border-white/50 w-full max-w-sm p-6`}
+            >
+                <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-[#366480]/10 flex items-center justify-center">
+                            <Hash className="w-4 h-4 text-[#366480]" />
+                        </div>
+                        <div>
+                            <p className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight">N° Comprobante</p>
+                            <p className="text-[10px] font-bold text-[#8b9ba5] mt-0.5 truncate max-w-[200px]">
+                                {cotizacion?.codigo} · {stripPublicoGeneral(cotizacion?.cliente_nombre || '')}
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={handleClose}
+                        className="w-7 h-7 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+                    >
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+
+                <input
+                    type="text"
+                    value={value}
+                    onChange={e => setValue(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !saving) handleSave(); }}
+                    className="w-full border border-[#c8d8de] rounded-xl px-4 py-3 text-sm font-bold text-[#2c3434] outline-none focus:border-[#366480] focus:ring-2 focus:ring-[#366480]/10 transition-all bg-white/80 placeholder:text-slate-300 placeholder:font-normal"
+                    placeholder="Ej: F001-0000123 / B001-0000001"
+                    autoFocus
+                />
+
+                <div className="flex gap-2.5 mt-4">
+                    <button
+                        onClick={handleClose}
+                        className="flex-1 py-2.5 rounded-xl border border-slate-200 text-[11px] font-black text-slate-500 hover:bg-slate-50 transition-all uppercase tracking-widest"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl bg-[#366480] text-white text-[11px] font-black hover:bg-[#2c5268] transition-all uppercase tracking-widest disabled:opacity-50"
+                    >
+                        {saving ? 'Guardando...' : 'Guardar'}
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
 // ─── Editor Modal ─────────────────────────────────────────────────────────────
 
 interface EditorModalProps {
@@ -247,6 +345,8 @@ interface EditorModalProps {
     nameLocked: boolean;
     onDoiLocked: (v: boolean) => void;
     onNameLocked: (v: boolean) => void;
+    cotizacionId: string | null;
+    onSaveComprobante: (val: string) => Promise<void>;
 }
 
 const EditorModal: React.FC<EditorModalProps> = ({
@@ -256,6 +356,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
     onAdelantoChange, onTipoDocumento,
     onExportPDF, onPrint, onDuplicate, isReadOnly, pendingFocusRowId,
     doiLocked, nameLocked, onDoiLocked, onNameLocked,
+    cotizacionId: _cotizacionId, onSaveComprobante,
 }) => {
     const [showClientDrop, setShowClientDrop] = useState(false);
     const clientDropRef = useRef<HTMLDivElement>(null);
@@ -297,6 +398,35 @@ const EditorModal: React.FC<EditorModalProps> = ({
     const [isAnimating, setIsAnimating] = useState(false);
     const wasOpenRef = useRef(false);
     const quantityRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+
+    // Comprobante — own state so it's always editable, even in LISTO mode
+    const [localComprobante, setLocalComprobante] = useState(form.numero_comprobante || '');
+    const [comprobanteChanged, setComprobanteChanged] = useState(false);
+    const [savingComprobante, setSavingComprobante] = useState(false);
+
+    useEffect(() => {
+        setLocalComprobante(form.numero_comprobante || '');
+        setComprobanteChanged(false);
+    }, [isOpen]);
+
+    const handleComprobanteChange = (val: string) => {
+        if (isReadOnly) {
+            setLocalComprobante(val);
+            setComprobanteChanged(val !== (form.numero_comprobante || ''));
+        } else {
+            onFormChange({ ...form, numero_comprobante: val });
+        }
+    };
+
+    const handleSaveComprobante = async () => {
+        setSavingComprobante(true);
+        try {
+            await onSaveComprobante(isReadOnly ? localComprobante : (form.numero_comprobante || ''));
+            setComprobanteChanged(false);
+        } finally {
+            setSavingComprobante(false);
+        }
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -446,6 +576,37 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                 <p className="text-xs font-bold">Esta cotización está procesada y solo puede visualizarse.</p>
                             </div>
                         )}
+
+                        {/* N° Comprobante — siempre editable, incluso en LISTO */}
+                        <div className="flex items-center gap-3 bg-white/50 border border-white/60 rounded-2xl px-4 py-3 shadow-sm">
+                            <div className="w-8 h-8 rounded-xl bg-[#366480]/10 flex items-center justify-center shrink-0">
+                                <Hash className="w-4 h-4 text-[#366480]" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <label className="flex items-center gap-2 text-[10px] font-black text-[#366480]/60 uppercase tracking-widest mb-0.5">
+                                    N° Comprobante
+                                    {isReadOnly && (
+                                        <span className="text-emerald-500 font-black normal-case tracking-normal">· editable</span>
+                                    )}
+                                </label>
+                                <input
+                                    type="text"
+                                    value={isReadOnly ? localComprobante : (form.numero_comprobante || '')}
+                                    onChange={e => handleComprobanteChange(e.target.value)}
+                                    className="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-700 placeholder:text-slate-300 placeholder:font-normal"
+                                    placeholder="Ej: F001-0000123 / B001-0000001"
+                                />
+                            </div>
+                            {isReadOnly && comprobanteChanged && (
+                                <button
+                                    onClick={handleSaveComprobante}
+                                    disabled={savingComprobante}
+                                    className="shrink-0 px-4 py-2 rounded-xl bg-[#366480] text-white text-[11px] font-black hover:bg-[#2c5268] transition-all disabled:opacity-50 whitespace-nowrap"
+                                >
+                                    {savingComprobante ? 'Guardando...' : 'Guardar'}
+                                </button>
+                            )}
+                        </div>
 
                         {/* 1. Business info + Client form */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
@@ -700,15 +861,15 @@ const EditorModal: React.FC<EditorModalProps> = ({
 
                         {/* 3. Totals */}
                         <div className="flex justify-end">
-                            <div className="w-full md:w-80 space-y-3 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
-                                <div className="flex justify-between items-center text-xs text-slate-500 font-bold uppercase tracking-wider">
-                                    <span>Sub Total</span>
-                                    <span className="text-slate-700">S/ {form.subtotal.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs text-rose-500 font-bold uppercase tracking-wider">
-                                    <span>Descuento</span>
-                                    <div className="flex items-center gap-1 border-b border-rose-200">
-                                        <span className="text-[10px]">- S/</span>
+                            <div className="w-full md:w-80 bg-white/40 p-6 rounded-3xl border border-white/40 shadow-sm">
+                                {/* Two-column grid: label right-aligned | value right-aligned */}
+                                <div className="grid grid-cols-[1fr_auto] gap-x-5 gap-y-3 items-center">
+                                    <span className="text-right text-xs text-slate-500 font-bold uppercase tracking-wider">Sub Total</span>
+                                    <span className="text-right text-xs text-slate-700 font-bold tabular-nums">S/ {form.subtotal.toFixed(2)}</span>
+
+                                    <span className="text-right text-xs text-rose-500 font-bold uppercase tracking-wider">Descuento</span>
+                                    <div className="flex items-center justify-end gap-1 border-b border-rose-200">
+                                        <span className="text-[10px] text-rose-500 font-bold">- S/</span>
                                         <CellInput
                                             type="number"
                                             value={form.descuento || ''}
@@ -719,23 +880,23 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                             placeholder="0.00"
                                         />
                                     </div>
-                                </div>
-                                {form.tipo_documento === 'FACTURA' && (
-                                    <div className="flex justify-between items-center text-xs text-[#366480] font-bold uppercase tracking-wider">
-                                        <span>IGV (18%)</span>
-                                        <span className="font-black">S/ {form.igv.toFixed(2)}</span>
-                                    </div>
-                                )}
-                                <div className="pt-3 border-t border-white/50 flex justify-between items-center">
-                                    <span className="text-xs font-black tracking-widest uppercase text-slate-400">Total</span>
-                                    <span className="text-2xl font-black text-[#366480]">
+
+                                    {form.tipo_documento === 'FACTURA' && (
+                                        <>
+                                            <span className="text-right text-xs text-[#366480] font-bold uppercase tracking-wider">IGV (18%)</span>
+                                            <span className="text-right text-xs text-[#366480] font-black tabular-nums">S/ {form.igv.toFixed(2)}</span>
+                                        </>
+                                    )}
+
+                                    <div className="col-span-2 border-t border-white/50" />
+                                    <span className="text-right text-xs font-black tracking-widest uppercase text-slate-400">Total</span>
+                                    <span className="text-right text-2xl font-black text-[#366480] tabular-nums">
                                         S/ {form.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                     </span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs text-emerald-600 font-bold uppercase tracking-wider pt-4">
-                                    <span>Adelanto</span>
-                                    <div className="flex items-center gap-1 bg-white/50 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
-                                        <span className="text-[10px]">S/</span>
+
+                                    <span className="text-right text-xs text-emerald-600 font-bold uppercase tracking-wider">Adelanto</span>
+                                    <div className="flex items-center justify-end gap-1 bg-white/50 border border-emerald-100 rounded-lg px-2 py-1 shadow-sm">
+                                        <span className="text-[10px] text-emerald-600">S/</span>
                                         <CellInput
                                             type="number"
                                             value={form.adelanto || ''}
@@ -746,10 +907,10 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                             placeholder="0.00"
                                         />
                                     </div>
-                                </div>
-                                <div className="flex justify-between items-center pt-3 mt-2 border-t-2 border-dashed border-white/50">
-                                    <span className="text-[10px] font-black uppercase text-amber-600 tracking-widest">Saldo Pendiente</span>
-                                    <span className="text-lg font-black tracking-tighter text-amber-600">
+
+                                    <div className="col-span-2 border-t-2 border-dashed border-white/50" />
+                                    <span className="text-right text-[10px] font-black uppercase text-amber-600 tracking-widest">Saldo Pendiente</span>
+                                    <span className="text-right text-lg font-black tracking-tighter text-amber-600 tabular-nums">
                                         S/ {(form.saldo_pendiente || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                     </span>
                                 </div>
@@ -873,6 +1034,7 @@ export function CotizacionesPage() {
     const [nameLocked, setNameLocked] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [voucherEditTarget, setVoucherEditTarget] = useState<Cotizacion | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [pendingFocusRowId, setPendingFocusRowId] = useState<string | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
@@ -941,7 +1103,8 @@ export function CotizacionesPage() {
         return cotizaciones.filter(c =>
             c.codigo?.toLowerCase().includes(q) ||
             c.cliente_nombre?.toLowerCase().includes(q) ||
-            c.cliente_doi?.toLowerCase().includes(q)
+            c.cliente_doi?.toLowerCase().includes(q) ||
+            c.numero_comprobante?.toLowerCase().includes(q)
         );
     }, [cotizaciones, searchTerm]);
 
@@ -1009,6 +1172,7 @@ export function CotizacionesPage() {
             notas: c.notas || '',
             condiciones_pago: c.condiciones_pago || '',
             descripcion: c.descripcion || '',
+            numero_comprobante: c.numero_comprobante || '',
         });
         setEditingId(c.id);
         setEditingCode(c.codigo || '');
@@ -1195,6 +1359,29 @@ export function CotizacionesPage() {
         if (!error) { setDeleteConfirmId(null); fetchData(); }
     };
 
+    const saveComprobante = async (id: string, val: string) => {
+        const cot = cotizaciones.find(c => c.id === id);
+        const valorAnterior = cot?.numero_comprobante || null;
+        const valorNuevo = val.trim() || null;
+        const { error } = await supabase
+            .from('cotizaciones')
+            .update({ numero_comprobante: valorNuevo })
+            .eq('id', id);
+        if (error) throw error;
+        if (valorAnterior !== valorNuevo) {
+            try {
+                await supabase.from('cotizaciones_audit_log').insert({
+                    cotizacion_id: id,
+                    cotizacion_codigo: cot?.codigo,
+                    campo: 'numero_comprobante',
+                    valor_anterior: valorAnterior,
+                    valor_nuevo: valorNuevo,
+                });
+            } catch (e) { console.error(e); }
+        }
+        await fetchData();
+    };
+
     const duplicateFromModal = async () => {
         if (!editingId) return;
         const cot = cotizaciones.find(c => c.id === editingId);
@@ -1240,6 +1427,8 @@ export function CotizacionesPage() {
                 nameLocked={nameLocked}
                 onDoiLocked={setDoiLocked}
                 onNameLocked={setNameLocked}
+                cotizacionId={editingId}
+                onSaveComprobante={val => editingId ? saveComprobante(editingId, val) : Promise.resolve()}
             />
 
             <div className="min-h-screen flex flex-col animate-premium-fade">
@@ -1374,6 +1563,7 @@ export function CotizacionesPage() {
                                             <th className="px-5 py-4">Cliente / Título</th>
                                             <th className="px-5 py-4">Fecha</th>
                                             <th className="px-5 py-4">Estado</th>
+                                            <th className="px-5 py-4">N° Comprobante</th>
                                             <th className="px-5 py-4 text-right">Total</th>
                                             <th className="px-4 py-4 w-12"></th>
                                         </tr>
@@ -1389,14 +1579,39 @@ export function CotizacionesPage() {
                                                         {c.codigo}
                                                     </button>
                                                 </td>
-                                                <td className="px-5 py-4 text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
-                                                    {stripPublicoGeneral(c.cliente_nombre) || '—'}
+                                                <td className="px-5 py-4">
+                                                    <p className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
+                                                        {stripPublicoGeneral(c.cliente_nombre) || '—'}
+                                                    </p>
+                                                    {c.descripcion && (
+                                                        <p className="text-[11px] font-bold text-slate-400 truncate max-w-[200px] mt-0.5" title={c.descripcion}>
+                                                            {c.descripcion}
+                                                        </p>
+                                                    )}
                                                 </td>
                                                 <td className="px-5 py-4 text-[12px] font-medium text-slate-500">
                                                     {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
                                                 </td>
                                                 <td className="px-5 py-4">
                                                     <StatusBadge estado={c.estado} />
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <button
+                                                        onClick={() => setVoucherEditTarget(c)}
+                                                        className="flex items-center gap-1.5 group"
+                                                        title="Editar N° Comprobante"
+                                                    >
+                                                        {c.numero_comprobante ? (
+                                                            <span className="text-[12px] font-black text-[#366480] group-hover:underline underline-offset-2 transition-colors">
+                                                                {c.numero_comprobante}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[11px] font-bold text-slate-300 group-hover:text-[#366480] transition-colors">
+                                                                — Agregar
+                                                            </span>
+                                                        )}
+                                                        <Hash className="w-3 h-3 text-slate-300 group-hover:text-[#366480] transition-colors opacity-0 group-hover:opacity-100" />
+                                                    </button>
                                                 </td>
                                                 <td className="px-5 py-4 text-right text-[13px] font-black text-[#2c3434] tabular-nums">
                                                     {fmtSol(c.total)}
@@ -1460,6 +1675,14 @@ export function CotizacionesPage() {
                         </div>
                     )}
                 </div>
+
+                {/* Voucher (comprobante) inline edit modal */}
+                <VoucherEditModal
+                    isOpen={!!voucherEditTarget}
+                    cotizacion={voucherEditTarget}
+                    onClose={() => setVoucherEditTarget(null)}
+                    onSave={val => voucherEditTarget ? saveComprobante(voucherEditTarget.id, val) : Promise.resolve()}
+                />
 
                 {/* Delete confirmation modal */}
                 {deleteConfirmId && createPortal(

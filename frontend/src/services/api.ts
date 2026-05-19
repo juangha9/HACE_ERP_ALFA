@@ -973,7 +973,7 @@ export const api = {
                 .select('id, display_name'),
             supabase
                 .from('cotizaciones')
-                .select('codigo, descripcion'),
+                .select('codigo, descripcion, numero_comprobante'),
         ]);
 
         const opts = optsResult.data || [];
@@ -986,8 +986,10 @@ export const api = {
         });
 
         const cotDescMap = new Map<string, string>();
+        const cotComprobanteMap = new Map<string, string>();
         (cotizacionesResult.data || []).forEach((c: any) => {
             if (c.codigo && c.descripcion) cotDescMap.set(c.codigo, c.descripcion);
+            if (c.codigo && c.numero_comprobante) cotComprobanteMap.set(c.codigo, c.numero_comprobante);
         });
 
         // Build mappings for efficient lookup
@@ -1024,6 +1026,7 @@ export const api = {
                     ...matchedVenta,
                     usuario_nombre: matchedVenta.usuario_nombre ?? (matchedVenta.user_id ? (profileMap.get(matchedVenta.user_id) ?? null) : null),
                     cotizacion_descripcion: matchedVenta.codigo_cotizacion ? (cotDescMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
+                    cotizacion_numero_comprobante: matchedVenta.codigo_cotizacion ? (cotComprobanteMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
                 } as VentaCabecera);
             } else {
                 // Only if no sale exists, use a stub (deduplicated by opt id)
@@ -1053,6 +1056,7 @@ export const api = {
                     ...v,
                     usuario_nombre: v.usuario_nombre ?? (v.user_id ? (profileMap.get(v.user_id) ?? null) : null),
                     cotizacion_descripcion: v.codigo_cotizacion ? (cotDescMap.get(v.codigo_cotizacion) ?? null) : null,
+                    cotizacion_numero_comprobante: v.codigo_cotizacion ? (cotComprobanteMap.get(v.codigo_cotizacion) ?? null) : null,
                 } as VentaCabecera);
             }
         });

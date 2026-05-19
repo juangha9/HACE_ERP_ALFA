@@ -28,7 +28,14 @@ import {
     Phone,
     Pencil,
     ArrowUpDown,
+    Settings,
+    Plus,
+    Package,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
+import { catalogService } from '../services/catalogService';
+import type { ProductCategory, ProductFamily, ProductSubfamily } from '../services/catalogService';
 import {
     format,
     parseISO,
@@ -196,6 +203,35 @@ export default function AdministradorPage() {
     const [editClientListOpen, setEditClientListOpen] = useState(false);
     const [editClientListClosing, setEditClientListClosing] = useState(false);
     const [editClientSearch, setEditClientSearch] = useState('');
+
+    // ── Ajuste Avanzado modal ───────────────────────────────────────────────
+    const [ajusteOpen, setAjusteOpen] = useState(false);
+    const [ajusteClosing, setAjusteClosing] = useState(false);
+    // Materiales Controlados sub-tab
+    const [controlProducts, setControlProducts] = useState<any[]>([]);
+    const [controlLoading, setControlLoading] = useState(false);
+    // Add-product sub-modal
+    const [addProdOpen, setAddProdOpen] = useState(false);
+    const [addProdClosing, setAddProdClosing] = useState(false);
+    const [addProdSaving, setAddProdSaving] = useState(false);
+    const [addProdError, setAddProdError] = useState<string | null>(null);
+    const [addProdForm, setAddProdForm] = useState({ base_name: '', presentation: '', unit: '', min_price: '' as number | '', reference_cost: '' as number | '' });
+    const [addProdMode, setAddProdMode] = useState<'create' | 'edit'>('create');
+    const [editProdId, setEditProdId] = useState<string | null>(null);
+    const [addProdCats, setAddProdCats] = useState<ProductCategory[]>([]);
+    const [addProdFams, setAddProdFams] = useState<ProductFamily[]>([]);
+    const [addProdSubs, setAddProdSubs] = useState<ProductSubfamily[]>([]);
+    const [addProdAllFams, setAddProdAllFams] = useState<ProductFamily[]>([]);
+    const [addProdAllSubs, setAddProdAllSubs] = useState<ProductSubfamily[]>([]);
+    const [addProdSelCat, setAddProdSelCat] = useState('');
+    const [addProdSelFam, setAddProdSelFam] = useState('');
+    const [addProdSelSub, setAddProdSelSub] = useState('');
+    // Materiales Controlados filters + pagination
+    const [controlSearch, setControlSearch] = useState('');
+    const [controlPage, setControlPage] = useState(1);
+    const [filterCat, setFilterCat] = useState('');
+    const [filterFam, setFilterFam] = useState('');
+    const [filterSub, setFilterSub] = useState('');
 
     // Payment info from ventas_cabecera for the dashboard (KPIs, últimos servicios, history filter)
     const [ventasParaDashboard, setVentasParaDashboard] = useState<{ codigo_cotizacion: string | null; saldo_pendiente: number; estado_pago: string; created_at: string }[]>([]);
@@ -660,6 +696,189 @@ export default function AdministradorPage() {
         }
     };
 
+    // ── Ajuste Avanzado helpers ────────────────────────────────────────────────
+    const fetchControlProducts = async () => {
+        setControlLoading(true);
+        try {
+            const { data } = await supabase
+                .from('catalog_products')
+                .select(`id,sku,base_name,presentation,unit,min_price,reference_cost,subfamily_id,
+                    product_subfamilies(name,family_id,product_families(name,category_id,product_categories(name)))`)
+                .eq('status', 'Activo')
+                .order('base_name');
+            setControlProducts(data || []);
+        } catch (e) { console.error(e); }
+        finally { setControlLoading(false); }
+    };
+
+    const openAjuste = () => {
+        setAjusteOpen(true);
+        setAjusteClosing(false);
+        setControlSearch('');
+        setControlPage(1);
+        setFilterCat('');
+        setFilterFam('');
+        setFilterSub('');
+        fetchControlProducts();
+    };
+    const closeAjuste = () => {
+        setAjusteClosing(true);
+        window.setTimeout(() => { setAjusteOpen(false); setAjusteClosing(false); }, 220);
+    };
+
+    const filterCatOptions = useMemo(() => {
+        const seen = new Set<string>();
+        const cats: { id: string; name: string }[] = [];
+        controlProducts.forEach((p: any) => {
+            const catId = p.product_subfamilies?.product_families?.category_id;
+            const catName = p.product_subfamilies?.product_families?.product_categories?.name;
+            if (catId && catName && !seen.has(catId)) { seen.add(catId); cats.push({ id: catId, name: catName }); }
+        });
+        return cats.sort((a, b) => a.name.localeCompare(b.name));
+    }, [controlProducts]);
+
+    const filterFamOptions = useMemo(() => {
+        if (!filterCat) return [];
+        const seen = new Set<string>();
+        const fams: { id: string; name: string }[] = [];
+        controlProducts.forEach((p: any) => {
+            const catId = p.product_subfamilies?.product_families?.category_id;
+            const famId = p.product_subfamilies?.family_id;
+            const famName = p.product_subfamilies?.product_families?.name;
+            if (catId === filterCat && famId && famName && !seen.has(famId)) { seen.add(famId); fams.push({ id: famId, name: famName }); }
+        });
+        return fams.sort((a, b) => a.name.localeCompare(b.name));
+    }, [controlProducts, filterCat]);
+
+    const filterSubOptions = useMemo(() => {
+        if (!filterFam) return [];
+        const seen = new Set<string>();
+        const subs: { id: string; name: string }[] = [];
+        controlProducts.forEach((p: any) => {
+            const famId = p.product_subfamilies?.family_id;
+            if (famId === filterFam && !seen.has(p.subfamily_id)) {
+                seen.add(p.subfamily_id);
+                subs.push({ id: p.subfamily_id, name: p.product_subfamilies?.name || '' });
+            }
+        });
+        return subs.sort((a, b) => a.name.localeCompare(b.name));
+    }, [controlProducts, filterFam]);
+
+    const filteredControlProducts = useMemo(() => {
+        const q = controlSearch.toLowerCase().trim();
+        return controlProducts.filter((p: any) => {
+            if (filterSub && p.subfamily_id !== filterSub) return false;
+            if (filterFam && p.product_subfamilies?.family_id !== filterFam) return false;
+            if (filterCat && p.product_subfamilies?.product_families?.category_id !== filterCat) return false;
+            if (q && !p.base_name?.toLowerCase().includes(q) && !p.sku?.toLowerCase().includes(q)) return false;
+            return true;
+        });
+    }, [controlProducts, filterCat, filterFam, filterSub, controlSearch]);
+
+    const CONTROL_PAGE_SIZE = 10;
+    const controlTotalPages = Math.max(1, Math.ceil(filteredControlProducts.length / CONTROL_PAGE_SIZE));
+    const pagedControlProducts = filteredControlProducts.slice((controlPage - 1) * CONTROL_PAGE_SIZE, controlPage * CONTROL_PAGE_SIZE);
+
+    const loadAddProdTaxonomy = async () => {
+        const [cats, fams, subs] = await Promise.all([
+            catalogService.getCategories(),
+            catalogService.getFamilies(),
+            catalogService.getSubfamilies(),
+        ]);
+        setAddProdAllFams(fams); setAddProdAllSubs(subs);
+        const validFams = fams.filter(f => subs.some(s => s.family_id === f.id));
+        setAddProdCats(cats.filter(c => validFams.some(f => f.category_id === c.id)));
+        return { fams, subs };
+    };
+
+    const openAddProd = async () => {
+        setAddProdMode('create');
+        setEditProdId(null);
+        setAddProdForm({ base_name: '', presentation: '', unit: '', min_price: '', reference_cost: '' });
+        setAddProdSelCat(''); setAddProdSelFam(''); setAddProdSelSub('');
+        setAddProdFams([]); setAddProdSubs([]);
+        setAddProdError(null);
+        try { await loadAddProdTaxonomy(); } catch (e) { console.error(e); }
+        setAddProdOpen(true);
+        setAddProdClosing(false);
+    };
+
+    const openEditProd = async (p: any) => {
+        setAddProdMode('edit');
+        setEditProdId(p.id);
+        setAddProdForm({ base_name: p.base_name || '', presentation: p.presentation || '', unit: p.unit || '', min_price: p.min_price ?? '', reference_cost: p.reference_cost ?? '' });
+        setAddProdSelCat(''); setAddProdSelFam(''); setAddProdSelSub('');
+        setAddProdFams([]); setAddProdSubs([]);
+        setAddProdError(null);
+        try {
+            const { fams, subs } = await loadAddProdTaxonomy();
+            // Cascade: subfamily → family → category
+            const sub = subs.find(s => s.id === p.subfamily_id);
+            if (sub) {
+                const fam = fams.find(f => f.id === sub.family_id);
+                if (fam) {
+                    setAddProdSelCat(fam.category_id);
+                    const filteredFams = fams.filter(f => f.category_id === fam.category_id && subs.some(s => s.family_id === f.id));
+                    setAddProdFams(filteredFams);
+                    setAddProdSelFam(fam.id);
+                    setAddProdSubs(subs.filter(s => s.family_id === fam.id));
+                    setAddProdSelSub(p.subfamily_id);
+                }
+            }
+        } catch (e) { console.error(e); }
+        setAddProdOpen(true);
+        setAddProdClosing(false);
+    };
+    const closeAddProd = () => {
+        setAddProdClosing(true);
+        window.setTimeout(() => { setAddProdOpen(false); setAddProdClosing(false); }, 220);
+    };
+    const saveAddProd = async () => {
+        if (!addProdSelSub) { setAddProdError('Selecciona una subfamilia'); return; }
+        if (!addProdForm.base_name.trim()) { setAddProdError('El nombre base es requerido'); return; }
+        if (!addProdForm.presentation.trim()) { setAddProdError('La presentación es requerida'); return; }
+        if (!addProdForm.unit) { setAddProdError('Selecciona una unidad de medida'); return; }
+        setAddProdSaving(true);
+        setAddProdError(null);
+        const payload = {
+            subfamily_id: addProdSelSub,
+            base_name: addProdForm.base_name.trim(),
+            presentation: addProdForm.presentation.trim(),
+            unit: addProdForm.unit,
+            min_price: addProdForm.min_price === '' ? 0 : Number(addProdForm.min_price),
+            reference_cost: addProdForm.reference_cost === '' ? 0 : Number(addProdForm.reference_cost),
+            min_stock: 0,
+            stock_alerts: false,
+            status: 'Activo' as const,
+        };
+        try {
+            if (addProdMode === 'edit' && editProdId) {
+                const { error } = await supabase.from('catalog_products').update(payload).eq('id', editProdId);
+                if (error) throw error;
+            } else {
+                await catalogService.createProduct(payload);
+            }
+            closeAddProd();
+            await fetchControlProducts();
+        } catch (e: any) {
+            setAddProdError(e?.message || 'Error al guardar');
+        } finally { setAddProdSaving(false); }
+    };
+
+    const handleCatChange = (catId: string) => {
+        setAddProdSelCat(catId);
+        if (!catId) { setAddProdFams([]); setAddProdSubs([]); setAddProdSelFam(''); setAddProdSelSub(''); return; }
+        const fams = addProdAllFams.filter(f => f.category_id === catId && addProdAllSubs.some(s => s.family_id === f.id));
+        setAddProdFams(fams); setAddProdSubs([]); setAddProdSelFam(''); setAddProdSelSub('');
+    };
+
+    const handleFamChange = (famId: string) => {
+        setAddProdSelFam(famId);
+        if (!famId) { setAddProdSubs([]); setAddProdSelSub(''); return; }
+        setAddProdSubs(addProdAllSubs.filter(s => s.family_id === famId));
+        setAddProdSelSub('');
+    };
+
     const applyClientsQuickFilter = (val: typeof clientsQuickFilter) => {
         setClientsQuickFilter(val);
         const n = new Date();
@@ -948,6 +1167,15 @@ export default function AdministradorPage() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    {/* AJUSTE AVANZADO modal trigger */}
+                    <button
+                        onClick={openAjuste}
+                        className="flex items-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl shadow-sm hover:shadow-md hover:bg-slate-50 transition-all"
+                        title="Ajuste avanzado"
+                    >
+                        <Settings className="w-4 h-4" />
+                        <span className="text-[11px] font-black tracking-widest uppercase">Ajuste Avanzado</span>
+                    </button>
                     {/* CLIENTES modal trigger */}
                     <button
                         onClick={openClients}
@@ -1949,6 +2177,327 @@ export default function AdministradorPage() {
                                 >
                                     <Check className="w-3.5 h-3.5" />
                                     {newClientSaving ? 'Guardando...' : newClientIsEdit ? 'Guardar Cambios' : 'Guardar Registro'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* ── AJUSTE AVANZADO MODAL ──────────────────────────────────── */}
+            {ajusteOpen && createPortal(
+                <div
+                    className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${ajusteClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+                    style={{ backdropFilter: 'blur(6px)', fontFamily: "'Manrope', sans-serif" }}
+                >
+                    <div className={`bg-white/95 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[92vh] relative overflow-hidden ${ajusteClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
+                        <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10" />
+                        {/* Header */}
+                        <div className="px-8 py-6 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center shrink-0">
+                                    <Settings className="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <h2 className="text-[18px] font-black text-[#2c3434] tracking-tight">Ajuste Avanzado</h2>
+                                    <p className="text-[11px] font-bold text-slate-400 tracking-wide mt-0.5">Configuración de parámetros del sistema</p>
+                                </div>
+                            </div>
+                            <button onClick={closeAjuste} className="w-9 h-9 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        {/* Sub-tabs */}
+                        <div className="px-8 pt-4 pb-0 border-b border-[#d3dcdb]/30 bg-white/20 flex gap-1">
+                            <div className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-black tracking-widest uppercase rounded-t-xl border-b-2 border-[#366480] text-[#366480] bg-white/60">
+                                <Package className="w-3.5 h-3.5" />
+                                Materiales Controlados
+                            </div>
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto">
+                            {/* Toolbar */}
+                            <div className="px-8 py-5 flex items-center justify-between">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    {controlLoading ? 'Cargando...' : `${filteredControlProducts.length} producto${filteredControlProducts.length !== 1 ? 's' : ''}`}
+                                </p>
+                                <button
+                                    onClick={openAddProd}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Agregar Producto
+                                </button>
+                            </div>
+                            {/* Filter bar */}
+                            <div className="px-8 pb-4 flex gap-3 flex-wrap">
+                                <div className="relative flex-1 min-w-[180px]">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                    <input
+                                        type="text"
+                                        value={controlSearch}
+                                        onChange={e => { setControlSearch(e.target.value); setControlPage(1); }}
+                                        placeholder="Buscar por material o SKU..."
+                                        className="w-full pl-9 pr-4 py-2.5 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40"
+                                    />
+                                </div>
+                                <div className="relative">
+                                    <select
+                                        value={filterCat}
+                                        onChange={e => { setFilterCat(e.target.value); setFilterFam(''); setFilterSub(''); setControlPage(1); }}
+                                        className="appearance-none pl-3 pr-8 py-2.5 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none cursor-pointer focus:border-[#4A90E2]/40"
+                                    >
+                                        <option value="">Todas las categorías</option>
+                                        {filterCatOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                </div>
+                                <div className="relative">
+                                    <select
+                                        value={filterFam}
+                                        onChange={e => { setFilterFam(e.target.value); setFilterSub(''); setControlPage(1); }}
+                                        disabled={!filterCat || filterFamOptions.length === 0}
+                                        className="appearance-none pl-3 pr-8 py-2.5 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none cursor-pointer focus:border-[#4A90E2]/40 disabled:opacity-40"
+                                    >
+                                        <option value="">Todas las familias</option>
+                                        {filterFamOptions.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                </div>
+                                <div className="relative">
+                                    <select
+                                        value={filterSub}
+                                        onChange={e => { setFilterSub(e.target.value); setControlPage(1); }}
+                                        disabled={!filterFam || filterSubOptions.length === 0}
+                                        className="appearance-none pl-3 pr-8 py-2.5 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none cursor-pointer focus:border-[#4A90E2]/40 disabled:opacity-40"
+                                    >
+                                        <option value="">Todas las subfamilias</option>
+                                        {filterSubOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                </div>
+                            </div>
+                            {/* Table */}
+                            <div className="px-8 pb-4">
+                                <table className="w-full border-collapse">
+                                    <thead>
+                                        <tr className="border-b border-[#d3dcdb]/40">
+                                            {['SKU', 'Material', 'Precio Mínimo', 'Costo de Referencia', ''].map(h => (
+                                                <th key={h} className="pb-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest pr-6 last:pr-0">{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {controlLoading ? (
+                                            <tr><td colSpan={5} className="py-16 text-center text-[11px] font-black text-slate-300 uppercase tracking-widest animate-pulse">Sincronizando...</td></tr>
+                                        ) : pagedControlProducts.length === 0 ? (
+                                            <tr><td colSpan={5} className="py-16 text-center text-[11px] font-black text-slate-300 uppercase tracking-widest">Sin resultados</td></tr>
+                                        ) : pagedControlProducts.map((p: any) => (
+                                            <tr key={p.id} className="border-b border-[#d3dcdb]/20 hover:bg-[#f0f5f4]/40 transition-colors group">
+                                                <td className="py-4 pr-6">
+                                                    <span className="text-[11px] font-black text-[#366480] bg-[#f0f5f4] px-2.5 py-1 rounded-lg tracking-wider">{p.sku}</span>
+                                                </td>
+                                                <td className="py-4 pr-6">
+                                                    <p className="text-[13px] font-bold text-[#2c3434]">{p.base_name}</p>
+                                                    {p.presentation && <p className="text-[10px] font-bold text-slate-400 mt-0.5">{p.presentation}</p>}
+                                                </td>
+                                                <td className="py-4 pr-6">
+                                                    <span className="text-[13px] font-black text-[#366480] tabular-nums">
+                                                        {p.min_price > 0 ? `S/ ${Number(p.min_price).toFixed(2)}` : <span className="text-slate-300 font-bold">—</span>}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 pr-6">
+                                                    <span className="text-[13px] font-black text-slate-600 tabular-nums">
+                                                        {p.reference_cost > 0 ? `S/ ${Number(p.reference_cost).toFixed(2)}` : <span className="text-slate-300 font-bold">—</span>}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4">
+                                                    <button
+                                                        onClick={() => openEditProd(p)}
+                                                        className="opacity-0 group-hover:opacity-100 p-2 rounded-xl bg-white border border-[#d3dcdb]/30 text-[#366480] hover:bg-[#f0f5f4] hover:border-[#366480]/20 transition-all shadow-sm"
+                                                        title="Editar producto"
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {/* Pagination */}
+                            {controlTotalPages > 1 && (
+                                <div className="px-8 pb-6 flex items-center justify-between">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                        Página {controlPage} de {controlTotalPages}
+                                    </p>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => setControlPage(p => Math.max(1, p - 1))}
+                                            disabled={controlPage === 1}
+                                            className="p-2 rounded-xl text-slate-400 hover:text-[#366480] hover:bg-[#f0f5f4] disabled:opacity-30 transition-all"
+                                        >
+                                            <ChevronLeft className="w-4 h-4" />
+                                        </button>
+                                        {Array.from({ length: controlTotalPages }, (_, i) => i + 1).map(page => (
+                                            <button
+                                                key={page}
+                                                onClick={() => setControlPage(page)}
+                                                className={`w-8 h-8 rounded-xl text-[11px] font-black transition-all ${controlPage === page ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-[#366480] hover:bg-[#f0f5f4]'}`}
+                                            >
+                                                {page}
+                                            </button>
+                                        ))}
+                                        <button
+                                            onClick={() => setControlPage(p => Math.min(controlTotalPages, p + 1))}
+                                            disabled={controlPage === controlTotalPages}
+                                            className="p-2 rounded-xl text-slate-400 hover:text-[#366480] hover:bg-[#f0f5f4] disabled:opacity-30 transition-all"
+                                        >
+                                            <ChevronRight className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* ── ADD PRODUCT SUB-MODAL ──────────────────────────────────── */}
+            {addProdOpen && createPortal(
+                <div
+                    className={`fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-[#2c3434]/30 ${addProdClosing ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+                    style={{ backdropFilter: 'blur(8px)', fontFamily: "'Manrope', sans-serif" }}
+                >
+                    <div className={`bg-white/97 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-lg border border-white/60 relative overflow-hidden ${addProdClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
+                        <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10" />
+                        {/* Header */}
+                        <div className="px-8 pt-8 pb-5 border-b border-[#d3dcdb]/20">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <h2 className="text-[18px] font-black text-[#2c3434] tracking-tight leading-snug">
+                            {addProdMode === 'edit' ? 'Editar Producto' : 'Nuevo Producto en Catálogo'}
+                        </h2>
+                                    <p className="text-[11px] font-bold text-slate-400 mt-1 tracking-wide">Completa la clasificación y los datos del producto.</p>
+                                </div>
+                                <button onClick={closeAddProd} className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all flex-shrink-0 ml-4 mt-0.5">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                        {/* Form */}
+                        <div className="px-8 py-6 flex flex-col gap-5 overflow-y-auto max-h-[70vh]">
+                            {/* Clasificación */}
+                            <div className="bg-[#f8faf9] rounded-2xl border border-[#e8eded] p-5 space-y-4">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">1. Clasificación</p>
+                                <div className="grid grid-cols-3 gap-3">
+                                    {/* Categoría */}
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Categoría *</label>
+                                        <div className="relative">
+                                            <select value={addProdSelCat} onChange={e => handleCatChange(e.target.value)}
+                                                className="appearance-none w-full px-3 py-2.5 bg-white border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none cursor-pointer pr-8 focus:border-[#4A90E2]/40">
+                                                <option value="" disabled hidden>Seleccionar</option>
+                                                {addProdCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                            </select>
+                                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                        </div>
+                                    </div>
+                                    {/* Familia */}
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Familia *</label>
+                                        <div className="relative">
+                                            <select value={addProdSelFam} onChange={e => handleFamChange(e.target.value)}
+                                                disabled={!addProdSelCat || addProdFams.length === 0}
+                                                className="appearance-none w-full px-3 py-2.5 bg-white border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none cursor-pointer pr-8 focus:border-[#4A90E2]/40 disabled:opacity-40">
+                                                <option value="" disabled hidden>Seleccionar</option>
+                                                {addProdFams.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                                            </select>
+                                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                        </div>
+                                    </div>
+                                    {/* Subfamilia */}
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Subfamilia *</label>
+                                        <div className="relative">
+                                            <select value={addProdSelSub} onChange={e => setAddProdSelSub(e.target.value)}
+                                                disabled={!addProdSelFam || addProdSubs.length === 0}
+                                                className="appearance-none w-full px-3 py-2.5 bg-white border border-[#e8eded] rounded-xl text-[12px] font-bold text-[#2c3434] outline-none cursor-pointer pr-8 focus:border-[#4A90E2]/40 disabled:opacity-40">
+                                                <option value="" disabled hidden>Seleccionar</option>
+                                                {addProdSubs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                            </select>
+                                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Datos del producto */}
+                            <div className={`bg-[#f8faf9] rounded-2xl border border-[#e8eded] p-5 space-y-4 transition-all duration-300 ${addProdSelSub ? '' : 'opacity-40 pointer-events-none'}`}>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Datos del Producto</p>
+                                <div className="flex flex-col gap-1.5">
+                                    <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Nombre Base *</label>
+                                    <input type="text" value={addProdForm.base_name}
+                                        onChange={e => setAddProdForm(f => ({ ...f, base_name: e.target.value }))}
+                                        placeholder="Ej. Bisagra Cazoleta"
+                                        className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Presentación *</label>
+                                        <input type="text" value={addProdForm.presentation}
+                                            onChange={e => setAddProdForm(f => ({ ...f, presentation: e.target.value }))}
+                                            placeholder="Ej. 35mm / Bolsa x50"
+                                            className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40" />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Unidad *</label>
+                                        <div className="relative">
+                                            <select value={addProdForm.unit} onChange={e => setAddProdForm(f => ({ ...f, unit: e.target.value }))}
+                                                className="appearance-none w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none cursor-pointer pr-8 focus:border-[#4A90E2]/40">
+                                                <option value="" disabled hidden>Seleccionar</option>
+                                                <option value="Unidad">Unidad</option>
+                                                <option value="Plancha">Plancha</option>
+                                                <option value="Caja / Bolsa / Paquete">Caja / Bolsa / Paquete</option>
+                                                <option value="Metro">Metro</option>
+                                                <option value="Litro">Litro</option>
+                                                <option value="Kilogramo">Kilogramo</option>
+                                            </select>
+                                            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Costo de Referencia (S/)</label>
+                                        <input type="number" min="0" step="0.01" value={addProdForm.reference_cost}
+                                            onChange={e => setAddProdForm(f => ({ ...f, reference_cost: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                            placeholder="0.00"
+                                            className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40 tabular-nums" />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Precio Mínimo (S/)</label>
+                                        <input type="number" min="0" step="0.01" value={addProdForm.min_price}
+                                            onChange={e => setAddProdForm(f => ({ ...f, min_price: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                            placeholder="0.00"
+                                            className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40 tabular-nums" />
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Error */}
+                            {addProdError && (
+                                <p className="text-[11px] font-bold text-rose-500 bg-rose-50 px-4 py-3 rounded-2xl border border-rose-100">{addProdError}</p>
+                            )}
+                            {/* Actions */}
+                            <div className="flex items-center justify-end gap-3 pt-1">
+                                <button onClick={closeAddProd} className="px-6 py-3 text-[10px] font-black text-slate-500 hover:text-slate-700 transition-all uppercase tracking-widest">
+                                    Cancelar
+                                </button>
+                                <button onClick={saveAddProd} disabled={addProdSaving}
+                                    className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all disabled:opacity-60">
+                                    <Check className="w-3.5 h-3.5" />
+                                    {addProdSaving ? 'Guardando...' : addProdMode === 'edit' ? 'Guardar Cambios' : 'Guardar Producto'}
                                 </button>
                             </div>
                         </div>
