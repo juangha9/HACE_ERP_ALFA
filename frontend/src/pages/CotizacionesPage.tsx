@@ -46,7 +46,7 @@ interface Cotizacion {
     id: string;
     codigo: string;
     estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO';
-    tipo_documento: 'COTIZACION' | 'BOLETA' | 'FACTURA';
+    tipo_documento: 'COTIZACION' | 'BOLETA' | 'FACTURA' | 'TICKET';
     cliente_nombre: string;
     cliente_doi: string;
     cliente_direccion: string;
@@ -68,7 +68,7 @@ interface Cotizacion {
     created_at: string;
 }
 
-type TipoDoc = 'BOLETA' | 'FACTURA';
+type TipoDoc = 'BOLETA' | 'FACTURA' | 'TICKET';
 
 interface FormState {
     estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO';
@@ -218,7 +218,7 @@ const fmtSol = (n: number) =>
 function recalc(items: LineItem[], descuento: number, tipo: TipoDoc, adelanto: number) {
     const subtotal = items.reduce((s, it) => s + it.total, 0);
     const base = Math.max(0, subtotal - descuento);
-    const igv = tipo === 'FACTURA' ? parseFloat((base * IGV_RATE).toFixed(2)) : 0;
+    const igv = (tipo === 'FACTURA' || tipo === 'BOLETA' || tipo === 'TICKET') ? parseFloat((base * IGV_RATE).toFixed(2)) : 0;
     const total = parseFloat((base + igv).toFixed(2));
     const saldo_pendiente = parseFloat((total - adelanto).toFixed(2));
     return { subtotal, igv, total, saldo_pendiente };
@@ -809,6 +809,16 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         />
                                         <span className="text-xs font-bold text-slate-600">Factura</span>
                                     </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            checked={form.tipo_documento === 'TICKET'}
+                                            onChange={() => onTipoDocumento('TICKET')}
+                                            disabled={isReadOnly}
+                                            className="accent-[#366480]"
+                                        />
+                                        <span className="text-xs font-bold text-slate-600">Ticket</span>
+                                    </label>
                                 </div>
                                 <div className="col-span-2 grid grid-cols-2 gap-4">
                                     <div>
@@ -1036,7 +1046,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         />
                                     </div>
 
-                                    {form.tipo_documento === 'FACTURA' && (
+                                    {(form.tipo_documento === 'FACTURA' || form.tipo_documento === 'BOLETA' || form.tipo_documento === 'TICKET') && (
                                         <>
                                             <span className="text-right text-xs text-[#366480] font-bold uppercase tracking-wider">IGV (18%)</span>
                                             <span className="text-right text-xs text-[#366480] font-black tabular-nums">S/ {form.igv.toFixed(2)}</span>
@@ -1510,7 +1520,7 @@ export function CotizacionesPage() {
     };
 
     const openEdit = (c: Cotizacion) => {
-        const tipo: TipoDoc = c.tipo_documento === 'BOLETA' ? 'BOLETA' : 'FACTURA';
+        const tipo: TipoDoc = c.tipo_documento === 'BOLETA' ? 'BOLETA' : (c.tipo_documento === 'TICKET' ? 'TICKET' : 'FACTURA');
         const isPublicoGeneral = /^PÚBLICO GENERAL \((.+)\)$/.test(c.cliente_nombre || '');
         setClientFromList(!isPublicoGeneral);
         setForm({

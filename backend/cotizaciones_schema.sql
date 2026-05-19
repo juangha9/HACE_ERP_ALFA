@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS cotizaciones (
     estado              TEXT DEFAULT 'BORRADOR'
                             CHECK (estado IN ('BORRADOR', 'LISTO')),
     tipo_documento      TEXT DEFAULT 'COTIZACION'
-                            CHECK (tipo_documento IN ('COTIZACION', 'BOLETA', 'FACTURA')),
+                            CHECK (tipo_documento IN ('COTIZACION', 'BOLETA', 'FACTURA', 'TICKET')),
 
     -- Datos del cliente
     cliente_nombre      TEXT,
