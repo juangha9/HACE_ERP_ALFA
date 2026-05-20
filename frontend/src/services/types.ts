@@ -206,6 +206,7 @@ export interface VentaCabecera {
     cotizacion_numero_comprobante?: string | null;
     cotizacion_tipo_documento?: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION' | null;
     cotizacion_comprobante_locked?: boolean | null;
+    cotizacion_sustento_comprobante_url?: string | null;
 }
 
 

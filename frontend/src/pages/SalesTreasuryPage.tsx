@@ -118,8 +118,10 @@ export const SalesTreasuryPage = () => {
     const [showGastoModal, setShowGastoModal] = useState<null | true | { monto: string, categoria: string, cuenta: string, desc: string }>(null);
     const [showHistoryModal, setShowHistoryModal] = useState<VentaCabecera | null>(null);
     const [showConfirmComprobanteModal, setShowConfirmComprobanteModal] = useState<VentaCabecera | null>(null);
-    const [confirmComprobanteType, setConfirmComprobanteType] = useState<'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION'>('BOLETA');
+    const [confirmComprobanteType, setConfirmComprobanteType] = useState<'FACTURA' | 'BOLETA' | 'TICKET'>('BOLETA');
     const [confirmComprobanteNumber, setConfirmComprobanteNumber] = useState('');
+    const [confirmComprobanteSustentoFile, setConfirmComprobanteSustentoFile] = useState<File | null>(null);
+    const [confirmComprobanteSustentoPreview, setConfirmComprobanteSustentoPreview] = useState<string | null>(null);
     const [savingConfirmComprobante, setSavingConfirmComprobante] = useState(false);
     const [confirmComprobanteAuditLogs, setConfirmComprobanteAuditLogs] = useState<any[]>([]);
     const [loadingConfirmComprobanteAuditLogs, setLoadingConfirmComprobanteAuditLogs] = useState(false);
@@ -580,9 +582,45 @@ export const SalesTreasuryPage = () => {
         }
     };
 
+    useEffect(() => {
+        if (!showConfirmComprobanteModal) {
+            setConfirmComprobanteSustentoFile(null);
+            setConfirmComprobanteSustentoPreview(prev => { 
+                if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev); 
+                return null; 
+            });
+        }
+    }, [showConfirmComprobanteModal]);
+
+    useEffect(() => {
+        if (!showConfirmComprobanteModal) return;
+        const handlePaste = (e: ClipboardEvent) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const item of Array.from(items)) {
+                if (item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) {
+                        setConfirmComprobanteSustentoFile(file);
+                        setConfirmComprobanteSustentoPreview(prev => {
+                            if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+                            return URL.createObjectURL(file);
+                        });
+                        break;
+                    }
+                }
+            }
+        };
+        document.addEventListener('paste', handlePaste);
+        return () => document.removeEventListener('paste', handlePaste);
+    }, [showConfirmComprobanteModal]);
+
     const openConfirmComprobanteModal = async (venta: VentaCabecera) => {
         setShowConfirmComprobanteModal(venta);
-        setConfirmComprobanteType(venta.cotizacion_tipo_documento || 'BOLETA');
+        setConfirmComprobanteSustentoFile(null);
+        setConfirmComprobanteSustentoPreview(venta.cotizacion_sustento_comprobante_url || null);
+        const docType = venta.cotizacion_tipo_documento;
+        setConfirmComprobanteType(docType === 'FACTURA' ? 'FACTURA' : docType === 'TICKET' ? 'TICKET' : 'BOLETA');
         setConfirmComprobanteNumber(venta.cotizacion_numero_comprobante || '');
         setConfirmComprobanteAuditLogs([]);
         setLoadingConfirmComprobanteAuditLogs(true);
@@ -608,11 +646,16 @@ export const SalesTreasuryPage = () => {
         setSavingConfirmComprobante(true);
         try {
             const { data: { user } } = await supabase.auth.getUser();
+            let sustentoUrl: string | null = confirmComprobanteSustentoPreview;
+            if (confirmComprobanteSustentoFile) {
+                sustentoUrl = await api.uploadVoucher(confirmComprobanteSustentoFile, `${venta.codigo_cotizacion}_SUSTENTO`);
+            }
             await api.confirmarComprobanteVenta(
                 venta.codigo_cotizacion,
                 confirmComprobanteType,
                 confirmComprobanteNumber,
-                user?.id || null
+                user?.id || null,
+                sustentoUrl
             );
             setShowConfirmComprobanteModal(null);
             await loadData();
@@ -1713,28 +1756,15 @@ export const SalesTreasuryPage = () => {
                                 {/* Document Type */}
                                 <div className="space-y-2 text-left">
                                     <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Tipo de Documento</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {(['BOLETA', 'FACTURA', 'TICKET', 'COTIZACION'] as const).map((type) => (
-                                            <label
-                                                key={type}
-                                                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${
-                                                    confirmComprobanteType === type
-                                                        ? 'bg-[#4A90E2]/5 border-[#4A90E2] text-[#4A90E2] font-semibold'
-                                                        : 'bg-white border-[#e8eded] text-slate-600 hover:bg-[#f8faf9]'
-                                                }`}
-                                            >
-                                                <input
-                                                    type="radio"
-                                                    name="confirmDocType"
-                                                    value={type}
-                                                    checked={confirmComprobanteType === type}
-                                                    onChange={() => setConfirmComprobanteType(type)}
-                                                    className="sr-only"
-                                                />
-                                                <span className="text-[12px] tracking-wide">{type}</span>
-                                            </label>
-                                        ))}
-                                    </div>
+                                    <select
+                                        value={confirmComprobanteType}
+                                        onChange={(e) => setConfirmComprobanteType(e.target.value as 'FACTURA' | 'BOLETA' | 'TICKET')}
+                                        className="w-full px-4 py-3 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-sm font-semibold text-[#2c3434] focus:outline-none focus:border-[#4A90E2] focus:bg-white transition-colors cursor-pointer appearance-none"
+                                    >
+                                        <option value="BOLETA">Boleta</option>
+                                        <option value="FACTURA">Factura</option>
+                                        <option value="TICKET">Ticket</option>
+                                    </select>
                                 </div>
 
                                 {/* Voucher Number */}
@@ -1749,6 +1779,57 @@ export const SalesTreasuryPage = () => {
                                             className="w-full px-4 py-3 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-sm font-medium text-[#2c3434] placeholder-slate-400 focus:outline-none focus:border-[#4A90E2] focus:bg-white transition-colors"
                                         />
                                     </div>
+                                </div>
+
+                                {/* Sustento Image */}
+                                <div className="space-y-2 text-left">
+                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Imagen de Sustento</label>
+                                    {confirmComprobanteSustentoPreview ? (
+                                        <div className="relative rounded-xl overflow-hidden border border-[#e8eded]">
+                                            <img
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() => setZoomImage(confirmComprobanteSustentoPreview)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                        setZoomImage(confirmComprobanteSustentoPreview);
+                                                    }
+                                                }}
+                                                src={confirmComprobanteSustentoPreview}
+                                                alt="Sustento"
+                                                className="w-full max-h-40 object-contain bg-[#f8faf9] cursor-zoom-in hover:opacity-90 transition-opacity focus:outline-none"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    setConfirmComprobanteSustentoFile(null);
+                                                    setConfirmComprobanteSustentoPreview(prev => { if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev); return null; });
+                                                }}
+                                                className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/90 text-slate-500 hover:text-red-500 flex items-center justify-center shadow-sm transition-all"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <label className="flex flex-col items-center justify-center gap-1.5 px-4 py-5 border-2 border-dashed border-[#d3dcdb] rounded-xl cursor-pointer hover:border-[#4A90E2] hover:bg-[#4A90E2]/5 transition-all group">
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                className="sr-only"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                        setConfirmComprobanteSustentoFile(file);
+                                                        setConfirmComprobanteSustentoPreview(prev => { if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
+                                                    }
+                                                    e.target.value = '';
+                                                }}
+                                            />
+                                            <Camera className="w-5 h-5 text-slate-400 group-hover:text-[#4A90E2] transition-colors" />
+                                            <span className="text-[11px] font-semibold text-slate-400 group-hover:text-[#4A90E2] text-center transition-colors">
+                                                Pegar imagen <span className="font-black">Ctrl+V</span> o clic para seleccionar
+                                            </span>
+                                        </label>
+                                    )}
                                 </div>
 
                                 {/* Mini History / Audit Log */}

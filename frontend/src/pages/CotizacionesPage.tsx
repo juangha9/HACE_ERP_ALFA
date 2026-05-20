@@ -66,6 +66,7 @@ interface Cotizacion {
     descripcion: string;
     numero_comprobante?: string;
     comprobante_locked?: boolean;
+    sustento_comprobante_url?: string;
     created_at: string;
 }
 
@@ -105,7 +106,7 @@ const fmtLimaTime = (iso: string) =>
 
 const emptyForm = (): FormState => ({
     estado: 'BORRADOR',
-    tipo_documento: 'FACTURA',
+    tipo_documento: 'TICKET',
     cliente_nombre: '',
     cliente_doi: '',
     cliente_direccion: '',
@@ -310,7 +311,7 @@ const VoucherEditModal: React.FC<VoucherEditModalProps> = ({ isOpen, cotizacion,
 
                 {cotizacion?.comprobante_locked && (
                     <div className="mb-3 px-3 py-2 bg-[#fef3c7] border border-[#f59e0b]/20 rounded-xl flex items-center gap-2 text-[10px] text-[#b45309] font-black uppercase tracking-tight">
-                        <span>🔐 Verificado y bloqueado por Ventas y Tesorería</span>
+                        <span>VERIFICADO Y BLOQUEADO</span>
                     </div>
                 )}
 
@@ -1485,6 +1486,32 @@ export function CotizacionesPage() {
     fetchDataRef.current = fetchData;
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    useEffect(() => {
+        const channel = supabase
+            .channel('cotizaciones-comprobante-live')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'cotizaciones' },
+                (payload) => {
+                    const updated = payload.new as Cotizacion;
+                    setCotizaciones(prev =>
+                        prev.map(c => c.id === updated.id
+                            ? {
+                                ...c,
+                                numero_comprobante: updated.numero_comprobante,
+                                comprobante_locked: updated.comprobante_locked,
+                                tipo_documento: updated.tipo_documento,
+                                sustento_comprobante_url: updated.sustento_comprobante_url,
+                              }
+                            : c
+                        )
+                    );
+                }
+            )
+            .subscribe();
+        return () => { supabase.removeChannel(channel); };
+    }, []);
 
     useEffect(() => { setCurrentPage(1); }, [searchTerm, filterEstado, startDate, endDate]);
 

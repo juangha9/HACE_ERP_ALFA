@@ -1,4 +1,29 @@
 import { supabase } from './supabase';
+
+const toWebP = (file: File, quality = 0.85): Promise<File> =>
+    new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { reject(new Error('Canvas no disponible')); return; }
+            ctx.drawImage(img, 0, 0);
+            canvas.toBlob(
+                (blob) => {
+                    if (!blob) { reject(new Error('Conversión WebP fallida')); return; }
+                    resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), { type: 'image/webp' }));
+                },
+                'image/webp',
+                quality
+            );
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Error al cargar imagen')); };
+        img.src = url;
+    });
 import type { 
     Project, 
     ProjectItem, 
@@ -977,13 +1002,13 @@ export const api = {
         try {
             cotizacionesResult = await supabase
                 .from('cotizaciones')
-                .select('codigo, descripcion, numero_comprobante, tipo_documento, comprobante_locked');
+                .select('codigo, descripcion, numero_comprobante, tipo_documento, comprobante_locked, sustento_comprobante_url');
             if (cotizacionesResult.error) throw cotizacionesResult.error;
         } catch (err) {
             console.warn("Retrying cotizaciones fetch without comprobante_locked...", err);
             cotizacionesResult = await supabase
                 .from('cotizaciones')
-                .select('codigo, descripcion, numero_comprobante, tipo_documento');
+                .select('codigo, descripcion, numero_comprobante, tipo_documento, sustento_comprobante_url');
         }
 
         const opts = optsResult.data || [];
@@ -999,11 +1024,13 @@ export const api = {
         const cotComprobanteMap = new Map<string, string>();
         const cotTipoDocMap = new Map<string, string>();
         const cotLockedMap = new Map<string, boolean>();
+        const cotSustentoMap = new Map<string, string>();
         (cotizacionesResult.data || []).forEach((c: any) => {
             if (c.codigo && c.descripcion) cotDescMap.set(c.codigo, c.descripcion);
             if (c.codigo && c.numero_comprobante) cotComprobanteMap.set(c.codigo, c.numero_comprobante);
             if (c.codigo && c.tipo_documento) cotTipoDocMap.set(c.codigo, c.tipo_documento);
             cotLockedMap.set(c.codigo, !!c.comprobante_locked);
+            if (c.codigo && c.sustento_comprobante_url) cotSustentoMap.set(c.codigo, c.sustento_comprobante_url);
         });
 
         // Build mappings for efficient lookup
@@ -1043,6 +1070,7 @@ export const api = {
                     cotizacion_numero_comprobante: matchedVenta.codigo_cotizacion ? (cotComprobanteMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
                     cotizacion_tipo_documento: matchedVenta.codigo_cotizacion ? (cotTipoDocMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
                     cotizacion_comprobante_locked: matchedVenta.codigo_cotizacion ? (cotLockedMap.get(matchedVenta.codigo_cotizacion) ?? false) : false,
+                    cotizacion_sustento_comprobante_url: matchedVenta.codigo_cotizacion ? (cotSustentoMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
                 } as VentaCabecera);
             } else {
                 // Only if no sale exists, use a stub (deduplicated by opt id)
@@ -1058,6 +1086,11 @@ export const api = {
                         descripcion_resumen: null,
                         created_at: opt.created_at,
                         optimization_id: opt.id,
+                        cotizacion_descripcion: opt.code ? (cotDescMap.get(opt.code) ?? null) : null,
+                        cotizacion_numero_comprobante: opt.code ? (cotComprobanteMap.get(opt.code) ?? null) : null,
+                        cotizacion_tipo_documento: opt.code ? (cotTipoDocMap.get(opt.code) ?? null) : null,
+                        cotizacion_comprobante_locked: opt.code ? (cotLockedMap.get(opt.code) ?? false) : false,
+                        cotizacion_sustento_comprobante_url: opt.code ? (cotSustentoMap.get(opt.code) ?? null) : null,
                     } as VentaCabecera);
                 }
             }
@@ -1075,6 +1108,7 @@ export const api = {
                     cotizacion_numero_comprobante: v.codigo_cotizacion ? (cotComprobanteMap.get(v.codigo_cotizacion) ?? null) : null,
                     cotizacion_tipo_documento: v.codigo_cotizacion ? (cotTipoDocMap.get(v.codigo_cotizacion) ?? null) : null,
                     cotizacion_comprobante_locked: v.codigo_cotizacion ? (cotLockedMap.get(v.codigo_cotizacion) ?? false) : false,
+                    cotizacion_sustento_comprobante_url: v.codigo_cotizacion ? (cotSustentoMap.get(v.codigo_cotizacion) ?? null) : null,
                 } as VentaCabecera);
             }
         });
@@ -1211,22 +1245,24 @@ export const api = {
     },
 
     uploadVoucher: async (file: File, referencePrefix: string): Promise<string> => {
+        const webpFile = await toWebP(file);
         const fileName = `${referencePrefix}_${Date.now()}.webp`;
         const { error: upError } = await supabase.storage
             .from('vouchers')
-            .upload(fileName, file, { contentType: 'image/webp', upsert: true });
-        
+            .upload(fileName, webpFile, { contentType: 'image/webp', upsert: true });
+
         if (upError) throw new Error(upError.message);
         const { data: { publicUrl } } = supabase.storage.from('vouchers').getPublicUrl(fileName);
         return publicUrl;
     },
 
     uploadInvoice: async (file: File, referencePrefix: string): Promise<string> => {
+        const webpFile = await toWebP(file);
         const fileName = `${referencePrefix}_INV_${Date.now()}.webp`;
         const { error: upError } = await supabase.storage
-            .from('vouchers') // Storing in same bucket for now, or maybe a new 'invoices' bucket? Vouchers is fine.
-            .upload(fileName, file, { contentType: 'image/webp', upsert: true });
-        
+            .from('vouchers')
+            .upload(fileName, webpFile, { contentType: 'image/webp', upsert: true });
+
         if (upError) throw new Error(upError.message);
         const { data: { publicUrl } } = supabase.storage.from('vouchers').getPublicUrl(fileName);
         return publicUrl;
@@ -1318,7 +1354,8 @@ export const api = {
         codigoCotizacion: string,
         tipoDocumento: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION',
         numeroComprobante: string,
-        userId: string | null
+        userId: string | null,
+        sustentoUrl?: string | null
     ): Promise<void> => {
         // 1. Fetch current quotation state to log changes
         const { data: cotData, error: fetchErr } = await supabase
@@ -1342,7 +1379,8 @@ export const api = {
         // 2. Update cotizacion: numero_comprobante, tipo_documento, and set comprobante_locked = true
         const updatePayload: any = {
             numero_comprobante: newNum,
-            tipo_documento: newTipo
+            tipo_documento: newTipo,
+            ...(sustentoUrl !== undefined ? { sustento_comprobante_url: sustentoUrl } : {})
         };
 
         try {
