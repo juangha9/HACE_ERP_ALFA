@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import type { User, Session } from '@supabase/supabase-js';
 
-export type UserRole = 'admin' | 'ventas' | 'asistente_admin';
+export type UserRole = 'admin' | 'ventas' | 'asistente_admin' | 'administrador';
 
 export interface Profile {
     id: string;
@@ -12,23 +12,26 @@ export interface Profile {
 
 // Routes each role can access. '*' means unrestricted.
 export const ROLE_ALLOWED_PATHS: Record<UserRole, string[]> = {
-    admin:           ['*'],
-    ventas:          ['/cotizaciones'],
-    asistente_admin: ['/sales-treasury'],
+    admin:          ['*'],
+    ventas:         ['/cotizaciones'],
+    asistente_admin:['/sales-treasury'],
+    administrador:  ['/sales-treasury', '/administrador', '/personnel', '/settings'],
 };
 
 // Default landing page after login (or unauthorized redirect)
 export const ROLE_HOME: Record<UserRole, string> = {
-    admin:           '/',
-    ventas:          '/cotizaciones',
-    asistente_admin: '/sales-treasury',
+    admin:          '/',
+    ventas:         '/cotizaciones',
+    asistente_admin:'/sales-treasury',
+    administrador:  '/sales-treasury',
 };
 
 // Human-readable label shown in the sidebar
 export const ROLE_LABEL: Record<UserRole, string> = {
-    admin:           'Administrador',
-    ventas:          'Ventas',
-    asistente_admin: 'Asistente Admin',
+    admin:          'Administrador',
+    ventas:         'Ventas',
+    asistente_admin:'Asistente Admin',
+    administrador:  'Administrador',
 };
 
 interface AuthContextType {

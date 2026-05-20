@@ -14,6 +14,7 @@ import {
 import { generateQuotePDF, printQuotePDF } from '../services/pdfExport';
 import { findMatches, findMatchesPartial, sharedWordCount } from '../lib/fuzzyMatch';
 import { appSettingsService, SETTING_KEYS } from '../services/appSettingsService';
+import { useAuth } from '../context/AuthContext';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ interface Cotizacion {
     comprobante_locked?: boolean;
     sustento_comprobante_url?: string;
     created_at: string;
+    user_id?: string;
 }
 
 type TipoDoc = 'BOLETA' | 'FACTURA' | 'TICKET';
@@ -1192,6 +1194,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function CotizacionesPage() {
+    const { user, profile } = useAuth();
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const prevEditingIdRef = useRef<string | null>(null);
@@ -1466,6 +1469,10 @@ export function CotizacionesPage() {
                 .gte('fecha_emision', startDate)
                 .lte('fecha_emision', endDate)
                 .order('created_at', { ascending: false });
+            // Vendedores solo ven sus propias cotizaciones
+            if (profile?.role === 'ventas' && user?.id) {
+                q = q.eq('user_id', user.id);
+            }
             if (filterEstado === 'ELIMINADO') {
                 q = q.eq('estado', 'ELIMINADO');
             } else if (filterEstado !== 'TODOS') {
@@ -1482,7 +1489,7 @@ export function CotizacionesPage() {
         } finally {
             setLoading(false);
         }
-    }, [startDate, endDate, filterEstado]);
+    }, [startDate, endDate, filterEstado, profile?.role, user?.id]);
     fetchDataRef.current = fetchData;
 
     useEffect(() => { fetchData(); }, [fetchData]);
@@ -1829,14 +1836,14 @@ export function CotizacionesPage() {
             } else {
                 let { data: inserted, error } = await supabase
                     .from('cotizaciones')
-                    .insert({ ...payload })
+                    .insert({ ...payload, user_id: user?.id ?? null })
                     .select('id, codigo')
                     .maybeSingle();
                 if (error && (error.message.includes('comprobante_locked') || error.code === '42703')) {
                     console.warn("comprobante_locked column does not exist, retrying without it...");
                     const { data: retryInserted, error: retryError } = await supabase
                         .from('cotizaciones')
-                        .insert(payloadWithoutLock)
+                        .insert({ ...payloadWithoutLock, user_id: user?.id ?? null })
                         .select('id, codigo')
                         .maybeSingle();
                     if (retryError) throw retryError;
@@ -1922,7 +1929,7 @@ export function CotizacionesPage() {
         const cot = cotizacionesRef.current.find(c => c.id === eid);
         if (!cot) return;
         const { codigo: _c, id: _i, created_at: _d, ...rest } = cot;
-        await supabase.from('cotizaciones').insert({ ...rest, estado: 'BORRADOR' });
+        await supabase.from('cotizaciones').insert({ ...rest, estado: 'BORRADOR', user_id: user?.id ?? null });
         await fetchDataRef.current?.();
         closeEditor();
     }, [closeEditor]);
