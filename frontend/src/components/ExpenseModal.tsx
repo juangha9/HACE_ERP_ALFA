@@ -362,7 +362,7 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                                         {item.category}
                                                     </span>
                                                 </div>
-                                                <p className="text-[9px] font-black text-slate-800 dark:text-slate-200 uppercase truncate leading-none">
+                                                <p className="text-[9px] font-black text-slate-800 dark:text-slate-200 uppercase leading-snug whitespace-pre-wrap break-words">
                                                     {item.description}
                                                 </p>
                                             </div>

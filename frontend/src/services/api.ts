@@ -1244,6 +1244,75 @@ export const api = {
         if (error) throw new Error(error.message);
     },
 
+    getEgresoDetalles: async (egresoId: string): Promise<import('./types').EgresoDetalleFactura[]> => {
+        const { data, error } = await supabase
+            .from('egreso_detalle_factura')
+            .select('*')
+            .eq('egreso_id', egresoId)
+            .order('sort_order', { ascending: true });
+        if (error) throw new Error(error.message);
+        return data || [];
+    },
+
+    saveEgresoDetalles: async (egresoId: string, items: import('./types').EgresoDetalleFactura[]): Promise<void> => {
+        const { error: delError } = await supabase
+            .from('egreso_detalle_factura')
+            .delete()
+            .eq('egreso_id', egresoId);
+        if (delError) throw new Error(delError.message);
+        if (items.length === 0) return;
+        const rows = items.map((item, idx) => ({
+            egreso_id: egresoId,
+            sort_order: idx,
+            qty: item.qty,
+            unit: item.unit,
+            description: item.description,
+            v_unitario: item.v_unitario,
+            base_amount: item.base_amount,
+            igv_amount: item.igv_amount,
+            amount: item.amount,
+            inc_igv: item.inc_igv,
+        }));
+        const { error: insError } = await supabase.from('egreso_detalle_factura').insert(rows);
+        if (insError) throw new Error(insError.message);
+    },
+
+    getEgresoAuditLog: async (egresoId: string): Promise<any[]> => {
+        const { data, error } = await supabase
+            .from('nodriza_tesoreria_audit_log')
+            .select('*')
+            .eq('egreso_id', egresoId)
+            .order('created_at', { ascending: false });
+        if (error) return [];
+        return data || [];
+    },
+
+    logEgresoAudit: async (egresoId: string, evento: string, detalle?: string): Promise<void> => {
+        let user_id: string | null = null;
+        let usuario_nombre: string | null = null;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                user_id = user.id;
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('display_name')
+                    .eq('id', user.id)
+                    .single();
+                if (profile) usuario_nombre = (profile as any).display_name;
+            }
+        } catch {}
+        try {
+            await supabase.from('nodriza_tesoreria_audit_log').insert([{
+                egreso_id: egresoId,
+                evento,
+                detalle: detalle || null,
+                usuario_nombre,
+                user_id,
+            }]);
+        } catch {}
+    },
+
     uploadVoucher: async (file: File, referencePrefix: string): Promise<string> => {
         const webpFile = await toWebP(file);
         const fileName = `${referencePrefix}_${Date.now()}.webp`;

@@ -24,7 +24,8 @@ import {
   BarChart2,
   ShieldCheck,
   Edit3,
-  Lock
+  Lock,
+  CheckCircle2
 } from 'lucide-react';
 import { api } from '../services/api';
 import { supabase } from '../services/supabase';
@@ -154,7 +155,13 @@ export const SalesTreasuryPage = () => {
         setKardexPage(1);
     }, [kardexAccount, kardexStart, kardexEnd, kardexSearch]);
 
-    useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showConfirmComprobanteModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice);
+    // Egreso history state (must be declared before useScrollLock references it)
+    const [showEgresoHistoryModal, setShowEgresoHistoryModal] = useState<NodrizaTesoreria | null>(null);
+    const [egresoHistoryData, setEgresoHistoryData] = useState<any[]>([]);
+    const [loadingEgresoHistory, setLoadingEgresoHistory] = useState(false);
+    const [isClosingEgresoHistory, setIsClosingEgresoHistory] = useState(false);
+
+    useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showConfirmComprobanteModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice || !!showEgresoHistoryModal);
     
     // Cash Modal Filters
     const [cashFilterStart, setCashFilterStart] = useState(defaultStartOfWeek);
@@ -178,6 +185,28 @@ export const SalesTreasuryPage = () => {
             setShowHistoryModal(null);
             setIsClosingHistory(false);
             setExpandedCobro(null);
+        }, 300);
+    };
+
+    const openEgresoHistory = async (egreso: NodrizaTesoreria) => {
+        setShowEgresoHistoryModal(egreso);
+        setEgresoHistoryData([]);
+        setLoadingEgresoHistory(true);
+        try {
+            const logs = await api.getEgresoAuditLog(egreso.id);
+            setEgresoHistoryData(logs);
+        } catch (err) {
+            console.error('Error loading egreso history', err);
+        } finally {
+            setLoadingEgresoHistory(false);
+        }
+    };
+
+    const closeEgresoHistory = () => {
+        setIsClosingEgresoHistory(true);
+        setTimeout(() => {
+            setShowEgresoHistoryModal(null);
+            setIsClosingEgresoHistory(false);
         }, 300);
     };
 
@@ -717,6 +746,218 @@ export const SalesTreasuryPage = () => {
 
     const ventasPageTotal = Math.ceil(filteredVentas.length / VENTAS_PAGE_SIZE);
     const paginatedVentas = filteredVentas.slice((ventasPage - 1) * VENTAS_PAGE_SIZE, ventasPage * VENTAS_PAGE_SIZE);
+
+    // Dynamic linked purchase allocation lookup
+    const linkedPurchases = useMemo(() => {
+        const map: Record<string, any[]> = {};
+        compras.forEach(compra => {
+            const details = compra.invoice_details;
+            if (Array.isArray(details)) {
+                details.forEach(item => {
+                    if (item.type === 'VENTA' && item.ventaId) {
+                        if (!map[item.ventaId]) map[item.ventaId] = [];
+                        map[item.ventaId].push({
+                            ...item,
+                            compraCodigo: (compra.invoice_serie && compra.invoice_correlativo) 
+                                ? `${compra.invoice_serie}-${compra.invoice_correlativo}` 
+                                : (compra.numero_operacion || 'Sin Código'),
+                            compraProveedor: compra.observaciones || 'Proveedor Desconocido'
+                        });
+                    }
+                });
+            }
+        });
+        return map;
+    }, [compras]);
+
+    // Batch loading of visible sales details to avoid N+1 database queries
+    useEffect(() => {
+        if (paginatedVentas.length === 0) return;
+
+        const loadBatchDetails = async () => {
+            // Find which sales are missing details
+            const missingDetailsIds = paginatedVentas
+                .map(v => v.id)
+                .filter(id => !id.startsWith('opt::') && !ventaDetails[id]);
+
+            const missingItemsCodes = paginatedVentas
+                .filter(v => v.codigo_cotizacion && !ventaCotizacionItems[v.id])
+                .map(v => v.codigo_cotizacion) as string[];
+
+            if (missingDetailsIds.length === 0 && missingItemsCodes.length === 0) {
+                return; // Nothing to load
+            }
+
+            try {
+                const promises: Promise<any>[] = [];
+
+                if (missingDetailsIds.length > 0) {
+                    promises.push(
+                        supabase
+                            .from('ventas_detalle')
+                            .select('*')
+                            .in('venta_id', missingDetailsIds)
+                    );
+                } else {
+                    promises.push(Promise.resolve({ data: [] }));
+                }
+
+                if (missingItemsCodes.length > 0) {
+                    promises.push(
+                        supabase
+                            .from('cotizaciones_items')
+                            .select('descripcion, unidad, cantidad, total, cotizaciones!inner(codigo)')
+                            .in('cotizaciones.codigo', missingItemsCodes)
+                    );
+                } else {
+                    promises.push(Promise.resolve({ data: [] }));
+                }
+
+                const [detailsRes, itemsRes] = await Promise.all(promises);
+
+                // Group details by venta_id
+                const newDetails: Record<string, VentaDetalle[]> = {};
+                if (detailsRes.data) {
+                    (detailsRes.data as any[]).forEach(d => {
+                        if (!newDetails[d.venta_id]) newDetails[d.venta_id] = [];
+                        newDetails[d.venta_id].push(d);
+                    });
+                }
+
+                // Fill in empty arrays for missing ones we queried so we don't query them again
+                missingDetailsIds.forEach(id => {
+                    if (!newDetails[id]) newDetails[id] = [];
+                });
+
+                // Group items by ventaId (mapped from cotizaciones.codigo)
+                const codeToVentaId: Record<string, string> = {};
+                paginatedVentas.forEach(v => {
+                    if (v.codigo_cotizacion) {
+                        codeToVentaId[v.codigo_cotizacion] = v.id;
+                    }
+                });
+
+                const newItems: Record<string, any[]> = {};
+                if (itemsRes.data) {
+                    (itemsRes.data as any[]).forEach(d => {
+                        const vId = codeToVentaId[d.cotizaciones?.codigo];
+                        if (vId) {
+                            if (!newItems[vId]) newItems[vId] = [];
+                            newItems[vId].push({
+                                descripcion: d.descripcion || '',
+                                unidad: d.unidad || '',
+                                cantidad: Number(d.cantidad) || 0,
+                                total: Number(d.total) || 0,
+                            });
+                        }
+                    });
+                }
+
+                missingItemsCodes.forEach(code => {
+                    const vId = codeToVentaId[code];
+                    if (vId && !newItems[vId]) newItems[vId] = [];
+                });
+
+                setVentaDetails(prev => ({ ...prev, ...newDetails }));
+                setVentaCotizacionItems(prev => ({ ...prev, ...newItems }));
+            } catch (error) {
+                console.error("Error batch loading details", error);
+            }
+        };
+
+        loadBatchDetails();
+    }, [paginatedVentas]);
+
+    // Reactive traceability calculations based on linked purchases and physical quantities sold
+    const computeTraceabilityAlerts = useCallback((venta: VentaCabecera) => {
+        if (venta.id.startsWith('opt::')) {
+            return {
+                status: 'COMPLETO',
+                color: 'emerald',
+                badgeText: 'Optimizado',
+                tooltipText: 'Registro de venta optimizada o virtual sin trazabilidad física necesaria.'
+            };
+        }
+
+        const cotItems = ventaCotizacionItems[venta.id];
+        const fallbackItems = ventaDetails[venta.id];
+        const desgloseRows = cotItems || fallbackItems?.map(d => ({
+            descripcion: d.material_insumo,
+            cantidad: d.cantidad
+        })) || [];
+
+        const purchases = linkedPurchases[venta.id] || [];
+
+        // If no purchases linked at all -> Blind Margin
+        if (purchases.length === 0) {
+            return {
+                status: 'MARGEN_CIEGO',
+                color: 'amber',
+                badgeText: '⚠️ Margen Ciego',
+                tooltipText: 'No hay facturas de compra de materiales vinculadas a esta venta. El margen real de ganancia es desconocido.'
+            };
+        }
+
+        // Group materials sold by their lowercase description
+        const soldQtyMap: Record<string, number> = {};
+        desgloseRows.forEach(row => {
+            const desc = (row.descripcion || '').trim().toLowerCase();
+            if (desc) {
+                soldQtyMap[desc] = (soldQtyMap[desc] || 0) + Number(row.cantidad);
+            }
+        });
+
+        // Group purchased items by the "ventaMaterial" lowercase name
+        const purchasedQtyMap: Record<string, number> = {};
+        purchases.forEach(p => {
+            const mat = (p.ventaMaterial || '').trim().toLowerCase();
+            if (mat) {
+                purchasedQtyMap[mat] = (purchasedQtyMap[mat] || 0) + Number(p.qty);
+            }
+        });
+
+        // If desgloseRows is empty but we have purchases, we can't verify quantities yet
+        if (desgloseRows.length === 0) {
+            return {
+                status: 'COMPLETO',
+                color: 'emerald',
+                badgeText: '✅ Trazabilidad Completa',
+                tooltipText: `Sustentado con ${purchases.length} compra(s). Cargando detalles para verificar cantidades...`
+            };
+        }
+
+        // Check if there is any material sold that has sold quantity > purchased quantity
+        let hasMismatch = false;
+        const mismatchDetails: string[] = [];
+
+        Object.keys(soldQtyMap).forEach(desc => {
+            const soldQty = soldQtyMap[desc];
+            const purchasedQty = purchasedQtyMap[desc] || 0;
+
+            if (soldQty > purchasedQty) {
+                hasMismatch = true;
+                const shortDesc = desc.length > 25 ? desc.slice(0, 22) + '...' : desc;
+                mismatchDetails.push(`${shortDesc}: Vendido ${soldQty.toFixed(1)}, Comprado ${purchasedQty.toFixed(1)}`);
+            }
+        });
+
+        if (hasMismatch) {
+            return {
+                status: 'DESCALCE_FISICO',
+                color: 'rose',
+                badgeText: '🔴 Descalce Físico',
+                tooltipText: `Descalce Físico: Cantidades vendidas superan las compras vinculadas. Detalles: ${mismatchDetails.join(' | ')}`
+            };
+        }
+
+        const totalPurchasedAmount = purchases.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+        return {
+            status: 'COMPLETO',
+            color: 'emerald',
+            badgeText: '✅ Trazabilidad Completa',
+            tooltipText: `Trazabilidad Completa: Todo el material vendido está respaldado por compras vinculadas (${purchases.length} factura(s), costo total de materiales S/ ${totalPurchasedAmount.toFixed(2)}).`
+        };
+    }, [ventaCotizacionItems, ventaDetails, linkedPurchases]);
 
     const filteredCompras = useMemo(() => {
         const term = deferredSearch.toLowerCase();
@@ -1382,17 +1623,36 @@ export const SalesTreasuryPage = () => {
                                                             <span className="px-4 py-1.5 bg-white text-[#366480] text-[12px] font-black rounded-full uppercase border border-[#d3dcdb]/40 tracking-widest shadow-sm">{compra.categoria}</span>
                                                         </td>
                                                         <td className="py-5 text-left">
-                                                            {compra.has_invoice ? (
+                                                            {compra.invoice_status === 'REGISTRADO' ? (
+                                                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#dcfce7] text-[#166534] text-[12px] font-black rounded-full uppercase tracking-tighter border border-[#bbf7d0]">
+                                                                    <Lock className="w-3 h-3 shrink-0" />
+                                                                    Factura Registrada
+                                                                </span>
+                                                            ) : compra.has_invoice ? (
                                                                 <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#dcfce7] text-[#166534] text-[12px] font-black rounded-full uppercase tracking-tighter border border-[#bbf7d0]">Factura Registrada</span>
                                                             ) : (
                                                                 <span className="text-[12px] font-black text-[#366480]/40 uppercase tracking-[0.2em]">S/D Fiscal</span>
                                                             )}
                                                         </td>
-                                                        <td className="py-5 text-left text-[15px] font-bold uppercase text-[#366480] tracking-tight">{compra.observaciones}</td>
+                                                        <td className="py-5 text-left">
+                                                            {Array.isArray(compra.invoice_details) && compra.invoice_details.length > 0 ? (
+                                                                <ul className="space-y-0.5">
+                                                                    {compra.invoice_details.map((item: any, idx: number) => (
+                                                                        <li key={idx} className="flex items-start gap-1.5 text-[13px] font-bold uppercase text-[#366480] tracking-tight leading-snug">
+                                                                            <span className="text-[#4A90E2] shrink-0 mt-px select-none">·</span>
+                                                                            <span className="whitespace-pre-wrap">{item.description}</span>
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            ) : (
+                                                                <span className="text-[15px] font-bold uppercase text-[#366480] tracking-tight">{compra.observaciones}</span>
+                                                            )}
+                                                        </td>
                                                         <td className="py-5 text-left font-[900] text-rose-500 text-[17px] tabular-nums">S/ {formatCurrency(compra.monto)}</td>
                                                         <td className="py-5 text-left">
                                                             <div className="flex items-center justify-start gap-3 transition-all">
-                                                                <button onClick={() => setManagingInvoice(compra)} className="p-3 bg-white border border-[#d3dcdb]/20 text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm"><Search className="w-4 h-4" /></button>
+                                                                <button onClick={() => setManagingInvoice(compra)} title="Gestionar factura" className="p-3 bg-white border border-[#d3dcdb]/20 text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm"><Search className="w-4 h-4" /></button>
+                                                                <button onClick={() => openEgresoHistory(compra)} title="Historial del egreso" className="p-3 bg-white border border-[#d3dcdb]/20 text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm"><HistoryIcon className="w-4 h-4" /></button>
                                                                 <button onClick={() => setExpandedCompra(expandedCompra === compra.id ? null : compra.id)} className={`p-3 rounded-xl transition-all shadow-sm border ${expandedCompra === compra.id ? 'bg-[#366480] text-white border-[#366480]' : 'bg-white border-[#d3dcdb]/20 text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2]'}`}><ChevronDown className={`w-4 h-4 transition-transform ${expandedCompra === compra.id ? 'rotate-180' : ''}`} /></button>
                                                             </div>
                                                         </td>
@@ -1697,6 +1957,136 @@ export const SalesTreasuryPage = () => {
                             </div>
                         );
                     })(),
+                    document.body
+                )}
+
+                {/* ── HISTORIAL DE EGRESO MODAL ──────────────────────────────────── */}
+                {showEgresoHistoryModal && createPortal(
+                    <div
+                        className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/30 overflow-hidden ${isClosingEgresoHistory ? 'animate-backdrop-out' : 'animate-backdrop'}`}
+                        style={{ backdropFilter: 'blur(8px)', fontFamily: "'Manrope', sans-serif" }}
+                    >
+                        <div className={`bg-[#f4f8f8] rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-lg border border-[#d3dcdb]/60 flex flex-col max-h-[90vh] relative overflow-hidden ${isClosingEgresoHistory ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
+                            <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/80 z-10"></div>
+
+                            {/* Header */}
+                            <div className="px-5 py-4 border-b border-[#d3dcdb]/40 flex items-center justify-between bg-white">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-rose-500 flex items-center justify-center shadow-sm shrink-0">
+                                        <HistoryIcon className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-[20px] font-black text-[#2c3434] uppercase tracking-tight">Historial del Egreso</h2>
+                                        <p className="text-[14px] font-semibold text-[#5a7080] uppercase tracking-widest mt-0.5">
+                                            {showEgresoHistoryModal.categoria} · S/ {Number(showEgresoHistoryModal.monto).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button onClick={closeEgresoHistory} className="w-9 h-9 rounded-full text-[#5a7080] hover:text-[#2c3434] hover:bg-[#e8eded] flex items-center justify-center transition-all">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            {/* Metadata strip */}
+                            <div className="px-5 py-3.5 border-b border-[#d3dcdb]/40 bg-[#eef3f4] flex items-center gap-6 shrink-0">
+                                <div className="flex flex-col">
+                                    <span className="text-[11px] font-semibold text-[#5a7080] uppercase tracking-wider">Cuenta</span>
+                                    <span className="text-[16px] font-bold text-[#2c3434] uppercase">{showEgresoHistoryModal.cuenta_origen || 'Efectivo'}</span>
+                                </div>
+                                <div className="w-px h-9 bg-[#d3dcdb]" />
+                                <div className="flex flex-col">
+                                    <span className="text-[11px] font-semibold text-[#5a7080] uppercase tracking-wider">Estado Factura</span>
+                                    <span className={`text-[16px] font-bold uppercase ${showEgresoHistoryModal.invoice_status === 'REGISTRADO' ? 'text-emerald-600' : 'text-amber-500'}`}>
+                                        {showEgresoHistoryModal.invoice_status === 'REGISTRADO' ? 'Registrada' : 'Sin factura'}
+                                    </span>
+                                </div>
+                                {showEgresoHistoryModal.proveedor_nombre && (
+                                    <>
+                                        <div className="w-px h-9 bg-[#d3dcdb]" />
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="text-[11px] font-semibold text-[#5a7080] uppercase tracking-wider">Proveedor</span>
+                                            <span className="text-[16px] font-bold text-[#2c3434] uppercase truncate max-w-[180px]">{showEgresoHistoryModal.proveedor_nombre}</span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Timeline */}
+                            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 custom-scrollbar">
+                                {loadingEgresoHistory ? (
+                                    <div className="py-10 flex flex-col items-center gap-3">
+                                        <RefreshCw className="w-5 h-5 animate-spin text-rose-400" />
+                                        <p className="text-[#5a7080] font-semibold uppercase tracking-widest text-[15px]">Consultando historial...</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {/* Audit log entries (newest first) */}
+                                        {egresoHistoryData.map((log: any) => {
+                                            const isFactura = log.evento === 'FACTURA_REGISTRADA';
+                                            const iconColor = isFactura
+                                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200/50'
+                                                : 'bg-[#4A90E2]/10 text-[#4A90E2] border-[#4A90E2]/20';
+                                            const title = isFactura ? 'Factura Registrada y Bloqueada' : log.evento.replace(/_/g, ' ');
+                                            return (
+                                                <div key={log.id} className="rounded-2xl border border-[#d3dcdb]/60 bg-white p-4 shadow-sm flex items-start gap-3">
+                                                    <div className={`shrink-0 w-10 h-10 rounded-lg border flex items-center justify-center ${iconColor}`}>
+                                                        {isFactura ? <CheckCircle2 className="w-5 h-5" /> : <FileSpreadsheet className="w-5 h-5" />}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                            <span className="text-[17px] font-bold text-[#1a2a35] tracking-tight capitalize">{title}</span>
+                                                            <span className="text-[14px] font-medium text-[#5a7080] tabular-nums shrink-0">
+                                                                {format(new Date(log.created_at), "dd/MM/yyyy · HH:mm", { locale: es })}
+                                                            </span>
+                                                        </div>
+                                                        {log.detalle && (
+                                                            <p className="text-[15px] font-medium text-[#366480] mt-1 leading-relaxed">{log.detalle}</p>
+                                                        )}
+                                                        <div className="flex items-center gap-1 mt-2 text-[13px] font-bold text-[#366480] uppercase tracking-wider bg-[#366480]/10 px-2.5 py-1 rounded-lg w-fit">
+                                                            <span>Por: {log.usuario_nombre || 'Sistema'}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+
+                                        {/* Synthesized creation event (always at the bottom) */}
+                                        <div className="rounded-2xl border border-[#d3dcdb]/60 bg-[#eef3f4] p-4 shadow-sm flex items-start gap-3 opacity-85">
+                                            <div className="shrink-0 w-10 h-10 rounded-lg border bg-[#e8eded] text-[#366480] border-[#d3dcdb] flex items-center justify-center">
+                                                <TrendingDown className="w-5 h-5" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                    <span className="text-[17px] font-bold text-[#2c3434] tracking-tight">Egreso Registrado</span>
+                                                    <span className="text-[14px] font-medium text-[#5a7080] tabular-nums shrink-0">
+                                                        {format(new Date(showEgresoHistoryModal.created_at), "dd/MM/yyyy · HH:mm", { locale: es })}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[15px] font-medium text-[#366480] mt-1">
+                                                    S/ {Number(showEgresoHistoryModal.monto).toFixed(2)} · {showEgresoHistoryModal.categoria}
+                                                    {showEgresoHistoryModal.observaciones ? ` · ${showEgresoHistoryModal.observaciones}` : ''}
+                                                </p>
+                                                <div className="flex items-center gap-1 mt-2 text-[13px] font-bold text-[#366480] uppercase tracking-wider bg-[#366480]/10 px-2.5 py-1 rounded-lg w-fit">
+                                                    <span>Por: {showEgresoHistoryModal.usuario_nombre || 'Sistema'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {egresoHistoryData.length === 0 && (
+                                            <div className="py-3"></div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-5 py-4 border-t border-[#d3dcdb]/40 bg-white shrink-0 flex justify-end">
+                                <button onClick={closeEgresoHistory} className="px-5 py-2.5 rounded-xl text-[14px] font-medium uppercase tracking-wider text-[#5a7080] hover:text-rose-500 transition-all">
+                                    Cerrar
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
                     document.body
                 )}
 

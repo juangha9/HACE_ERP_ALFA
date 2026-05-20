@@ -160,6 +160,21 @@ export interface Quotation {
     updated_at?: string;
 }
 
+export interface EgresoDetalleFactura {
+    id?: string;
+    egreso_id: string;
+    sort_order: number;
+    qty: number;
+    unit: string;
+    description: string;
+    v_unitario: number;
+    base_amount: number;
+    igv_amount: number;
+    amount: number;
+    inc_igv: boolean;
+    created_at?: string;
+}
+
 export interface NodrizaTesoreria {
     id: string;
     created_at: string;
@@ -183,6 +198,7 @@ export interface NodrizaTesoreria {
     invoice_igv?: number;
     invoice_total?: number;
     invoice_status?: 'BORRADOR' | 'REGISTRADO';
+    proveedor_nombre?: string | null;
     user_id?: string | null;
     usuario_nombre?: string | null;
     tipo_documento?: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION' | null;
