@@ -65,6 +65,7 @@ interface Cotizacion {
     condiciones_pago: string;
     descripcion: string;
     numero_comprobante?: string;
+    comprobante_locked?: boolean;
     created_at: string;
 }
 
@@ -91,6 +92,7 @@ interface FormState {
     condiciones_pago: string;
     descripcion: string;
     numero_comprobante: string;
+    comprobante_locked: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -122,6 +124,7 @@ const emptyForm = (): FormState => ({
     condiciones_pago: '',
     descripcion: '',
     numero_comprobante: '',
+    comprobante_locked: false,
 });
 
 // ─── Search Input (isolated to avoid re-render on parent state) ───────────────
@@ -167,7 +170,7 @@ const CellInput = React.memo(({ value, onChange, type = 'text', className, place
     inputRef?: React.Ref<HTMLInputElement>;
 }) => {
     const [local, setLocal] = React.useState(String(value || ''));
-    const debounceRef = React.useRef<ReturnType<typeof setTimeout>>();
+    const debounceRef = React.useRef<any>(null);
     const focusedRef = React.useRef(false);
 
     React.useEffect(() => {
@@ -228,15 +231,15 @@ function recalc(items: LineItem[], descuento: number, tipo: TipoDoc, adelanto: n
 
 const StatusBadge = ({ estado }: { estado: 'BORRADOR' | 'LISTO' | 'ELIMINADO' }) =>
     estado === 'LISTO' ? (
-        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-widest">
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-black uppercase tracking-widest">
             <CheckCircle2 className="w-3 h-3" /> Listo
         </span>
     ) : estado === 'ELIMINADO' ? (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-black uppercase tracking-widest">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-100 text-rose-600 text-[11px] font-black uppercase tracking-widest">
             <Trash2 className="w-3 h-3" /> Anulado
         </span>
     ) : (
-        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-black uppercase tracking-widest">
             <FileText className="w-3 h-3" /> Borrador
         </span>
     );
@@ -305,14 +308,21 @@ const VoucherEditModal: React.FC<VoucherEditModalProps> = ({ isOpen, cotizacion,
                     </button>
                 </div>
 
+                {cotizacion?.comprobante_locked && (
+                    <div className="mb-3 px-3 py-2 bg-[#fef3c7] border border-[#f59e0b]/20 rounded-xl flex items-center gap-2 text-[10px] text-[#b45309] font-black uppercase tracking-tight">
+                        <span>🔐 Verificado y bloqueado por Ventas y Tesorería</span>
+                    </div>
+                )}
+
                 <input
                     type="text"
                     value={value}
                     onChange={e => setValue(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !saving) handleSave(); }}
-                    className="w-full border border-[#c8d8de] rounded-xl px-4 py-3 text-sm font-bold text-[#2c3434] outline-none focus:border-[#366480] focus:ring-2 focus:ring-[#366480]/10 transition-all bg-white/80 placeholder:text-slate-300 placeholder:font-normal"
+                    onKeyDown={e => { if (e.key === 'Enter' && !saving && !cotizacion?.comprobante_locked) handleSave(); }}
+                    disabled={cotizacion?.comprobante_locked}
+                    className="w-full border border-[#c8d8de] rounded-xl px-4 py-3 text-sm font-bold text-[#2c3434] outline-none focus:border-[#366480] focus:ring-2 focus:ring-[#366480]/10 transition-all bg-white/80 placeholder:text-slate-300 placeholder:font-normal disabled:opacity-60 disabled:cursor-not-allowed"
                     placeholder="Ej: F001-0000123 / B001-0000001"
-                    autoFocus
+                    autoFocus={!cotizacion?.comprobante_locked}
                 />
 
                 <div className="flex gap-2.5 mt-4">
@@ -324,7 +334,7 @@ const VoucherEditModal: React.FC<VoucherEditModalProps> = ({ isOpen, cotizacion,
                     </button>
                     <button
                         onClick={handleSave}
-                        disabled={saving}
+                        disabled={saving || cotizacion?.comprobante_locked}
                         className="flex-1 py-2.5 rounded-xl bg-[#366480] text-white text-[11px] font-black hover:bg-[#2c5268] transition-all uppercase tracking-widest disabled:opacity-50"
                     >
                         {saving ? 'Guardando...' : 'Guardar'}
@@ -652,33 +662,41 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         )}
 
                         {/* N° Comprobante — siempre editable, incluso en LISTO */}
-                        <div className="flex items-center gap-3 bg-white border-2 border-slate-400 focus-within:border-[#366480] focus-within:ring-2 focus-within:ring-[#366480]/15 rounded-2xl px-4 py-3 shadow-sm transition-all">
-                            <div className="w-8 h-8 rounded-xl bg-[#366480]/10 flex items-center justify-center shrink-0">
-                                <Hash className="w-4 h-4 text-[#366480]" />
+                        <div className="flex flex-col gap-2 w-full">
+                            <div className="flex items-center gap-3 bg-white border-2 border-slate-400 focus-within:border-[#366480] focus-within:ring-2 focus-within:ring-[#366480]/15 rounded-2xl px-4 py-3 shadow-sm transition-all">
+                                <div className="w-8 h-8 rounded-xl bg-[#366480]/10 flex items-center justify-center shrink-0">
+                                    <Hash className="w-4 h-4 text-[#366480]" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <label className="flex items-center gap-2 text-[10px] font-black text-[#366480]/60 uppercase tracking-widest mb-0.5">
+                                        N° Comprobante
+                                        {isReadOnly && !form.comprobante_locked && (
+                                            <span className="text-emerald-500 font-black normal-case tracking-normal">· editable</span>
+                                        )}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={isReadOnly ? localComprobante : (form.numero_comprobante || '')}
+                                        onChange={e => handleComprobanteChange(e.target.value)}
+                                        disabled={form.comprobante_locked}
+                                        className="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-700 placeholder:text-slate-300 placeholder:font-normal disabled:opacity-60 disabled:cursor-not-allowed"
+                                        placeholder="Ej: F001-0000123 / B001-0000001"
+                                    />
+                                </div>
+                                {isReadOnly && comprobanteChanged && !form.comprobante_locked && (
+                                    <button
+                                        onClick={handleSaveComprobante}
+                                        disabled={savingComprobante}
+                                        className="shrink-0 px-4 py-2 rounded-xl bg-[#366480] text-white text-[11px] font-black hover:bg-[#2c5268] transition-all disabled:opacity-50 whitespace-nowrap"
+                                    >
+                                        {savingComprobante ? 'Guardando...' : 'Guardar'}
+                                    </button>
+                                )}
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <label className="flex items-center gap-2 text-[10px] font-black text-[#366480]/60 uppercase tracking-widest mb-0.5">
-                                    N° Comprobante
-                                    {isReadOnly && (
-                                        <span className="text-emerald-500 font-black normal-case tracking-normal">· editable</span>
-                                    )}
-                                </label>
-                                <input
-                                    type="text"
-                                    value={isReadOnly ? localComprobante : (form.numero_comprobante || '')}
-                                    onChange={e => handleComprobanteChange(e.target.value)}
-                                    className="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-700 placeholder:text-slate-300 placeholder:font-normal"
-                                    placeholder="Ej: F001-0000123 / B001-0000001"
-                                />
-                            </div>
-                            {isReadOnly && comprobanteChanged && (
-                                <button
-                                    onClick={handleSaveComprobante}
-                                    disabled={savingComprobante}
-                                    className="shrink-0 px-4 py-2 rounded-xl bg-[#366480] text-white text-[11px] font-black hover:bg-[#2c5268] transition-all disabled:opacity-50 whitespace-nowrap"
-                                >
-                                    {savingComprobante ? 'Guardando...' : 'Guardar'}
-                                </button>
+                            {form.comprobante_locked && (
+                                <div className="px-4 py-2 bg-slate-100 border border-slate-300 rounded-xl flex items-center gap-2 text-[10px] text-slate-500 font-black uppercase tracking-tight shadow-sm w-full">
+                                    <span>🔐 Bloqueado por la Gestión de Ventas y Tesorería</span>
+                                </div>
                             )}
                         </div>
 
@@ -794,30 +812,30 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                             type="radio"
                                             checked={form.tipo_documento === 'BOLETA'}
                                             onChange={() => onTipoDocumento('BOLETA')}
-                                            disabled={isReadOnly}
-                                            className="accent-[#366480]"
+                                            disabled={isReadOnly || form.comprobante_locked}
+                                            className="accent-[#366480] disabled:cursor-not-allowed"
                                         />
-                                        <span className="text-xs font-bold text-slate-600">Boleta</span>
+                                        <span className={`text-xs font-bold ${isReadOnly || form.comprobante_locked ? 'text-slate-400' : 'text-slate-600'}`}>Boleta</span>
                                     </label>
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="radio"
                                             checked={form.tipo_documento === 'FACTURA'}
                                             onChange={() => onTipoDocumento('FACTURA')}
-                                            disabled={isReadOnly}
-                                            className="accent-[#366480]"
+                                            disabled={isReadOnly || form.comprobante_locked}
+                                            className="accent-[#366480] disabled:cursor-not-allowed"
                                         />
-                                        <span className="text-xs font-bold text-slate-600">Factura</span>
+                                        <span className={`text-xs font-bold ${isReadOnly || form.comprobante_locked ? 'text-slate-400' : 'text-slate-600'}`}>Factura</span>
                                     </label>
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input
                                             type="radio"
                                             checked={form.tipo_documento === 'TICKET'}
                                             onChange={() => onTipoDocumento('TICKET')}
-                                            disabled={isReadOnly}
-                                            className="accent-[#366480]"
+                                            disabled={isReadOnly || form.comprobante_locked}
+                                            className="accent-[#366480] disabled:cursor-not-allowed"
                                         />
-                                        <span className="text-xs font-bold text-slate-600">Ticket</span>
+                                        <span className={`text-xs font-bold ${isReadOnly || form.comprobante_locked ? 'text-slate-400' : 'text-slate-600'}`}>Ticket</span>
                                     </label>
                                 </div>
                                 <div className="col-span-2 grid grid-cols-2 gap-4">
@@ -975,7 +993,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                             <td className="px-4 py-3 border-r border-slate-300 align-top">
                                                 <div className="flex flex-col items-end gap-1">
                                                     <div className="flex items-center justify-end gap-1">
-                                                        <span className="text-slate-400 text-[10px] font-bold">S/</span>
+                                                        <span className="text-slate-400 text-xs font-bold">S/</span>
                                                         <CellInput
                                                             type="number"
                                                             value={item.precio_unitario || ''}
@@ -988,13 +1006,13 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                                 }
                                                             }}
                                                             readOnly={isReadOnly}
-                                                            className={`w-20 border-none font-black text-right outline-none text-sm focus:bg-[#f0f5f4]/60 transition-colors rounded-lg ${bound ? 'bg-emerald-50/40' : 'bg-transparent'} ${bound && item.precio_unitario > 0 && item.precio_unitario < bound.min_price ? 'text-rose-600' : 'text-[#366480]'}`}
+                                                            className={`w-20 border-none font-black text-right outline-none text-base focus:bg-[#f0f5f4]/60 transition-colors rounded-lg ${bound ? 'bg-emerald-50/40' : 'bg-transparent'} ${bound && item.precio_unitario > 0 && item.precio_unitario < bound.min_price ? 'text-rose-600' : 'text-[#366480]'}`}
                                                             placeholder={bound ? `Mín: ${bound.min_price.toFixed(2)}` : '0.00'}
                                                         />
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 text-right font-black text-sm text-slate-800 align-top">
+                                            <td className="px-4 py-3 text-right font-black text-base text-slate-800 align-top">
                                                 S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                             </td>
                                             <td className="px-4 py-3 text-center align-top">
@@ -1546,6 +1564,7 @@ export function CotizacionesPage() {
             condiciones_pago: c.condiciones_pago || '',
             descripcion: c.descripcion || '',
             numero_comprobante: c.numero_comprobante || '',
+            comprobante_locked: c.comprobante_locked || false,
         });
         setEditingId(c.id);
         setEditingCode(c.codigo || '');
@@ -1769,19 +1788,40 @@ export function CotizacionesPage() {
             const payload = { ...form, cliente_nombre: clienteNombreFinal, estado: estadoOverride ?? form.estado };
             let cotizacionId = editingId;
 
+            const { comprobante_locked, ...payloadWithoutLock } = payload;
+
             if (editingId) {
-                const { error } = await supabase.from('cotizaciones').update(payload).eq('id', editingId);
-                if (error) throw error;
+                let { error } = await supabase.from('cotizaciones').update(payload).eq('id', editingId);
+                if (error && (error.message.includes('comprobante_locked') || error.code === '42703')) {
+                    console.warn("comprobante_locked column does not exist, retrying without it...");
+                    const { error: retryError } = await supabase.from('cotizaciones').update(payloadWithoutLock).eq('id', editingId);
+                    if (retryError) throw retryError;
+                } else if (error) {
+                    throw error;
+                }
             } else {
-                const { data: inserted, error } = await supabase
+                let { data: inserted, error } = await supabase
                     .from('cotizaciones')
                     .insert({ ...payload })
                     .select('id, codigo')
-                    .single();
-                if (error) throw error;
-                cotizacionId = inserted.id;
-                setEditingCode(inserted.codigo);
-                setEditingId(inserted.id);
+                    .maybeSingle();
+                if (error && (error.message.includes('comprobante_locked') || error.code === '42703')) {
+                    console.warn("comprobante_locked column does not exist, retrying without it...");
+                    const { data: retryInserted, error: retryError } = await supabase
+                        .from('cotizaciones')
+                        .insert(payloadWithoutLock)
+                        .select('id, codigo')
+                        .maybeSingle();
+                    if (retryError) throw retryError;
+                    inserted = retryInserted;
+                } else if (error) {
+                    throw error;
+                }
+                if (inserted) {
+                    cotizacionId = inserted.id;
+                    setEditingCode(inserted.codigo);
+                    setEditingId(inserted.id);
+                }
             }
 
             if (cotizacionId) {
@@ -1856,7 +1896,7 @@ export function CotizacionesPage() {
         if (!cot) return;
         const { codigo: _c, id: _i, created_at: _d, ...rest } = cot;
         await supabase.from('cotizaciones').insert({ ...rest, estado: 'BORRADOR' });
-        await fetchDataRef.current();
+        await fetchDataRef.current?.();
         closeEditor();
     }, [closeEditor]);
 
@@ -2035,7 +2075,7 @@ export function CotizacionesPage() {
                             <div className="mx-6 my-4 border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                                 <table className="w-full text-left" style={{ fontFamily: "'Manrope', sans-serif" }}>
                                     <thead>
-                                        <tr className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 bg-slate-50 border-b border-slate-200">
+                                        <tr className="text-[13px] font-black uppercase tracking-[0.2em] text-[#366480]/60 bg-slate-50 border-b border-slate-200">
                                             <th className="px-5 py-4">ID De Cotización</th>
                                             <th className="px-5 py-4">Cliente / Título</th>
                                             <th className="px-5 py-4">Fecha</th>
@@ -2051,26 +2091,26 @@ export function CotizacionesPage() {
                                                 <td className="px-5 py-4">
                                                     <button
                                                         onClick={() => openEdit(c)}
-                                                        className="text-[13px] font-black text-[#4A90E2] hover:text-[#366480] hover:underline underline-offset-2 transition-colors"
+                                                        className="text-[15px] font-[900] text-[#4A90E2] hover:text-[#366480] hover:underline underline-offset-2 transition-colors"
                                                     >
                                                         {c.codigo}
                                                     </button>
                                                 </td>
                                                 <td className="px-5 py-4">
-                                                    <p className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
+                                                    <p className="text-[14px] font-[900] text-[#2c3434] uppercase tracking-tight">
                                                         {stripPublicoGeneral(c.cliente_nombre) || '—'}
                                                     </p>
                                                     {c.descripcion && (
-                                                        <p className="text-[11px] font-bold text-slate-400 truncate max-w-[200px] mt-0.5" title={c.descripcion}>
+                                                        <p className="text-[12px] font-extrabold text-slate-400 truncate max-w-[200px] mt-0.5" title={c.descripcion}>
                                                             {c.descripcion}
                                                         </p>
                                                     )}
                                                 </td>
                                                 <td className="px-5 py-4">
-                                                    <p className="text-[12px] font-medium text-slate-500">
+                                                    <p className="text-[13px] font-medium text-[#2c3434]/70">
                                                         {c.fecha_emision ? format(new Date(c.fecha_emision + 'T12:00:00'), 'dd/MM/yyyy') : '—'}
                                                     </p>
-                                                    <p className="text-[10px] font-bold text-slate-400 mt-0.5 tabular-nums">
+                                                    <p className="text-[11px] font-medium text-slate-400 mt-0.5 tabular-nums">
                                                         {fmtLimaTime(c.created_at)}
                                                     </p>
                                                 </td>
@@ -2083,19 +2123,42 @@ export function CotizacionesPage() {
                                                         className="flex items-center gap-1.5 group"
                                                         title="Editar N° Comprobante"
                                                     >
-                                                        {c.numero_comprobante ? (
-                                                            <span className="text-[12px] font-black text-[#366480] group-hover:underline underline-offset-2 transition-colors">
-                                                                {c.numero_comprobante}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-[11px] font-bold text-slate-300 group-hover:text-[#366480] transition-colors">
-                                                                — Agregar
-                                                            </span>
-                                                        )}
+                                                        {(() => {
+                                                            const numComp = c.numero_comprobante;
+                                                            const docTypeString = c.tipo_documento || 'COTIZACION';
+                                                            if (numComp) {
+                                                                const letter = docTypeString.charAt(0);
+                                                                return (
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="text-[13px] font-medium text-[#2c3434]/80 bg-[#f0f5f4] border border-[#d3dcdb]/40 px-2 py-0.5 rounded-md tracking-wide shadow-sm">
+                                                                            {numComp}
+                                                                        </span>
+                                                                        {docTypeString !== 'COTIZACION' && (
+                                                                            <span className="text-[11px] font-medium bg-[#4A90E2]/10 text-[#4A90E2] border border-[#4A90E2]/20 px-1.5 py-0.5 rounded-md shadow-sm" title={docTypeString}>
+                                                                                {letter}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            } else {
+                                                                if (docTypeString === 'COTIZACION') {
+                                                                    return (
+                                                                        <span className="text-[11px] font-bold text-slate-300 group-hover:text-[#366480] transition-colors">
+                                                                            — Agregar
+                                                                        </span>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <span className="text-[11px] font-extrabold text-[#366480]/60 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-md tracking-wide shadow-sm uppercase">
+                                                                        {docTypeString} - Asignar
+                                                                    </span>
+                                                                );
+                                                            }
+                                                        })()}
                                                         <Hash className="w-3 h-3 text-slate-300 group-hover:text-[#366480] transition-colors opacity-0 group-hover:opacity-100" />
                                                     </button>
                                                 </td>
-                                                <td className="px-5 py-4 text-right text-[13px] font-black text-[#2c3434] tabular-nums">
+                                                <td className="px-5 py-4 text-right text-[16px] font-[900] text-[#2c3434] tabular-nums">
                                                     {fmtSol(c.total)}
                                                 </td>
                                                 <td className="px-4 py-4 text-center">

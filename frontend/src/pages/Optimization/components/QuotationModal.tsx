@@ -511,18 +511,18 @@ const QuotationModalComponent: React.FC<QuotationModalProps> = ({ isOpen, onClos
                                         </td>
                                         <td className="px-4 py-3 border-r border-slate-100 dark:border-slate-800">
                                             <div className="flex items-center justify-end gap-1">
-                                                <span className="text-slate-400 text-xs text-[10px] font-bold">S/</span>
+                                                <span className="text-slate-400 text-xs font-bold">S/</span>
                                                 <input
                                                     type="number"
                                                     value={item.unitPrice || ''}
                                                     onChange={e => handleUpdateItem(idx, 'unitPrice', parseFloat(e.target.value) || 0)}
-                                                    className="w-20 bg-transparent border-none font-black text-[#366480] text-right outline-none text-sm focus:bg-[#f0f5f4] transition-colors rounded-lg"
+                                                    className="w-20 bg-transparent border-none font-black text-[#366480] text-right outline-none text-base focus:bg-[#f0f5f4] transition-colors rounded-lg"
                                                     placeholder="0.00"
                                                 />
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-right font-black text-sm text-slate-800">
-                                            S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                        <td className="px-4 py-3 text-right font-black text-base text-slate-800">
+                                            <span className="text-xs text-slate-400">S/ </span>{item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                         </td>
                                         <td className="px-4 py-3 text-center">
                                             {idx >= lockedCount && (

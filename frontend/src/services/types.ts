@@ -155,6 +155,7 @@ export interface Quotation {
     total: number;
     advance: number;
     balance: number;
+    comprobante_locked?: boolean;
     created_at?: string;
     updated_at?: string;
 }
@@ -182,6 +183,9 @@ export interface NodrizaTesoreria {
     invoice_igv?: number;
     invoice_total?: number;
     invoice_status?: 'BORRADOR' | 'REGISTRADO';
+    user_id?: string | null;
+    usuario_nombre?: string | null;
+    tipo_documento?: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION' | null;
 }
 
 export interface VentaCabecera {
@@ -200,6 +204,8 @@ export interface VentaCabecera {
     usuario_nombre?: string | null;
     cotizacion_descripcion?: string | null;
     cotizacion_numero_comprobante?: string | null;
+    cotizacion_tipo_documento?: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION' | null;
+    cotizacion_comprobante_locked?: boolean | null;
 }
 
 

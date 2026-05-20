@@ -13,23 +13,18 @@ import {
   TrendingDown, 
   CreditCard, 
   Banknote,
-  ShoppingCart,
-  UserCheck,
   History as HistoryIcon,
   X,
-  Wallet,
   ArrowRightLeft,
   Camera,
-  Filter,
   FileText,
-  Download,
   Eye,
   FileSpreadsheet,
-  CheckCircle2,
-  Lock,
-  Edit3,
   Calendar,
-  BarChart2
+  BarChart2,
+  ShieldCheck,
+  Edit3,
+  Lock
 } from 'lucide-react';
 import { api } from '../services/api';
 import { supabase } from '../services/supabase';
@@ -71,7 +66,7 @@ const SearchInput = React.memo(({ value, onSearch, placeholder, className }: {
     className: string;
 }) => {
     const [local, setLocal] = React.useState(value);
-    const timer = React.useRef<ReturnType<typeof setTimeout>>();
+    const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
     // Sync down when parent resets to '' (e.g. refresh button)
     React.useEffect(() => { setLocal(value); }, [value]);
@@ -122,6 +117,12 @@ export const SalesTreasuryPage = () => {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showGastoModal, setShowGastoModal] = useState<null | true | { monto: string, categoria: string, cuenta: string, desc: string }>(null);
     const [showHistoryModal, setShowHistoryModal] = useState<VentaCabecera | null>(null);
+    const [showConfirmComprobanteModal, setShowConfirmComprobanteModal] = useState<VentaCabecera | null>(null);
+    const [confirmComprobanteType, setConfirmComprobanteType] = useState<'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION'>('BOLETA');
+    const [confirmComprobanteNumber, setConfirmComprobanteNumber] = useState('');
+    const [savingConfirmComprobante, setSavingConfirmComprobante] = useState(false);
+    const [confirmComprobanteAuditLogs, setConfirmComprobanteAuditLogs] = useState<any[]>([]);
+    const [loadingConfirmComprobanteAuditLogs, setLoadingConfirmComprobanteAuditLogs] = useState(false);
     const [showTrailModal, setShowTrailModal] = useState<VentaCabecera | null>(null);
     const [showCashAccountModal, setShowCashAccountModal] = useState(false);
     const [isClosingCashModal, setIsClosingCashModal] = useState(false);
@@ -138,12 +139,20 @@ export const SalesTreasuryPage = () => {
     const [kardexAccount, setKardexAccount] = useState('2049/YAPE');
     const [kardexStart, setKardexStart] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
     const [kardexEnd, setKardexEnd] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+    const [kardexSearch, setKardexSearch] = useState('');
     const [showKardexDatePicker, setShowKardexDatePicker] = useState(false);
     const [showCashDatePicker, setShowCashDatePicker] = useState(false);
     const [ventasPage, setVentasPage] = useState(1);
     const VENTAS_PAGE_SIZE = 20;
 
-    useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice);
+    const [kardexPage, setKardexPage] = useState(1);
+    const KARDEX_PAGE_SIZE = 20;
+
+    useEffect(() => {
+        setKardexPage(1);
+    }, [kardexAccount, kardexStart, kardexEnd, kardexSearch]);
+
+    useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showConfirmComprobanteModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice);
     
     // Cash Modal Filters
     const [cashFilterStart, setCashFilterStart] = useState(defaultStartOfWeek);
@@ -153,7 +162,7 @@ export const SalesTreasuryPage = () => {
     const [cashQuickFilter, setCashQuickFilter] = useState<'PERSONALIZADO'|'HOY'|'ESTA_SEMANA'|'MES_ACTUAL'>('ESTA_SEMANA');
 
     // Form data
-    const [historyData, setHistoryData] = useState<VentaCobro[]>([]);
+    const [historyData, setHistoryData] = useState<any[]>([]);
     
 
     const [expandedCobro, setExpandedCobro] = useState<string | null>(null);
@@ -186,7 +195,7 @@ export const SalesTreasuryPage = () => {
     const exportMenuRef = useRef<HTMLDivElement>(null);
     const datePickerRef = useRef<HTMLDivElement>(null);
     const cuentasPopupRef = useRef<HTMLDivElement>(null);
-    const kardexDatePickerRef = useRef<HTMLDivElement>(null);
+    const kardexDatePickerRef = useRef<any>(null);
     const cashDatePickerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -416,7 +425,7 @@ export const SalesTreasuryPage = () => {
         if (type === 'VOUCHERS_PDF') {
             const ventasItems = movements.filter(m => m.tipo_movimiento === 'INGRESO' && m.voucher_url).map(m => ({
                 url: m.voucher_url!,
-                label: `Cobro Venta #${m.venta_id?.slice(0,8) || 'N/A'}`,
+                label: `Cobro Venta #${(m as any).venta_id?.slice(0,8) || 'N/A'}`,
                 date: format(new Date(m.created_at), 'dd/MM/yyyy'),
                 amount: `S/ ${Number(m.monto).toFixed(2)}`
             }));
@@ -434,8 +443,8 @@ export const SalesTreasuryPage = () => {
         }
 
         if (type === 'INVOICES_PDF') {
-            const items = filteredCompras.filter(c => c.factura_url).map(c => ({
-                url: c.factura_url!,
+            const items = filteredCompras.filter(c => c.invoice_url).map(c => ({
+                url: c.invoice_url!,
                 label: `Factura Egreso: ${c.categoria} - ${c.observaciones}`,
                 date: format(new Date(c.created_at!), 'dd/MM/yyyy'),
                 amount: `S/ ${Number(c.monto).toFixed(2)}`
@@ -562,12 +571,56 @@ export const SalesTreasuryPage = () => {
         setHistoryData([]); // Clear previous
         setLoadingHistory(true);
         try {
-            const data = await api.getVentaCobros(venta.id);
+            const data = await api.getUnifiedVentaAuditLog(venta.id, venta.codigo_cotizacion);
             setHistoryData(data);
         } catch (error) {
             console.error("Error loading history", error);
         } finally {
             setLoadingHistory(false);
+        }
+    };
+
+    const openConfirmComprobanteModal = async (venta: VentaCabecera) => {
+        setShowConfirmComprobanteModal(venta);
+        setConfirmComprobanteType(venta.cotizacion_tipo_documento || 'BOLETA');
+        setConfirmComprobanteNumber(venta.cotizacion_numero_comprobante || '');
+        setConfirmComprobanteAuditLogs([]);
+        setLoadingConfirmComprobanteAuditLogs(true);
+        try {
+            if (venta.codigo_cotizacion) {
+                const logs = await api.getUnifiedVentaAuditLog(venta.id, venta.codigo_cotizacion);
+                setConfirmComprobanteAuditLogs(logs.filter(l => l.type === 'AUDIT'));
+            }
+        } catch (error) {
+            console.error("Error loading confirm comprobante audit logs", error);
+        } finally {
+            setLoadingConfirmComprobanteAuditLogs(false);
+        }
+    };
+
+    const handleConfirmComprobante = async () => {
+        if (!showConfirmComprobanteModal) return;
+        const venta = showConfirmComprobanteModal;
+        if (!venta.codigo_cotizacion) {
+            alert("Esta venta no tiene un código de cotización asociado");
+            return;
+        }
+        setSavingConfirmComprobante(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            await api.confirmarComprobanteVenta(
+                venta.codigo_cotizacion,
+                confirmComprobanteType,
+                confirmComprobanteNumber,
+                user?.id || null
+            );
+            setShowConfirmComprobanteModal(null);
+            await loadData();
+        } catch (error: any) {
+            console.error("Error confirming comprobante", error);
+            alert("Error al confirmar comprobante: " + error.message);
+        } finally {
+            setSavingConfirmComprobante(false);
         }
     };
 
@@ -676,8 +729,9 @@ export const SalesTreasuryPage = () => {
         const end   = new Date(kardexEnd   + 'T23:59:59');
         const acc   = kardexAccount;
         const isAll = acc === 'TODOS';
+        const term  = kardexSearch.toLowerCase().trim();
 
-        type KRow = { date: string; desc: string; numOp?: string; entrada: number; salida: number; contra: string; cuenta: string };
+        type KRow = { date: string; desc: string; numOp?: string; entrada: number; salida: number; contra: string; cuenta: string; usuario_nombre?: string | null };
         const rows: KRow[] = [];
 
         [...movements]
@@ -685,16 +739,24 @@ export const SalesTreasuryPage = () => {
             .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
             .forEach(m => {
                 const desc = m.observaciones || m.categoria || m.tipo_movimiento;
+
+                if (term) {
+                    const descMatch = (desc || '').toLowerCase().includes(term);
+                    const contraMatch = (m.cuenta_destino || '').toLowerCase().includes(term) || (m.cuenta_origen || '').toLowerCase().includes(term);
+                    const opMatch = (m.numero_operacion || '').toLowerCase().includes(term);
+                    if (!descMatch && !contraMatch && !opMatch) return;
+                }
+
                 if (isAll) {
                     // Show every movement, expressing perspective of the tracked accounts.
                     // Transferencias internas between two tracked accounts produce two rows (one per side).
                     const destTracked = m.cuenta_destino && (KARDEX_TRACKED as readonly string[]).includes(m.cuenta_destino);
                     const origTracked = m.cuenta_origen  && (KARDEX_TRACKED as readonly string[]).includes(m.cuenta_origen);
                     if (destTracked) {
-                        rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: Number(m.monto), salida: 0, contra: m.cuenta_origen || '—', cuenta: m.cuenta_destino! });
+                        rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: Number(m.monto), salida: 0, contra: m.cuenta_origen || '—', cuenta: m.cuenta_destino!, usuario_nombre: m.usuario_nombre });
                     }
                     if (origTracked) {
-                        rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: 0, salida: Number(m.monto), contra: m.cuenta_destino || '—', cuenta: m.cuenta_origen! });
+                        rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: 0, salida: Number(m.monto), contra: m.cuenta_destino || '—', cuenta: m.cuenta_origen!, usuario_nombre: m.usuario_nombre });
                     }
                     return;
                 }
@@ -702,15 +764,23 @@ export const SalesTreasuryPage = () => {
                 const fromHere = m.cuenta_origen  === acc;
                 if (!toHere && !fromHere) return;
                 if (toHere && !fromHere) {
-                    rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: Number(m.monto), salida: 0, contra: m.cuenta_origen || '—', cuenta: acc });
+                    rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: Number(m.monto), salida: 0, contra: m.cuenta_origen || '—', cuenta: acc, usuario_nombre: m.usuario_nombre });
                 } else if (fromHere && !toHere) {
-                    rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: 0, salida: Number(m.monto), contra: m.cuenta_destino || '—', cuenta: acc });
+                    rows.push({ date: m.created_at, desc, numOp: m.numero_operacion, entrada: 0, salida: Number(m.monto), contra: m.cuenta_destino || '—', cuenta: acc, usuario_nombre: m.usuario_nombre });
                 }
             });
 
         let balance = 0;
-        return rows.map(r => { balance += r.entrada - r.salida; return { ...r, balance }; });
-    }, [movements, kardexAccount, kardexStart, kardexEnd]);
+        const mappedRows = rows.map(r => { balance += r.entrada - r.salida; return { ...r, balance }; });
+        return mappedRows.reverse();
+    }, [movements, kardexAccount, kardexStart, kardexEnd, kardexSearch]);
+
+    const kardexPageTotal = useMemo(() => Math.ceil(kardexRows.length / KARDEX_PAGE_SIZE), [kardexRows]);
+
+    const paginatedKardex = useMemo(() => {
+        const startIndex = (kardexPage - 1) * KARDEX_PAGE_SIZE;
+        return kardexRows.slice(startIndex, startIndex + KARDEX_PAGE_SIZE);
+    }, [kardexRows, kardexPage]);
 
     // memo8059 moved to standalone component ᛚᛚᛚ
 
@@ -1031,7 +1101,7 @@ export const SalesTreasuryPage = () => {
                                     <>
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
-                                            <tr className="text-[#366480]/50 text-[11px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
+                                            <tr className="text-[#366480]/50 text-[13px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
                                                 <th className="py-5 pl-4 text-left w-[18%]">Transacción / OT</th>
                                                 <th className="py-5 text-left w-[13%]">Usuario</th>
                                                 <th className="py-5 text-left w-[22%]">Cliente</th>
@@ -1050,50 +1120,91 @@ export const SalesTreasuryPage = () => {
                                                                 <div className="flex items-center gap-4">
                                                                     <button onClick={() => toggleExpand(venta.id)} className={`p-2 rounded-xl border transition-all ${expandedVenta === venta.id ? 'bg-[#4A90E2] text-white border-[#4A90E2]' : 'bg-white border-[#d3dcdb]/40 text-[#366480]/40 hover:text-[#4A90E2] shadow-sm'}`}>{expandedVenta === venta.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
                                                                     <div className="flex flex-col gap-0.5">
-                                                                        <span className="text-[14px] font-[900] text-[#2c3434] tracking-tight uppercase"
+                                                                        <span className="text-[16px] font-[900] text-[#2c3434] tracking-tight uppercase"
                                                                             dangerouslySetInnerHTML={{ __html: '#' + highlightMatchHtml(venta.codigo_cotizacion || venta.id.slice(0,8), deferredSearch) }}
                                                                         />
-                                                                        <span className="text-[11px] font-bold text-[#366480]/50 uppercase tracking-widest">
-                                                            {format(new Date(venta.created_at), "dd MMM, yyyy")}
-                                                            <span className="normal-case tracking-normal ml-1 text-[#366480]/40">· {fmtLimaTime(venta.created_at)}</span>
-                                                        </span>
-                                                                        {venta.cotizacion_numero_comprobante && (
-                                                                            <span className="text-[10px] font-black text-[#366480]/60 bg-[#f0f5f4] px-1.5 py-0.5 rounded-md w-fit tracking-wide"
-                                                                                dangerouslySetInnerHTML={{ __html: highlightMatchHtml(venta.cotizacion_numero_comprobante, deferredSearch) }}
-                                                                            />
-                                                                        )}
+                                                                        <span className="text-[13px] font-medium text-[#366480]/60 uppercase tracking-widest">
+                                                                            {format(new Date(venta.created_at), "dd MMM, yyyy")}
+                                                                            <span className="normal-case tracking-normal ml-1 text-[#366480]/40">· {fmtLimaTime(venta.created_at)}</span>
+                                                                        </span>
+                                                                        {(() => {
+                                                                            const numComp = venta.cotizacion_numero_comprobante;
+                                                                            const tipoDoc = venta.cotizacion_tipo_documento;
+                                                                            if (!tipoDoc && !numComp) return null;
+                                                                            
+                                                                            const docTypeString = tipoDoc || 'COTIZACION';
+                                                                            if (numComp) {
+                                                                                const letter = docTypeString.charAt(0);
+                                                                                return (
+                                                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                                                        <span className="text-[13px] font-medium text-[#2c3434]/80 bg-[#f0f5f4] border border-[#d3dcdb]/40 px-2 py-0.5 rounded-md tracking-wide shadow-sm"
+                                                                                            dangerouslySetInnerHTML={{ __html: highlightMatchHtml(numComp, deferredSearch) }}
+                                                                                        />
+                                                                                        {docTypeString !== 'COTIZACION' && (
+                                                                                            <span className="text-[12px] font-medium bg-[#4A90E2]/10 text-[#4A90E2] border border-[#4A90E2]/20 px-1.5 py-0.5 rounded-md shadow-sm" title={docTypeString}>
+                                                                                                {letter}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                );
+                                                                            } else {
+                                                                                if (docTypeString === 'COTIZACION') return null;
+                                                                                return (
+                                                                                    <span className="text-[12px] font-[900] text-[#366480]/60 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-md mt-1 w-fit tracking-wide shadow-sm uppercase">
+                                                                                        {docTypeString} - Asignar
+                                                                                    </span>
+                                                                                );
+                                                                            }
+                                                                        })()}
                                                                     </div>
                                                                 </div>
                                                             </td>
                                                             <td className="py-5 text-left">
-                                                                <span className="text-[12px] font-bold text-[#2c3434]/60 uppercase tracking-tight truncate">
+                                                                <span className="text-[15px] font-bold text-[#2c3434]/80 uppercase tracking-tight truncate block max-w-[120px]" title={venta.usuario_nombre || '—'}>
                                                                     {venta.usuario_nombre || '—'}
                                                                 </span>
                                                             </td>
                                                             <td className="py-5 text-left">
-                                                                <p className="text-[13px] font-black text-[#366480] uppercase tracking-tight"
+                                                                <p className="text-[15px] font-black text-[#2c3434] uppercase tracking-tight"
                                                                     dangerouslySetInnerHTML={{ __html: highlightMatchHtml(venta.cliente_nombre, deferredSearch) }}
                                                                 />
                                                                 {venta.cotizacion_descripcion && (
-                                                                    <p className="text-[10px] font-bold text-slate-400 truncate max-w-[180px] mt-0.5" title={venta.cotizacion_descripcion}>
+                                                                    <p className="text-[13px] font-medium text-slate-500 truncate max-w-[180px] mt-0.5" title={venta.cotizacion_descripcion}>
                                                                         {venta.cotizacion_descripcion}
                                                                     </p>
                                                                 )}
                                                             </td>
-                                                            <td className="py-5 text-left font-[900] text-[15px] text-[#2c3434] tabular-nums">
+                                                            <td className="py-5 text-left font-[900] text-[17px] text-[#2c3434] tabular-nums">
                                                                 {isStub ? '—' : `S/ ${formatCurrency(venta.monto_total)}`}
                                                             </td>
                                                             <td className="py-5 pl-8 text-left">
                                                                 <div className="flex items-center gap-4">
-                                                                    <span className={`px-4 py-1.5 text-[10px] font-black rounded-full border tracking-widest uppercase ${isStub ? 'bg-slate-100 text-slate-400 border-slate-200' : venta.estado_pago === 'CANCELADO' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                                                                    <span className={`px-4 py-1.5 text-[12px] font-black rounded-full border tracking-widest uppercase ${isStub ? 'bg-slate-100 text-slate-400 border-slate-200' : venta.estado_pago === 'CANCELADO' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
                                                                         {isStub ? 'Listo para Corte' : venta.estado_pago}
                                                                     </span>
-                                                                    {!isStub && <span className="text-[11px] font-[900] text-[#366480]/60 tabular-nums">S/ {formatCurrency(venta.saldo_pendiente)}</span>}
+                                                                    {!isStub && <span className="text-[14px] font-[900] text-[#366480]/60 tabular-nums">S/ {formatCurrency(venta.saldo_pendiente)}</span>}
                                                                 </div>
                                                             </td>
                                                             <td className="py-5 text-left">
                                                                 <div className="flex items-center justify-start gap-3 transition-all duration-300">
                                                                     {!isStub && <button onClick={() => openHistory(venta)} title="Historial de cobros" className="p-3 bg-white text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm border border-[#d3dcdb]/20"><HistoryIcon className="w-4 h-4" /></button>}
+                                                                    {!isStub && venta.codigo_cotizacion && (
+                                                                        <button
+                                                                            onClick={() => openConfirmComprobanteModal(venta)}
+                                                                            title={venta.cotizacion_comprobante_locked ? "Comprobante verificado y bloqueado" : "Verificar/Confirmar comprobante"}
+                                                                            className={`p-3 rounded-xl transition-all shadow-sm border ${
+                                                                                venta.cotizacion_comprobante_locked 
+                                                                                    ? "bg-emerald-50 text-emerald-600 border-emerald-200/60 hover:bg-emerald-100/60" 
+                                                                                    : "bg-white text-amber-500 border-[#d3dcdb]/20 hover:bg-amber-50 hover:text-amber-600"
+                                                                            }`}
+                                                                        >
+                                                                            {venta.cotizacion_comprobante_locked ? (
+                                                                                <ShieldCheck className="w-4 h-4" />
+                                                                            ) : (
+                                                                                <Edit3 className="w-4 h-4" />
+                                                                            )}
+                                                                        </button>
+                                                                    )}
                                                                     {!isStub && Number(venta.saldo_pendiente) > 0 && <button onClick={() => setShowCobroModal(venta)} className="px-6 py-3 bg-[#4A90E2] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD] transition-all">Cobrar</button>}
                                                                 </div>
                                                             </td>
@@ -1192,36 +1303,50 @@ export const SalesTreasuryPage = () => {
                                     )}
                                     </>
                                 )}
-
                                 {viewMode === 'COMPRAS' && (
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
-                                            <tr className="text-[#366480]/50 text-[11px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
+                                            <tr className="text-[#366480]/50 text-[13px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
                                                 <th className="py-5 pl-4 text-left w-[15%]">Registro</th>
-                                                <th className="py-5 text-left w-[20%]">Clasificación</th>
-                                                <th className="py-5 text-left w-[15%]">Documento</th>
-                                                <th className="py-5 text-left w-[25%]">Referencia</th>
-                                                <th className="py-5 text-left w-[15%]">Monto</th>
-                                                <th className="py-5 text-left w-[10%]">Gestión</th>
+                                                <th className="py-5 text-left w-[13%]">Usuario</th>
+                                                <th className="py-5 text-left w-[17%]">Clasificación</th>
+                                                <th className="py-5 text-left w-[14%]">Documento</th>
+                                                <th className="py-5 text-left w-[20%]">Referencia</th>
+                                                <th className="py-5 text-left w-[13%]">Monto</th>
+                                                <th className="py-5 text-left w-[8%]">Gestión</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={6} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={6} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
+                                            {loading ? <tr><td colSpan={7} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
                                                 <React.Fragment key={compra.id}>
                                                     <tr className="group hover:bg-[#fff0f2]/30 transition-all duration-300">
-                                                        <td className="py-5 pl-4 text-left text-[12px] font-black text-[#366480]/50 uppercase">{format(new Date(compra.created_at!), "dd MMM, yyyy")}</td>
+                                                        <td className="py-5 pl-4 text-left">
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <span className="text-[15px] font-medium text-[#2c3434] uppercase">
+                                                                    {format(new Date(compra.created_at!), "dd MMM, yyyy")}
+                                                                </span>
+                                                                <span className="text-[12px] font-medium text-[#366480]/50 tracking-wider">
+                                                                    {fmtLimaTime(compra.created_at!)}
+                                                                </span>
+                                                            </div>
+                                                        </td>
                                                         <td className="py-5 text-left">
-                                                            <span className="px-4 py-1.5 bg-white text-[#366480] text-[10px] font-black rounded-full uppercase border border-[#d3dcdb]/40 tracking-widest shadow-sm">{compra.categoria}</span>
+                                                            <span className="text-[15px] font-bold text-[#2c3434]/80 uppercase truncate block max-w-[110px]" title={compra.usuario_nombre || '—'}>
+                                                                {compra.usuario_nombre || '—'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-5 text-left">
+                                                            <span className="px-4 py-1.5 bg-white text-[#366480] text-[12px] font-black rounded-full uppercase border border-[#d3dcdb]/40 tracking-widest shadow-sm">{compra.categoria}</span>
                                                         </td>
                                                         <td className="py-5 text-left">
                                                             {compra.has_invoice ? (
-                                                                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#dcfce7] text-[#166534] text-[10px] font-black rounded-full uppercase tracking-tighter border border-[#bbf7d0]">Factura Registrada</span>
+                                                                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#dcfce7] text-[#166534] text-[12px] font-black rounded-full uppercase tracking-tighter border border-[#bbf7d0]">Factura Registrada</span>
                                                             ) : (
-                                                                <span className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em]">S/D Fiscal</span>
+                                                                <span className="text-[12px] font-black text-[#366480]/40 uppercase tracking-[0.2em]">S/D Fiscal</span>
                                                             )}
                                                         </td>
-                                                        <td className="py-5 text-left text-[13px] font-black uppercase text-[#2c3434] tracking-tight">{compra.observaciones}</td>
-                                                        <td className="py-5 text-left font-[900] text-rose-500 text-[15px] tabular-nums">S/ {formatCurrency(compra.monto)}</td>
+                                                        <td className="py-5 text-left text-[15px] font-bold uppercase text-[#366480] tracking-tight">{compra.observaciones}</td>
+                                                        <td className="py-5 text-left font-[900] text-rose-500 text-[17px] tabular-nums">S/ {formatCurrency(compra.monto)}</td>
                                                         <td className="py-5 text-left">
                                                             <div className="flex items-center justify-start gap-3 transition-all">
                                                                 <button onClick={() => setManagingInvoice(compra)} className="p-3 bg-white border border-[#d3dcdb]/20 text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm"><Search className="w-4 h-4" /></button>
@@ -1231,7 +1356,7 @@ export const SalesTreasuryPage = () => {
                                                     </tr>
                                                     {expandedCompra === compra.id && (
                                                         <tr>
-                                                            <td colSpan={6} className="p-0 border-none bg-[#fff0f2]/20">
+                                                            <td colSpan={7} className="p-0 border-none bg-[#fff0f2]/20">
                                                                 <div className="px-10 py-4 animate-in slide-in-from-top-4 duration-500">
                                                                     <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm flex items-center justify-between">
                                                                         <div className="flex items-center gap-12">
@@ -1327,11 +1452,18 @@ export const SalesTreasuryPage = () => {
                         const sortedHistory = historyData.slice().sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
                         const ventaTotal = Number(showHistoryModal.monto_total);
                         let running = ventaTotal;
-                        const rows = sortedHistory.map(cobro => {
-                            running = running - Number(cobro.monto);
-                            const saldoDespues = Math.max(0, running);
-                            return { cobro, saldoDespues };
+                        let cobroIndex = 0;
+                        const rows = sortedHistory.map(item => {
+                            if (item.type === 'COBRO') {
+                                cobroIndex++;
+                                running = running - Number(item.monto);
+                                const saldoDespues = Math.max(0, running);
+                                return { ...item, saldoDespues, index: cobroIndex };
+                            }
+                            return item;
                         });
+                        // Reverse the items so newest shows first
+                        const reversedRows = rows.slice().reverse();
                         return (
                             <div
                                 className={`fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/30 overflow-hidden ${isClosingHistory ? 'animate-backdrop-out' : 'animate-backdrop'}`}
@@ -1347,7 +1479,7 @@ export const SalesTreasuryPage = () => {
                                                 <HistoryIcon className="w-4 h-4 text-white" />
                                             </div>
                                             <div>
-                                                <h2 className="text-base font-black text-[#2c3434] uppercase tracking-tight">Historial de Depósitos</h2>
+                                                <h2 className="text-base font-black text-[#2c3434] uppercase tracking-tight">Historial de la Venta</h2>
                                                 <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">{showHistoryModal.cliente_nombre}</p>
                                             </div>
                                         </div>
@@ -1375,107 +1507,313 @@ export const SalesTreasuryPage = () => {
                                                 <RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" />
                                                 <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[11px]">Consultando historial...</p>
                                             </div>
-                                        ) : sortedHistory.length === 0 ? (
+                                        ) : reversedRows.length === 0 ? (
                                             <div className="py-10 text-center border-2 border-dashed border-[#e8eded] rounded-2xl">
-                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[11px] italic">No hay depósitos registrados</p>
+                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[11px] italic">No hay registros en el historial</p>
                                             </div>
-                                        ) : rows.map(({ cobro, saldoDespues }, idx) => {
-                                            const isExpanded = expandedCobro === cobro.id;
-                                            const isEfectivo = cobro.cuenta_destino === 'Efectivo';
-                                            return (
-                                                <div key={cobro.id} className={`rounded-2xl border bg-white/60 transition-all ${isExpanded ? 'border-[#4A90E2]/40 shadow-sm' : 'border-[#e8eded]'}`}>
-                                                    <div
-                                                        onClick={() => toggleCobroTrail(cobro.id)}
-                                                        className="grid grid-cols-2 gap-3 px-3.5 py-3 cursor-pointer items-center"
-                                                    >
-                                                        {/* Left: ingreso */}
-                                                        <div className="flex items-center gap-2.5 min-w-0">
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => { e.stopPropagation(); toggleCobroTrail(cobro.id); }}
-                                                                className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all ${isExpanded ? 'bg-[#4A90E2] text-white rotate-180' : 'bg-[#f0f5f4] text-[#8b9ba5] hover:bg-[#e8eded]'}`}
-                                                            >
-                                                                <ChevronDown className="w-3.5 h-3.5" />
-                                                            </button>
-                                                            <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${isEfectivo ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
-                                                                {isEfectivo ? <Banknote className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+                                        ) : reversedRows.map((item) => {
+                                            if (item.type === 'COBRO') {
+                                                const cobro = item;
+                                                const isExpanded = expandedCobro === cobro.id;
+                                                const isEfectivo = cobro.cuenta_destino === 'Efectivo';
+                                                return (
+                                                    <div key={cobro.id} className={`rounded-2xl border bg-white/60 transition-all ${isExpanded ? 'border-[#4A90E2]/40 shadow-sm' : 'border-[#e8eded]'}`}>
+                                                        <div
+                                                            onClick={() => toggleCobroTrail(cobro.id)}
+                                                            className="grid grid-cols-2 gap-3 px-3.5 py-3 cursor-pointer items-center"
+                                                        >
+                                                            {/* Left: ingreso */}
+                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => { e.stopPropagation(); toggleCobroTrail(cobro.id); }}
+                                                                    className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all ${isExpanded ? 'bg-[#4A90E2] text-white rotate-180' : 'bg-[#f0f5f4] text-[#8b9ba5] hover:bg-[#e8eded]'}`}
+                                                                >
+                                                                    <ChevronDown className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <div className={`shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${isEfectivo ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                                                                    {isEfectivo ? <Banknote className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
+                                                                </div>
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Ingreso #{cobro.index}</span>
+                                                                    <span className="text-base font-bold tabular-nums text-emerald-600 leading-tight">+ S/ {Number(cobro.monto).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate">{format(new Date(cobro.created_at), "dd MMM yyyy · HH:mm", { locale: es })}</span>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex flex-col min-w-0">
-                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Ingreso #{idx + 1}</span>
-                                                                <span className="text-base font-bold tabular-nums text-emerald-600 leading-tight">+ S/ {Number(cobro.monto).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
-                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate">{format(new Date(cobro.created_at), "dd MMM yyyy · HH:mm", { locale: es })}</span>
+                                                            {/* Right: saldo restante */}
+                                                            <div className="flex flex-col items-end">
+                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Restante</span>
+                                                                <span className={`text-lg font-bold tabular-nums leading-tight ${cobro.saldoDespues === 0 ? 'text-[#166534]' : 'text-[#366480]'}`}>S/ {cobro.saldoDespues.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate max-w-[140px]">{cobro.cuenta_destino}</span>
                                                             </div>
                                                         </div>
-                                                        {/* Right: saldo restante */}
-                                                        <div className="flex flex-col items-end">
-                                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Restante</span>
-                                                            <span className={`text-lg font-bold tabular-nums leading-tight ${saldoDespues === 0 ? 'text-[#166534]' : 'text-[#366480]'}`}>S/ {saldoDespues.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
-                                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate max-w-[140px]">{cobro.cuenta_destino}</span>
-                                                        </div>
-                                                    </div>
 
-                                                    {isExpanded && (
-                                                        <div className="px-3.5 pb-3.5 pt-2 border-t border-[#e8eded]/60 animate-in fade-in slide-in-from-top-1 duration-200">
-                                                            {cobro.motivo_excedente && (
-                                                                <div className="mb-2.5 text-[11px] font-semibold text-rose-500 bg-rose-50/70 px-2.5 py-2 rounded-lg border border-rose-100 uppercase tracking-wide">
-                                                                    Excedente: {cobro.motivo_excedente}
-                                                                </div>
-                                                            )}
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="flex-1 min-w-0">
-                                                                    <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">N° Operación</p>
-                                                                    <p className="text-sm font-bold font-mono text-[#2c3434] truncate">
-                                                                        {cobro.numero_operacion ? `#${cobro.numero_operacion}` : '—'}
-                                                                    </p>
-                                                                </div>
-                                                                {cobro.voucher_url ? (
-                                                                    <div
-                                                                        onClick={(e) => { e.stopPropagation(); setZoomImage(cobro.voucher_url!); }}
-                                                                        className="shrink-0 w-16 h-16 rounded-lg overflow-hidden cursor-zoom-in border border-white shadow-sm hover:scale-105 transition-transform"
-                                                                    >
-                                                                        <img src={cobro.voucher_url} className="w-full h-full object-cover" />
+                                                        {isExpanded && (
+                                                            <div className="px-3.5 pb-3.5 pt-2 border-t border-[#e8eded]/60 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                                {cobro.motivo_excedente && (
+                                                                    <div className="mb-2.5 text-[11px] font-semibold text-rose-500 bg-rose-50/70 px-2.5 py-2 rounded-lg border border-rose-100 uppercase tracking-wide">
+                                                                        Excedente: {cobro.motivo_excedente}
                                                                     </div>
-                                                                ) : (
-                                                                    <div className="shrink-0 w-16 h-16 rounded-lg border border-dashed border-[#e8eded] bg-[#f8faf9] flex items-center justify-center">
-                                                                        <Camera className="w-4 h-4 text-[#d3dcdb]" />
+                                                                )}
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">N° Operación</p>
+                                                                        <p className="text-sm font-bold font-mono text-[#2c3434] truncate">
+                                                                            {cobro.numero_operacion ? `#${cobro.numero_operacion}` : '—'}
+                                                                        </p>
+                                                                    </div>
+                                                                    {cobro.voucher_url ? (
+                                                                        <div
+                                                                            onClick={(e) => { e.stopPropagation(); setZoomImage(cobro.voucher_url!); }}
+                                                                            className="shrink-0 w-16 h-16 rounded-lg overflow-hidden cursor-zoom-in border border-white shadow-sm hover:scale-105 transition-transform"
+                                                                        >
+                                                                            <img src={cobro.voucher_url} className="w-full h-full object-cover" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="shrink-0 w-16 h-16 rounded-lg border border-dashed border-[#e8eded] bg-[#f8faf9] flex items-center justify-center">
+                                                                            <Camera className="w-4 h-4 text-[#d3dcdb]" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {loadingCobroTrail && !cobroTrail[cobro.id] && (
+                                                                    <div className="mt-2.5 flex items-center gap-2 text-[#8b9ba5] text-[11px] font-semibold uppercase tracking-widest">
+                                                                        <RefreshCw className="w-3 h-3 animate-spin" /> Rastreando fondos...
+                                                                    </div>
+                                                                )}
+                                                                {cobroTrail[cobro.id] && cobroTrail[cobro.id].length > 0 && (
+                                                                    <div className="mt-2.5 space-y-1.5">
+                                                                        <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider mb-1">Ruta del Depósito</p>
+                                                                        {cobroTrail[cobro.id].map((m, i) => (
+                                                                            <div key={m.id} className="flex items-center gap-2 px-2.5 py-2 bg-white/70 rounded-lg border border-[#e8eded]/70">
+                                                                                <span className="w-5 h-5 rounded-full bg-[#4A90E2]/10 text-[#4A90E2] flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <p className="text-[11px] font-bold uppercase text-[#2c3434] truncate">
+                                                                                        {m.tipo_movimiento === 'INGRESO'
+                                                                                            ? (sortedHistory.filter(h => h.type === 'COBRO')[0]?.id === cobro.id ? 'PAGO INICIAL' : 'AMORTIZACIÓN')
+                                                                                            : m.tipo_movimiento}
+                                                                                    </p>
+                                                                                    <p className="text-[10px] text-[#8b9ba5] truncate">{m.cuenta_destino || m.cuenta_origen}</p>
+                                                                                </div>
+                                                                                <span className={`text-[12px] font-bold tabular-nums ${m.tipo_movimiento === 'INGRESO' ? 'text-emerald-600' : 'text-[#2c3434]'}`}>S/ {Number(m.monto).toFixed(2)}</span>
+                                                                            </div>
+                                                                        ))}
                                                                     </div>
                                                                 )}
                                                             </div>
-
-                                                            {loadingCobroTrail && !cobroTrail[cobro.id] && (
-                                                                <div className="mt-2.5 flex items-center gap-2 text-[#8b9ba5] text-[11px] font-semibold uppercase tracking-widest">
-                                                                    <RefreshCw className="w-3 h-3 animate-spin" /> Rastreando fondos...
-                                                                </div>
-                                                            )}
-                                                            {cobroTrail[cobro.id] && cobroTrail[cobro.id].length > 0 && (
-                                                                <div className="mt-2.5 space-y-1.5">
-                                                                    <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider mb-1">Ruta del Depósito</p>
-                                                                    {cobroTrail[cobro.id].map((m, i) => (
-                                                                        <div key={m.id} className="flex items-center gap-2 px-2.5 py-2 bg-white/70 rounded-lg border border-[#e8eded]/70">
-                                                                            <span className="w-5 h-5 rounded-full bg-[#4A90E2]/10 text-[#4A90E2] flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
-                                                                            <div className="flex-1 min-w-0">
-                                                                                <p className="text-[11px] font-bold uppercase text-[#2c3434] truncate">
-                                                                                    {m.tipo_movimiento === 'INGRESO'
-                                                                                        ? (sortedHistory[0]?.id === cobro.id ? 'PAGO INICIAL' : 'AMORTIZACIÓN')
-                                                                                        : m.tipo_movimiento}
-                                                                                </p>
-                                                                                <p className="text-[10px] text-[#8b9ba5] truncate">{m.cuenta_destino || m.cuenta_origen}</p>
-                                                                            </div>
-                                                                            <span className={`text-[12px] font-bold tabular-nums ${m.tipo_movimiento === 'INGRESO' ? 'text-emerald-600' : 'text-[#2c3434]'}`}>S/ {Number(m.monto).toFixed(2)}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
+                                                        )}
+                                                    </div>
+                                                );
+                                            } else {
+                                                const audit = item;
+                                                const isDocType = audit.campo === 'tipo_documento';
+                                                const isNumComp = audit.campo === 'numero_comprobante';
+                                                const isLock = audit.campo === 'comprobante_locked';
+                                                
+                                                let title = "Modificación de Comprobante";
+                                                let content = "";
+                                                let iconColor = "bg-sky-50 text-sky-500 border-sky-100";
+                                                
+                                                if (isDocType) {
+                                                    title = "Tipo de Documento Modificado";
+                                                    content = `Tipo de documento cambiado de "${audit.valor_anterior || 'COTIZACION'}" a "${audit.valor_nuevo}"`;
+                                                    iconColor = "bg-[#4A90E2]/10 text-[#4A90E2] border-[#4A90E2]/20";
+                                                } else if (isNumComp) {
+                                                    title = "N° de Comprobante Modificado";
+                                                    content = `Número de comprobante corregido de "${audit.valor_anterior || '—'}" a "${audit.valor_nuevo || '—'}"`;
+                                                    iconColor = "bg-amber-50 text-amber-600 border-amber-200/50";
+                                                } else if (isLock) {
+                                                    title = "Comprobante Ratificado y Bloqueado";
+                                                    content = "Comprobante verificado y bloqueado para edición por el vendedor";
+                                                    iconColor = "bg-emerald-50 text-emerald-600 border-emerald-200/50";
+                                                }
+                                                
+                                                return (
+                                                    <div key={audit.id} className="rounded-2xl border border-slate-100 bg-[#f8faf9]/50 p-4 transition-all shadow-sm flex items-start gap-3 text-left">
+                                                        <div className={`shrink-0 w-9 h-9 rounded-lg border flex items-center justify-center ${iconColor}`}>
+                                                            {isLock ? <Lock className="w-4.5 h-4.5" /> : <FileText className="w-4.5 h-4.5" />}
                                                         </div>
-                                                    )}
-                                                </div>
-                                            );
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="text-[13px] font-bold text-slate-800 tracking-tight">{title}</span>
+                                                                <span className="text-[11px] font-medium text-slate-400 tabular-nums">
+                                                                    {format(new Date(audit.created_at), "dd/MM/yyyy · HH:mm", { locale: es })}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[12px] font-medium text-slate-500 mt-1 leading-relaxed">{content}</p>
+                                                            <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-[#366480] uppercase tracking-wider bg-[#366480]/5 px-2 py-0.5 rounded w-fit">
+                                                                <span>Por: {audit.usuario_nombre}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
                                         })}
                                     </div>
                                 </div>
                             </div>
                         );
                     })(),
+                    document.body
+                )}
+
+                {showConfirmComprobanteModal && createPortal(
+                    <div
+                        className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/30 overflow-hidden animate-backdrop"
+                        style={{ backdropFilter: 'blur(8px)', fontFamily: "'Manrope', sans-serif" }}
+                    >
+                        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-md border border-white/60 flex flex-col max-h-[90vh] relative overflow-hidden animate-modal-panel">
+                            <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10"></div>
+
+                            {/* Header */}
+                            <div className="px-5 py-4 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-xl bg-amber-500 flex items-center justify-center shadow-sm">
+                                        <Edit3 className="w-4 h-4 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-base font-black text-[#2c3434] uppercase tracking-tight">Verificar Comprobante</h2>
+                                        <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">
+                                            Venta: {showConfirmComprobanteModal.cliente_nombre}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setShowConfirmComprobanteModal(null)}
+                                    className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar">
+                                {/* Locking status alert */}
+                                {showConfirmComprobanteModal.cotizacion_comprobante_locked ? (
+                                    <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl flex gap-3 text-left">
+                                        <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[12px] font-bold text-emerald-800">Comprobante verificado y bloqueado</p>
+                                            <p className="text-[11px] text-emerald-600 mt-0.5 leading-relaxed">
+                                                Los vendedores ya no pueden editar esta información. Como tesorero, puedes realizar correcciones administrativas si es necesario.
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="p-3.5 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3 text-left">
+                                        <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-[12px] font-bold text-amber-800">Comprobante pendiente de verificación</p>
+                                            <p className="text-[11px] text-amber-600 mt-0.5 leading-relaxed">
+                                                Al confirmar y bloquear, esta información quedará inmutable para los vendedores en la sección de Cotizaciones.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Document Type */}
+                                <div className="space-y-2 text-left">
+                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Tipo de Documento</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {(['BOLETA', 'FACTURA', 'TICKET', 'COTIZACION'] as const).map((type) => (
+                                            <label
+                                                key={type}
+                                                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border cursor-pointer transition-all ${
+                                                    confirmComprobanteType === type
+                                                        ? 'bg-[#4A90E2]/5 border-[#4A90E2] text-[#4A90E2] font-semibold'
+                                                        : 'bg-white border-[#e8eded] text-slate-600 hover:bg-[#f8faf9]'
+                                                }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="confirmDocType"
+                                                    value={type}
+                                                    checked={confirmComprobanteType === type}
+                                                    onChange={() => setConfirmComprobanteType(type)}
+                                                    className="sr-only"
+                                                />
+                                                <span className="text-[12px] tracking-wide">{type}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Voucher Number */}
+                                <div className="space-y-2 text-left">
+                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">N° de Comprobante</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={confirmComprobanteNumber}
+                                            onChange={(e) => setConfirmComprobanteNumber(e.target.value)}
+                                            placeholder="N° de comprobante de pago..."
+                                            className="w-full px-4 py-3 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-sm font-medium text-[#2c3434] placeholder-slate-400 focus:outline-none focus:border-[#4A90E2] focus:bg-white transition-colors"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Mini History / Audit Log */}
+                                <div className="space-y-2.5 text-left border-t border-[#d3dcdb]/20 pt-4">
+                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Historial de Cambios</label>
+                                    <div className="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
+                                        {loadingConfirmComprobanteAuditLogs ? (
+                                            <div className="py-4 flex items-center justify-center gap-2 text-[#8b9ba5] text-[11px] font-semibold uppercase tracking-widest">
+                                                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Cargando auditoría...
+                                            </div>
+                                        ) : confirmComprobanteAuditLogs.length === 0 ? (
+                                            <p className="text-[11px] font-medium text-slate-400 italic py-2 text-center">No hay modificaciones previas registradas</p>
+                                        ) : (
+                                            confirmComprobanteAuditLogs.map((log) => {
+                                                const isDoc = log.campo === 'tipo_documento';
+                                                const isLock = log.campo === 'comprobante_locked';
+                                                let desc = "";
+                                                if (isDoc) {
+                                                    desc = `Documento cambiado de "${log.valor_anterior || 'COTIZACION'}" a "${log.valor_nuevo}"`;
+                                                } else if (isLock) {
+                                                    desc = "Comprobante verificado y bloqueado";
+                                                } else {
+                                                    desc = `N° Comprobante corregido de "${log.valor_anterior || '—'}" a "${log.valor_nuevo || '—'}"`;
+                                                }
+                                                return (
+                                                    <div key={log.id} className="p-2.5 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-[11px] space-y-1">
+                                                        <div className="flex items-center justify-between text-slate-400 font-semibold uppercase tracking-wider text-[9px]">
+                                                            <span>Por: {log.usuario_nombre}</span>
+                                                            <span className="tabular-nums">{format(new Date(log.created_at), "dd/MM/yyyy · HH:mm", { locale: es })}</span>
+                                                        </div>
+                                                        <p className="font-medium text-slate-600 leading-tight">{desc}</p>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer actions */}
+                            <div className="px-5 py-4 border-t border-[#d3dcdb]/30 bg-white/40 flex items-center justify-end gap-3 rounded-b-3xl shrink-0">
+                                <button
+                                    onClick={() => setShowConfirmComprobanteModal(null)}
+                                    className="px-5 py-2.5 bg-[#f0f5f4] text-slate-600 text-[11px] font-black rounded-xl uppercase tracking-widest hover:bg-[#e8eded] transition-all"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleConfirmComprobante}
+                                    disabled={savingConfirmComprobante}
+                                    className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white text-[11px] font-black rounded-xl uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-600/10 transition-all disabled:opacity-50"
+                                >
+                                    {savingConfirmComprobante ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Guardando...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ShieldCheck className="w-3.5 h-3.5" /> Confirmar y Bloquear
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
                     document.body
                 )}
 
@@ -1515,7 +1853,7 @@ export const SalesTreasuryPage = () => {
                 {/* ── KARDEX DE CUENTAS MODAL ──────────────────────────────────── */}
                 {showKardexModal && createPortal(
                     <div className={`treasury-ui fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/20 overflow-hidden ${isClosingKardexModal ? 'animate-backdrop-out' : 'animate-backdrop'}`} style={{ backdropFilter: 'blur(6px)' }}>
-                        <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-full max-w-5xl border border-white/50 flex flex-col max-h-[95vh] min-h-[640px] relative ${isClosingKardexModal ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
+                        <div className={`bg-white/90 rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.12)] w-[95vw] max-w-[1450px] border border-white/50 flex flex-col max-h-[95vh] min-h-[640px] relative ${isClosingKardexModal ? 'animate-modal-panel-out' : 'animate-modal-panel'}`}>
                             <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/50 z-10"></div>
 
                             {/* Header */}
@@ -1524,7 +1862,7 @@ export const SalesTreasuryPage = () => {
                                     <BarChart2 className="w-8 h-8 text-[#366480] drop-shadow-sm" />
                                     <div>
                                         <h2 className="text-xl font-black text-[#2c3434] uppercase tracking-tight">Historial de Cuentas</h2>
-                                        <p className="text-[9px] font-bold text-[#8b9ba5] uppercase tracking-widest mt-0.5">Kardex de movimientos por cuenta bancaria</p>
+                                        <p className="text-[11px] font-bold text-[#6f7e8a] uppercase tracking-wider mt-0.5">Kardex de movimientos por cuenta bancaria</p>
                                     </div>
                                 </div>
                                 <button onClick={closeKardexModal} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
@@ -1539,24 +1877,46 @@ export const SalesTreasuryPage = () => {
                                     <select
                                         value={kardexAccount}
                                         onChange={(e) => setKardexAccount(e.target.value)}
-                                        className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-12 py-3 rounded-full text-[11px] font-black uppercase tracking-widest outline-none cursor-pointer hover:bg-[#e8eded] transition-all border border-[#d3dcdb]/30"
+                                        className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-12 py-3 rounded-full text-[13px] font-black uppercase tracking-widest outline-none cursor-pointer hover:bg-[#e8eded] transition-all border border-[#d3dcdb]/30"
                                     >
                                         {KARDEX_ACCOUNTS.map(acc => (
                                             <option key={acc} value={acc}>{acc === 'TODOS' ? 'Todas las cuentas' : acc}</option>
                                         ))}
                                     </select>
-                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
+                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#366480] pointer-events-none" />
+                                </div>
+
+                                {/* Search bar */}
+                                <div className="relative min-w-[240px]">
+                                    <span className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+                                        <Search className="w-4 h-4 text-[#8b9ba5]" />
+                                    </span>
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar por descripción..."
+                                        value={kardexSearch}
+                                        onChange={(e) => setKardexSearch(e.target.value)}
+                                        className="bg-[#f8faf9] text-[#244c66] pl-10 pr-8 py-2.5 rounded-full text-[13px] font-bold outline-none border border-[#d3dcdb]/30 placeholder-[#8b9ba5] focus:ring-2 focus:ring-[#366480]/15 focus:bg-white transition-all w-64"
+                                    />
+                                    {kardexSearch && (
+                                        <button
+                                            onClick={() => setKardexSearch('')}
+                                            className="absolute inset-y-0 right-4 flex items-center text-[#8b9ba5] hover:text-rose-500 font-bold text-xs"
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
                                 </div>
 
                                 {/* Date range */}
                                 <div className="relative ml-auto" ref={kardexDatePickerRef}>
                                     <button
                                         onClick={() => setShowKardexDatePicker(p => !p)}
-                                        className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[11px] font-bold hover:bg-[#e8eded] transition-all"
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[13px] font-bold hover:bg-[#e8eded] transition-all"
                                     >
                                         <Calendar className="w-4 h-4 text-[#4A90E2]" />
                                         {`${format(new Date(kardexStart + 'T12:00:00'), "dd MMM", { locale: es })} — ${format(new Date(kardexEnd + 'T12:00:00'), "dd MMM yyyy", { locale: es })}`}
-                                        <ChevronDown className={`w-3 h-3 transition-transform ${showKardexDatePicker ? 'rotate-180' : ''}`} />
+                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showKardexDatePicker ? 'rotate-180' : ''}`} />
                                     </button>
                                     <RangeDatePicker
                                         isOpen={showKardexDatePicker}
@@ -1576,46 +1936,50 @@ export const SalesTreasuryPage = () => {
                                 ) : (
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/95 backdrop-blur-md border-b border-[#d3dcdb]/20">
-                                            <tr className="text-[#366480]/40 text-[9px] font-black uppercase tracking-[0.25em]">
-                                                <th className="py-4 pl-8 w-36">Fecha</th>
-                                                {kardexAccount === 'TODOS' && <th className="py-4 px-4 w-28">Cuenta</th>}
+                                            <tr className="text-[#366480]/70 text-[13px] font-black uppercase tracking-wider">
+                                                <th className="py-4 pl-8 w-40">Fecha</th>
+                                                {kardexAccount === 'TODOS' && <th className="py-4 px-4 w-32">Cuenta</th>}
                                                 <th className="py-4 px-4">Descripción</th>
-                                                <th className="py-4 px-4">Contrapartida</th>
-                                                <th className="py-4 px-4 text-right text-emerald-600/60">Entrada (S/)</th>
-                                                <th className="py-4 px-4 text-right text-rose-500/60">Salida (S/)</th>
-                                                {kardexAccount !== 'TODOS' && <th className="py-4 pr-8 text-right">Saldo (S/)</th>}
+                                                <th className="py-4 px-4 w-40">Contrapartida</th>
+                                                <th className="py-4 px-4 w-36">Usuario</th>
+                                                <th className="py-4 px-4 text-right text-emerald-600/70 w-36">Entrada (S/)</th>
+                                                <th className="py-4 px-4 text-right text-rose-500/70 w-36">Salida (S/)</th>
+                                                {kardexAccount !== 'TODOS' && <th className="py-4 pr-8 text-right w-36">Saldo (S/)</th>}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {kardexRows.map((row, i) => (
+                                            {paginatedKardex.map((row, i) => (
                                                 <tr key={i} className="hover:bg-[#f8faf9]/60 transition-colors">
                                                     <td className="py-3.5 pl-8 whitespace-nowrap">
-                                                        <span className="text-[10px] font-bold text-[#8b9ba5]">{format(new Date(row.date), 'dd/MM/yy', { locale: es })}</span>
-                                                        <span className="block text-[9px] font-bold text-[#d3dcdb]">{format(new Date(row.date), 'HH:mm', { locale: es })}{row.numOp ? ` · #${row.numOp}` : ''}</span>
+                                                        <span className="text-[14px] font-bold text-[#2c3434]">{format(new Date(row.date), 'dd/MM/yy', { locale: es })}</span>
+                                                        <span className="block text-[12px] font-semibold text-[#8b9ba5] mt-0.5">{format(new Date(row.date), 'HH:mm', { locale: es })}{row.numOp ? ` · #${row.numOp}` : ''}</span>
                                                     </td>
                                                     {kardexAccount === 'TODOS' && (
                                                         <td className="py-3.5 px-4">
-                                                            <span className="px-3 py-1 bg-[#244c66]/10 text-[#244c66] text-[9px] font-black rounded-full uppercase tracking-wide">
+                                                            <span className="px-4 py-2 bg-[#244c66]/10 text-[#244c66] text-[14px] font-semibold rounded-full uppercase tracking-wide">
                                                                 {row.cuenta}
                                                             </span>
                                                         </td>
                                                     )}
-                                                    <td className="py-3.5 px-4 text-[11px] font-bold text-[#2c3434] max-w-[220px] truncate uppercase" title={row.desc}>
+                                                    <td className="py-3.5 px-4 text-[14px] font-bold text-[#2c3434] max-w-[220px] truncate uppercase" title={row.desc}>
                                                         {row.desc || '—'}
                                                     </td>
                                                     <td className="py-3.5 px-4">
-                                                        <span className="px-3 py-1 bg-[#f0f5f4] text-[#366480] text-[9px] font-black rounded-full uppercase tracking-wide">
+                                                        <span className="px-4 py-2 bg-[#f0f5f4] text-[#366480] text-[14px] font-semibold rounded-full uppercase tracking-wide">
                                                             {row.contra}
                                                         </span>
                                                     </td>
-                                                    <td className="py-3.5 px-4 text-right tabular-nums text-[12px] font-[900]">
+                                                    <td className="py-3.5 px-4 text-[14px] font-semibold text-[#366480] max-w-[120px] truncate uppercase" title={row.usuario_nombre || '—'}>
+                                                        {row.usuario_nombre || '—'}
+                                                    </td>
+                                                    <td className="py-3.5 px-4 text-right tabular-nums text-[15px] font-black">
                                                         {row.entrada > 0 ? <span className="text-emerald-600">+{formatCurrency(row.entrada)}</span> : <span className="text-[#d3dcdb]">—</span>}
                                                     </td>
-                                                    <td className="py-3.5 px-4 text-right tabular-nums text-[12px] font-[900]">
+                                                    <td className="py-3.5 px-4 text-right tabular-nums text-[15px] font-black">
                                                         {row.salida > 0 ? <span className="text-rose-500">−{formatCurrency(row.salida)}</span> : <span className="text-[#d3dcdb]">—</span>}
                                                     </td>
                                                     {kardexAccount !== 'TODOS' && (
-                                                        <td className={`py-3.5 pr-8 text-right tabular-nums text-[13px] font-black ${row.balance >= 0 ? 'text-[#2c3434]' : 'text-rose-600'}`}>
+                                                        <td className={`py-3.5 pr-8 text-right tabular-nums text-[15px] font-[900] ${row.balance >= 0 ? 'text-[#2c3434]' : 'text-rose-600'}`}>
                                                             {formatCurrency(row.balance)}
                                                         </td>
                                                     )}
@@ -1626,6 +1990,34 @@ export const SalesTreasuryPage = () => {
                                 )}
                             </div>
 
+                            {kardexPageTotal > 1 && (
+                                <div className="flex items-center justify-center gap-2 py-4 bg-white/20 shrink-0 border-t border-[#f0f5f4]">
+                                    <button
+                                        onClick={() => setKardexPage(p => Math.max(1, p - 1))}
+                                        disabled={kardexPage === 1}
+                                        className="px-3 py-2 rounded-xl text-[11px] font-black text-[#366480] hover:bg-[#f0f5f4] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                    >
+                                        <ChevronDown className="w-4 h-4 rotate-90" />
+                                    </button>
+                                    {Array.from({ length: kardexPageTotal }, (_, i) => i + 1).map(page => (
+                                        <button
+                                            key={page}
+                                            onClick={() => setKardexPage(page)}
+                                            className={`w-8 h-8 rounded-xl text-[11px] font-black transition-all ${kardexPage === page ? 'bg-[#244c66] text-white shadow-sm' : 'text-[#366480]/60 hover:bg-[#f0f5f4]'}`}
+                                        >
+                                            {page}
+                                        </button>
+                                    ))}
+                                    <button
+                                        onClick={() => setKardexPage(p => Math.min(kardexPageTotal, p + 1))}
+                                        disabled={kardexPage === kardexPageTotal}
+                                        className="px-3 py-2 rounded-xl text-[11px] font-black text-[#366480] hover:bg-[#f0f5f4] disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                    >
+                                        <ChevronDown className="w-4 h-4 -rotate-90" />
+                                    </button>
+                                </div>
+                            )}
+
                             {/* Footer — summary + actions */}
                             {kardexRows.length > 0 && (() => {
                                 const totalEntrada = kardexRows.reduce((s, r) => s + r.entrada, 0);
@@ -1633,7 +2025,7 @@ export const SalesTreasuryPage = () => {
                                 const isAll = kardexAccount === 'TODOS';
                                 const saldoFinal   = isAll
                                     ? KARDEX_TRACKED.reduce((acc, a) => acc + calculateGlobalBalance(a), 0)
-                                    : kardexRows[kardexRows.length - 1]?.balance ?? 0;
+                                    : kardexRows[0]?.balance ?? 0;
                                 return (
                                     <div className="px-8 py-5 border-t border-[#f0f5f4] bg-white/40 shrink-0 flex items-center justify-between gap-6 rounded-b-3xl">
                                         <div className="flex items-center gap-8">
@@ -1658,23 +2050,25 @@ export const SalesTreasuryPage = () => {
                                                     const dateLabel = `${format(new Date(kardexStart + 'T12:00:00'), 'dd/MM/yyyy', { locale: es })} al ${format(new Date(kardexEnd + 'T12:00:00'), 'dd/MM/yyyy', { locale: es })}`;
                                                     if (isAll) {
                                                         const title = `HISTORIAL UNIFICADO DE CUENTAS — ${dateLabel}`;
-                                                        const cols = ['FECHA', 'CUENTA', 'DESCRIPCIÓN', 'CONTRAPARTIDA', 'ENTRADA (S/)', 'SALIDA (S/)'];
+                                                        const cols = ['FECHA', 'CUENTA', 'DESCRIPCIÓN', 'CONTRAPARTIDA', 'USUARIO', 'ENTRADA (S/)', 'SALIDA (S/)'];
                                                         const rows = kardexRows.map(r => [
                                                             format(new Date(r.date), 'dd/MM/yy HH:mm', { locale: es }),
                                                             r.cuenta.toUpperCase(),
                                                             (r.desc || '').toUpperCase(),
                                                             (r.contra || '—').toUpperCase(),
+                                                            (r.usuario_nombre || '—').toUpperCase(),
                                                             r.entrada > 0 ? `+${formatCurrency(r.entrada)}` : '—',
                                                             r.salida  > 0 ? `-${formatCurrency(r.salida)}`  : '—'
                                                         ]);
                                                         exportToPDF(title, cols, rows, `Kardex_Unificado`);
                                                     } else {
                                                         const title = `HISTORIAL DE CUENTA ${kardexAccount} — ${dateLabel}`;
-                                                        const cols = ['FECHA', 'DESCRIPCIÓN', 'CONTRAPARTIDA', 'ENTRADA (S/)', 'SALIDA (S/)', 'SALDO (S/)'];
+                                                        const cols = ['FECHA', 'DESCRIPCIÓN', 'CONTRAPARTIDA', 'USUARIO', 'ENTRADA (S/)', 'SALIDA (S/)', 'SALDO (S/)'];
                                                         const rows = kardexRows.map(r => [
                                                             format(new Date(r.date), 'dd/MM/yy HH:mm', { locale: es }),
                                                             (r.desc || '').toUpperCase(),
                                                             (r.contra || '—').toUpperCase(),
+                                                            (r.usuario_nombre || '—').toUpperCase(),
                                                             r.entrada > 0 ? `+${formatCurrency(r.entrada)}` : '—',
                                                             r.salida  > 0 ? `-${formatCurrency(r.salida)}`  : '—',
                                                             formatCurrency(r.balance)
@@ -1812,8 +2206,8 @@ export const SalesTreasuryPage = () => {
                             <div className="flex items-center gap-4">
                                 <Banknote className="w-8 h-8 text-[#4A90E2] drop-shadow-sm" />
                                 <div>
-                                    <h2 className="text-xl font-black text-[#2c3434] uppercase tracking-tight">Libro de Caja Efectivo</h2>
-                                    <p className="text-[9px] font-bold text-[#8b9ba5] uppercase tracking-widest mt-0.5">Detalle de ingresos y salidas en efectivo</p>
+                                    <h2 className="text-2xl font-black text-[#2c3434] uppercase tracking-tight">Libro de Caja Efectivo</h2>
+                                    <p className="text-xs font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">Detalle de ingresos y salidas en efectivo</p>
                                 </div>
                             </div>
                             <button onClick={closeCashModal} className="w-10 h-10 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
@@ -1832,7 +2226,7 @@ export const SalesTreasuryPage = () => {
                                         }
                                         setShowCashDatePicker(p => !p);
                                     }}
-                                    className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[11px] font-bold hover:bg-[#e8eded] transition-all"
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-[#f8faf9] text-[#366480] rounded-full text-[13px] font-bold hover:bg-[#e8eded] transition-all"
                                 >
                                     <Calendar className="w-4 h-4 text-[#4A90E2]" />
                                     {cashFilterStart && cashFilterEnd
@@ -1874,7 +2268,7 @@ export const SalesTreasuryPage = () => {
                                             setCashFilterEnd(end);
                                         }
                                     }}
-                                    className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-10 py-2.5 rounded-full text-[11px] font-bold outline-none cursor-pointer hover:bg-[#e8eded] transition-all"
+                                    className="appearance-none bg-[#f8faf9] text-[#244c66] pl-5 pr-10 py-2.5 rounded-full text-[13px] font-bold outline-none cursor-pointer hover:bg-[#e8eded] transition-all"
                                 >
                                     <option value="PERSONALIZADO">Personalizado</option>
                                     <option value="HOY">Hoy</option>
@@ -1898,12 +2292,12 @@ export const SalesTreasuryPage = () => {
 
                             <div className="ml-auto flex items-center gap-3">
                                 <div className="bg-[#244c66] px-5 py-2.5 rounded-full text-white shadow-md flex items-center gap-3">
-                                    <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-70">Saldo Disponible</span>
-                                    <span className="text-base font-black tabular-nums">S/ {saldoEf.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                    <span className="text-xs font-black uppercase tracking-[0.2em] opacity-70">Saldo Disponible</span>
+                                    <span className="text-[17px] font-black tabular-nums">S/ {saldoEf.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
                                 </div>
                                 <button
                                     onClick={() => setShowDeposit8059Modal(true)}
-                                    className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-[11px] font-black uppercase tracking-widest shadow-md transition-all"
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-[13px] font-black uppercase tracking-widest shadow-md transition-all"
                                 >
                                     <ArrowRightLeft className="w-4 h-4" /> Depósito 8059
                                 </button>
@@ -1914,7 +2308,7 @@ export const SalesTreasuryPage = () => {
                         <div className="flex-1 overflow-auto custom-scrollbar">
                             <table className="w-full text-left">
                                 <thead className="sticky top-0 z-10 bg-[#f7faf9]/95 backdrop-blur-md border-b border-[#d3dcdb]/20">
-                                    <tr className="text-[#366480]/40 text-[9px] font-black uppercase tracking-[0.25em]">
+                                    <tr className="text-[#366480]/70 text-[12px] font-extrabold uppercase tracking-wider">
                                         <th className="py-3.5 pl-8">Fecha</th>
                                         <th className="py-3.5 px-3 text-center">Tipo</th>
                                         <th className="py-3.5 px-3">Movimiento</th>
@@ -1937,7 +2331,7 @@ export const SalesTreasuryPage = () => {
                                                                 <div className="flex-1 h-px bg-[#d3dcdb]/40"></div>
                                                                 <div className="flex items-center gap-2">
                                                                     <Clock className="w-3 h-3 text-[#4A90E2]" />
-                                                                    <span className="text-[9px] font-black text-[#366480] uppercase tracking-[0.3em]">Corte del día {prevItem?.date}</span>
+                                                                    <span className="text-[11px] font-bold text-[#366480] uppercase tracking-[0.2em]">Corte del día {prevItem?.date}</span>
                                                                 </div>
                                                                 <div className="flex-1 h-px bg-[#d3dcdb]/40"></div>
                                                             </div>
@@ -1947,12 +2341,12 @@ export const SalesTreasuryPage = () => {
                                                 {item.isConsolidated ? (
                                                     <React.Fragment>
                                                         <tr className="hover:bg-[#f8faf9]/60 transition-colors group">
-                                                            <td className="py-3 pl-8 text-[11px] font-black text-[#2c3434] tabular-nums">{item.date}</td>
+                                                            <td className="py-3.5 pl-8 text-[14px] font-bold text-[#2c3434] tabular-nums">{item.date}</td>
                                                             <td className="py-3 px-3 text-center">
-                                                                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 text-[9px] font-black rounded-full uppercase tracking-wide">Ingreso</span>
+                                                                <span className="px-3 py-1 bg-emerald-50 text-emerald-600 text-[12px] font-extrabold rounded-full uppercase tracking-wide">Ingreso</span>
                                                             </td>
                                                             <td className="py-3 px-3">
-                                                                <span className="text-[11px] font-bold text-[#2c3434] uppercase">Consolidado Ventas ({item.count})</span>
+                                                                <span className="text-[14px] font-bold text-[#2c3434] uppercase">Consolidado Ventas ({item.count})</span>
                                                             </td>
                                                             <td className="py-3 px-3">
                                                                 <div
@@ -1963,15 +2357,15 @@ export const SalesTreasuryPage = () => {
                                                                     }}
                                                                     className="inline-flex items-center gap-1.5 cursor-pointer group/btn"
                                                                 >
-                                                                    <span className="text-[9px] font-extrabold text-[#8b9ba5] group-hover/btn:text-[#4A90E2] uppercase italic transition-colors">Ver detalle</span>
+                                                                    <span className="text-[12px] font-extrabold text-[#8b9ba5] group-hover/btn:text-[#4A90E2] uppercase italic transition-colors">Ver detalle</span>
                                                                     <ChevronDown className={`w-3 h-3 text-[#d3dcdb] group-hover/btn:text-[#4A90E2] transition-all duration-300 ${selectedCashDay === item.date ? 'rotate-180' : ''}`} />
                                                                 </div>
                                                             </td>
                                                             <td className="py-3 px-3 text-right">
-                                                                <span className="text-[12px] font-black text-emerald-600 tabular-nums">S/ {Number(item.total).toFixed(2)}</span>
+                                                                <span className="text-[15px] font-black text-emerald-600 tabular-nums">S/ {Number(item.total).toFixed(2)}</span>
                                                             </td>
                                                             <td className="py-3 pr-8 text-center">
-                                                                <span className="text-[10px] font-bold text-[#d3dcdb] tabular-nums italic">—</span>
+                                                                <span className="text-[13px] font-bold text-[#d3dcdb] tabular-nums italic">—</span>
                                                             </td>
                                                         </tr>
                                                         <tr className={selectedCashDay === item.date ? 'bg-[#f8faf9]/40' : ''}>
@@ -1983,10 +2377,10 @@ export const SalesTreasuryPage = () => {
                                                                                 <table className="w-full text-left">
                                                                                     <thead className="bg-[#f7faf9]/50 border-b border-[#d3dcdb]/20">
                                                                                         <tr>
-                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-[#366480]/50">Hora</th>
-                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-[#366480]/50">Referencia Venta</th>
-                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-[#366480]/50">Observación</th>
-                                                                                            <th className="py-3 px-5 text-[9px] font-black uppercase tracking-widest text-right text-[#366480]/50">Subtotal</th>
+                                                                                            <th className="py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[#366480]/60">Hora</th>
+                                                                                            <th className="py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[#366480]/60">Referencia Venta</th>
+                                                                                            <th className="py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-[#366480]/60">Observación</th>
+                                                                                            <th className="py-3 px-5 text-[11px] font-bold uppercase tracking-wider text-right text-[#366480]/60">Subtotal</th>
                                                                                         </tr>
                                                                                     </thead>
                                                                                     <tbody className="divide-y divide-[#d3dcdb]/10">
@@ -1996,15 +2390,15 @@ export const SalesTreasuryPage = () => {
                                                                                             const v = (ventas || []).find(v => v.id === innerItem.referencia_id);
                                                                                             return (
                                                                                                 <tr key={innerItem.id} className="hover:bg-[#f8faf9]/40 transition-colors">
-                                                                                                    <td className="py-3 px-5 text-[10px] font-bold text-[#8b9ba5] tabular-nums">{format(new Date(innerItem.created_at), 'HH:mm:ss')}</td>
+                                                                                                    <td className="py-3 px-5 text-[13px] font-medium text-[#8b9ba5] tabular-nums">{format(new Date(innerItem.created_at), 'HH:mm:ss')}</td>
                                                                                                     <td className="py-3 px-5">
                                                                                                         <div className="flex flex-col">
-                                                                                                            <span className="text-[10px] font-black text-[#244c66] uppercase tracking-tighter">#{v?.codigo_cotizacion || innerItem.referencia_id?.slice(0,8)}</span>
-                                                                                                            <span className="text-[9px] font-bold text-[#8b9ba5] uppercase">{v?.cliente_nombre}</span>
+                                                                                                            <span className="text-[13px] font-bold text-[#244c66] uppercase tracking-tighter">#{v?.codigo_cotizacion || innerItem.referencia_id?.slice(0,8)}</span>
+                                                                                                            <span className="text-[11px] font-medium text-[#8b9ba5] uppercase">{v?.cliente_nombre}</span>
                                                                                                         </div>
                                                                                                     </td>
-                                                                                                    <td className="py-3 px-5 text-[10px] font-bold text-[#8b9ba5] italic">{(innerItem.observaciones || '').toUpperCase()}</td>
-                                                                                                    <td className="py-3 px-5 text-right text-[11px] font-black text-[#2c3434] tabular-nums">S/ {Number(innerItem.monto).toFixed(2)}</td>
+                                                                                                    <td className="py-3 px-5 text-[13px] font-medium text-[#8b9ba5] italic">{(innerItem.observaciones || '').toUpperCase()}</td>
+                                                                                                    <td className="py-3 px-5 text-right text-[14px] font-black text-[#2c3434] tabular-nums">S/ {Number(innerItem.monto).toFixed(2)}</td>
                                                                                                 </tr>
                                                                                             );
                                                                                         })}
@@ -2019,32 +2413,32 @@ export const SalesTreasuryPage = () => {
                                                     </React.Fragment>
                                                 ) : (
                                                     <tr key={item.id} className="hover:bg-[#f8faf9]/60 transition-colors">
-                                                        <td className="py-3 pl-8 text-[11px] font-black text-[#2c3434]/60 tabular-nums">{item.date}</td>
+                                                        <td className="py-3.5 pl-8 text-[14px] font-bold text-[#2c3434]/70 tabular-nums">{item.date}</td>
                                                         <td className="py-3 px-3 text-center">
-                                                            <span className={`px-2.5 py-1 text-[9px] font-black rounded-full uppercase tracking-wide ${
+                                                            <span className={`px-3 py-1 text-[12px] font-extrabold rounded-full uppercase tracking-wide ${
                                                                 item.tipo_movimiento === 'EGRESO' ? 'bg-rose-50 text-rose-600' : 'bg-[#244c66]/10 text-[#244c66]'
                                                             }`}>
                                                                 {item.tipo_movimiento}
                                                             </span>
                                                         </td>
                                                         <td className="py-3 px-3">
-                                                            <span className="text-[11px] font-bold text-[#2c3434] uppercase">{item.categoria}</span>
+                                                            <span className="text-[14px] font-bold text-[#2c3434] uppercase">{item.categoria}</span>
                                                         </td>
-                                                        <td className="py-3 px-3 text-[10px] font-bold text-[#8b9ba5] italic uppercase max-w-[260px] truncate" title={item.observaciones}>
+                                                        <td className="py-3.5 px-3 text-[13px] font-medium text-[#8b9ba5] italic uppercase max-w-[260px] truncate" title={item.observaciones}>
                                                             {item.observaciones}
                                                         </td>
                                                         <td className="py-3 px-3 text-right">
-                                                            <span className={`text-[12px] font-black tabular-nums ${item.tipo_movimiento === 'EGRESO' || item.cuenta_origen === 'Efectivo' ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                            <span className={`text-[15px] font-black tabular-nums ${item.tipo_movimiento === 'EGRESO' || item.cuenta_origen === 'Efectivo' ? 'text-rose-600' : 'text-emerald-600'}`}>
                                                                 S/ {Number(item.monto).toFixed(2)}
                                                             </span>
                                                         </td>
                                                         <td className="py-3 pr-8 text-center">
                                                             {item.cuenta_destino === '8059' ? (
-                                                                <span className="text-[12px] font-black text-emerald-600 tabular-nums">
+                                                                <span className="text-[15px] font-black text-emerald-600 tabular-nums">
                                                                     S/ {Number(item.monto).toFixed(2)}
                                                                 </span>
                                                             ) : (
-                                                                <span className="text-[10px] font-bold text-[#d3dcdb] tabular-nums italic">—</span>
+                                                                <span className="text-[13px] font-bold text-[#d3dcdb] tabular-nums italic">—</span>
                                                             )}
                                                         </td>
                                                     </tr>
@@ -2060,16 +2454,16 @@ export const SalesTreasuryPage = () => {
                         <div className="px-8 py-4 border-t border-[#f0f5f4] bg-white/40 shrink-0 flex items-center justify-between gap-6 rounded-b-3xl">
                             <div className="flex items-center gap-8">
                                 <div className="flex flex-col">
-                                    <span className="text-[8px] font-black text-[#8b9ba5] uppercase tracking-widest">Entradas Totales</span>
-                                    <span className="text-[15px] font-[900] text-emerald-600 tabular-nums">+S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_destino === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
+                                    <span className="text-[11px] font-bold text-[#8b9ba5] uppercase tracking-wider">Entradas Totales</span>
+                                    <span className="text-[18px] font-black text-emerald-600 tabular-nums">+S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_destino === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
                                 </div>
                                 <div className="w-px h-8 bg-[#d3dcdb]/30"></div>
                                 <div className="flex flex-col">
-                                    <span className="text-[8px] font-black text-[#8b9ba5] uppercase tracking-widest">Salidas Totales</span>
-                                    <span className="text-[15px] font-[900] text-rose-500 tabular-nums">−S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_origen === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
+                                    <span className="text-[11px] font-bold text-[#8b9ba5] uppercase tracking-wider">Salidas Totales</span>
+                                    <span className="text-[18px] font-black text-rose-500 tabular-nums">−S/ {formatCurrency(cashOnlyMovements.filter(m => m.cuenta_origen === 'Efectivo').reduce((a, b) => a + Number(b.monto), 0))}</span>
                                 </div>
                             </div>
-                            <button onClick={() => setShowCashAccountModal(false)} className="px-6 py-3 bg-[#2c3434] text-white text-[10px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
+                            <button onClick={() => setShowCashAccountModal(false)} className="px-6 py-3 bg-[#2c3434] text-white text-[12px] font-black rounded-xl uppercase tracking-widest hover:bg-[#366480] transition-all">Cerrar</button>
                         </div>
                     </div>
                 </div>,

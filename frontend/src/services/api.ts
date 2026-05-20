@@ -956,7 +956,7 @@ export const api = {
 
     getVentas: async (): Promise<VentaCabecera[]> => {
         // Phase 1: Fetch all necessary data
-        const [optsResult, ventasResult, quotesResult, profilesResult, cotizacionesResult] = await Promise.all([
+        const [optsResult, ventasResult, quotesResult, profilesResult] = await Promise.all([
             supabase
                 .from('optimizations')
                 .select('id, code, client_name, project_name, created_at')
@@ -971,10 +971,20 @@ export const api = {
             supabase
                 .from('profiles')
                 .select('id, display_name'),
-            supabase
-                .from('cotizaciones')
-                .select('codigo, descripcion, numero_comprobante'),
         ]);
+
+        let cotizacionesResult: any;
+        try {
+            cotizacionesResult = await supabase
+                .from('cotizaciones')
+                .select('codigo, descripcion, numero_comprobante, tipo_documento, comprobante_locked');
+            if (cotizacionesResult.error) throw cotizacionesResult.error;
+        } catch (err) {
+            console.warn("Retrying cotizaciones fetch without comprobante_locked...", err);
+            cotizacionesResult = await supabase
+                .from('cotizaciones')
+                .select('codigo, descripcion, numero_comprobante, tipo_documento');
+        }
 
         const opts = optsResult.data || [];
         const allVentas = ventasResult.data || [];
@@ -987,9 +997,13 @@ export const api = {
 
         const cotDescMap = new Map<string, string>();
         const cotComprobanteMap = new Map<string, string>();
+        const cotTipoDocMap = new Map<string, string>();
+        const cotLockedMap = new Map<string, boolean>();
         (cotizacionesResult.data || []).forEach((c: any) => {
             if (c.codigo && c.descripcion) cotDescMap.set(c.codigo, c.descripcion);
             if (c.codigo && c.numero_comprobante) cotComprobanteMap.set(c.codigo, c.numero_comprobante);
+            if (c.codigo && c.tipo_documento) cotTipoDocMap.set(c.codigo, c.tipo_documento);
+            cotLockedMap.set(c.codigo, !!c.comprobante_locked);
         });
 
         // Build mappings for efficient lookup
@@ -1027,6 +1041,8 @@ export const api = {
                     usuario_nombre: matchedVenta.usuario_nombre ?? (matchedVenta.user_id ? (profileMap.get(matchedVenta.user_id) ?? null) : null),
                     cotizacion_descripcion: matchedVenta.codigo_cotizacion ? (cotDescMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
                     cotizacion_numero_comprobante: matchedVenta.codigo_cotizacion ? (cotComprobanteMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
+                    cotizacion_tipo_documento: matchedVenta.codigo_cotizacion ? (cotTipoDocMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
+                    cotizacion_comprobante_locked: matchedVenta.codigo_cotizacion ? (cotLockedMap.get(matchedVenta.codigo_cotizacion) ?? false) : false,
                 } as VentaCabecera);
             } else {
                 // Only if no sale exists, use a stub (deduplicated by opt id)
@@ -1057,6 +1073,8 @@ export const api = {
                     usuario_nombre: v.usuario_nombre ?? (v.user_id ? (profileMap.get(v.user_id) ?? null) : null),
                     cotizacion_descripcion: v.codigo_cotizacion ? (cotDescMap.get(v.codigo_cotizacion) ?? null) : null,
                     cotizacion_numero_comprobante: v.codigo_cotizacion ? (cotComprobanteMap.get(v.codigo_cotizacion) ?? null) : null,
+                    cotizacion_tipo_documento: v.codigo_cotizacion ? (cotTipoDocMap.get(v.codigo_cotizacion) ?? null) : null,
+                    cotizacion_comprobante_locked: v.codigo_cotizacion ? (cotLockedMap.get(v.codigo_cotizacion) ?? false) : false,
                 } as VentaCabecera);
             }
         });
@@ -1077,37 +1095,114 @@ export const api = {
     },
 
     getTesoreriaMovements: async (): Promise<NodrizaTesoreria[]> => {
-        const { data, error } = await supabase
-            .from('nodriza_tesoreria')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (error) return [];
-        return data || [];
+        const [movementsResult, profilesResult] = await Promise.all([
+            supabase
+                .from('nodriza_tesoreria')
+                .select('*')
+                .order('created_at', { ascending: false }),
+            supabase
+                .from('profiles')
+                .select('id, display_name')
+        ]);
+        const data = movementsResult.data || [];
+        const profileMap = new Map<string, string>();
+        (profilesResult.data || []).forEach((p: any) => {
+            if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+        });
+        return data.map((m: any) => ({
+            ...m,
+            usuario_nombre: m.usuario_nombre ?? (m.user_id ? (profileMap.get(m.user_id) ?? null) : null)
+        })) || [];
     },
 
     getTesoreriaMovementsByCobro: async (cobroId: string): Promise<NodrizaTesoreria[]> => {
-        const { data, error } = await supabase
-            .from('nodriza_tesoreria')
-            .select('*')
-            .eq('cobro_id', cobroId)
-            .order('created_at', { ascending: true });
-        if (error) return [];
-        return data || [];
+        const [result, profilesResult] = await Promise.all([
+            supabase
+                .from('nodriza_tesoreria')
+                .select('*')
+                .eq('cobro_id', cobroId)
+                .order('created_at', { ascending: true }),
+            supabase
+                .from('profiles')
+                .select('id, display_name')
+        ]);
+        const data = result.data || [];
+        const profileMap = new Map<string, string>();
+        (profilesResult.data || []).forEach((p: any) => {
+            if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+        });
+        return data.map((m: any) => ({
+            ...m,
+            usuario_nombre: m.usuario_nombre ?? (m.user_id ? (profileMap.get(m.user_id) ?? null) : null)
+        })) || [];
     },
 
     getTesoreriaMovementsByVenta: async (ventaId: string): Promise<NodrizaTesoreria[]> => {
-        const { data, error } = await supabase
-            .from('nodriza_tesoreria')
-            .select('*')
-            .eq('referencia_id', ventaId)
-            .order('created_at', { ascending: true });
-        if (error) return [];
-        return data || [];
+        const [result, profilesResult] = await Promise.all([
+            supabase
+                .from('nodriza_tesoreria')
+                .select('*')
+                .eq('referencia_id', ventaId)
+                .order('created_at', { ascending: true }),
+            supabase
+                .from('profiles')
+                .select('id, display_name')
+        ]);
+        const data = result.data || [];
+        const profileMap = new Map<string, string>();
+        (profilesResult.data || []).forEach((p: any) => {
+            if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+        });
+        return data.map((m: any) => ({
+            ...m,
+            usuario_nombre: m.usuario_nombre ?? (m.user_id ? (profileMap.get(m.user_id) ?? null) : null)
+        })) || [];
     },
 
     createTesoreriaMovement: async (movement: any) => {
-        const { error } = await supabase.from('nodriza_tesoreria').insert([movement]);
-        if (error) throw new Error(error.message);
+        let user_id = null;
+        let usuario_nombre = null;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                user_id = user.id;
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('display_name')
+                    .eq('id', user.id)
+                    .single();
+                if (profile) {
+                    usuario_nombre = profile.display_name;
+                }
+            }
+        } catch (authErr) {
+            console.error("Error fetching auth user/profile:", authErr);
+        }
+
+        const payload = { ...movement };
+        if (user_id) {
+            payload.user_id = user_id;
+        }
+        if (usuario_nombre) {
+            payload.usuario_nombre = usuario_nombre;
+        }
+
+        const { error } = await supabase.from('nodriza_tesoreria').insert([payload]);
+        if (error) {
+            if (
+                error.message.includes('column "user_id"') || 
+                error.message.includes('column "usuario_nombre"') || 
+                error.message.includes('column "tipo_documento"') || 
+                error.code === '42703'
+            ) {
+                console.warn("user_id/usuario_nombre/tipo_documento column does not exist in nodriza_tesoreria, retrying without them...");
+                const { user_id: _, usuario_nombre: __, tipo_documento: ___, ...restPayload } = payload;
+                const { error: retryError } = await supabase.from('nodriza_tesoreria').insert([restPayload]);
+                if (retryError) throw new Error(retryError.message);
+            } else {
+                throw new Error(error.message);
+            }
+        }
     },
 
     updateTesoreriaMovement: async (id: string, movement: Partial<NodrizaTesoreria>) => {
@@ -1182,6 +1277,22 @@ export const api = {
             motivo_pago_excedente: motivoExcedente || venta.motivo_pago_excedente
         }).eq('id', ventaId).throwOnError();
 
+        let currentTipoDoc = null;
+        if (venta.codigo_cotizacion) {
+            try {
+                const { data: cotData } = await supabase
+                    .from('cotizaciones')
+                    .select('tipo_documento')
+                    .eq('codigo', venta.codigo_cotizacion)
+                    .maybeSingle();
+                if (cotData) {
+                    currentTipoDoc = cotData.tipo_documento;
+                }
+            } catch (err) {
+                console.error("Error fetching cotizacion for registrarCobro audit:", err);
+            }
+        }
+
         await api.createTesoreriaMovement({
             monto: montoRecibido,
             tipo_movimiento: 'INGRESO',
@@ -1190,6 +1301,7 @@ export const api = {
             categoria: 'Venta',
             referencia_id: ventaId,
             cobro_id: cobro.id,
+            tipo_documento: currentTipoDoc,
             observaciones: `Depósito venta ${venta.codigo_cotizacion || ventaId}${numOp ? ` - Op: ${numOp}` : ''}${motivoExcedente ? ` (JUSTIFICACIÓN EXCEDENTE: ${motivoExcedente})` : ''}`
         });
 
@@ -1202,10 +1314,174 @@ export const api = {
         return data || [];
     },
 
+    confirmarComprobanteVenta: async (
+        codigoCotizacion: string,
+        tipoDocumento: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION',
+        numeroComprobante: string,
+        userId: string | null
+    ): Promise<void> => {
+        // 1. Fetch current quotation state to log changes
+        const { data: cotData, error: fetchErr } = await supabase
+            .from('cotizaciones')
+            .select('id, numero_comprobante, tipo_documento, comprobante_locked')
+            .eq('codigo', codigoCotizacion)
+            .single();
+            
+        if (fetchErr || !cotData) {
+            throw new Error(fetchErr?.message || 'Cotización no encontrada');
+        }
+
+        const cotId = cotData.id;
+        const oldNum = cotData.numero_comprobante || null;
+        const oldTipo = cotData.tipo_documento || null;
+        const oldLocked = cotData.comprobante_locked || false;
+
+        const newNum = numeroComprobante.trim() || null;
+        const newTipo = tipoDocumento;
+
+        // 2. Update cotizacion: numero_comprobante, tipo_documento, and set comprobante_locked = true
+        const updatePayload: any = {
+            numero_comprobante: newNum,
+            tipo_documento: newTipo
+        };
+
+        try {
+            // Try updating with comprobante_locked
+            const { error: updateErr } = await supabase
+                .from('cotizaciones')
+                .update({ ...updatePayload, comprobante_locked: true })
+                .eq('id', cotId);
+            if (updateErr) throw updateErr;
+        } catch (err) {
+            console.warn("Failed to update comprobante_locked column, updating only voucher details...", err);
+            const { error: updateErr } = await supabase
+                .from('cotizaciones')
+                .update(updatePayload)
+                .eq('id', cotId);
+            if (updateErr) throw updateErr;
+        }
+
+        // 3. Write to cotizaciones_audit_log
+        const auditInserts: any[] = [];
+        if (oldNum !== newNum) {
+            auditInserts.push({
+                cotizacion_id: cotId,
+                cotizacion_codigo: codigoCotizacion,
+                campo: 'numero_comprobante',
+                valor_anterior: oldNum,
+                valor_nuevo: newNum,
+                user_id: userId || null
+            });
+        }
+        if (oldTipo !== newTipo) {
+            auditInserts.push({
+                cotizacion_id: cotId,
+                cotizacion_codigo: codigoCotizacion,
+                campo: 'tipo_documento',
+                valor_anterior: oldTipo,
+                valor_nuevo: newTipo,
+                user_id: userId || null
+            });
+        }
+        if (!oldLocked) {
+            auditInserts.push({
+                cotizacion_id: cotId,
+                cotizacion_codigo: codigoCotizacion,
+                campo: 'comprobante_locked',
+                valor_anterior: 'FALSE',
+                valor_nuevo: 'TRUE',
+                user_id: userId || null
+            });
+        }
+
+        if (auditInserts.length > 0) {
+            try {
+                await supabase.from('cotizaciones_audit_log').insert(auditInserts);
+            } catch (e) {
+                console.error("Error writing to audit log", e);
+            }
+        }
+    },
+
+    getUnifiedVentaAuditLog: async (ventaId: string, codigoCotizacion: string | null): Promise<any[]> => {
+        const timeline: any[] = [];
+
+        // 1. Fetch cobros (payments)
+        const cobros = await api.getVentaCobros(ventaId);
+        cobros.forEach((c: any) => {
+            timeline.push({
+                id: c.id,
+                type: 'COBRO',
+                monto: c.monto,
+                cuenta: c.cuenta_destino,
+                numero_operacion: c.numero_operacion,
+                voucher_url: c.voucher_url,
+                motivo_excedente: c.motivo_excedente,
+                created_at: c.created_at,
+            });
+        });
+
+        // 2. Fetch cotizaciones_audit_log for the codigo_cotizacion
+        if (codigoCotizacion) {
+            try {
+                const [auditResult, profilesResult] = await Promise.all([
+                    supabase
+                        .from('cotizaciones_audit_log')
+                        .select('*')
+                        .eq('cotizacion_codigo', codigoCotizacion)
+                        .order('created_at', { ascending: false }),
+                    supabase
+                        .from('profiles')
+                        .select('id, display_name')
+                ]);
+
+                if (auditResult.data) {
+                    const profileMap = new Map<string, string>();
+                    (profilesResult.data || []).forEach((p: any) => {
+                        if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+                    });
+
+                    auditResult.data.forEach((log: any) => {
+                        timeline.push({
+                            id: log.id,
+                            type: 'AUDIT',
+                            campo: log.campo,
+                            valor_anterior: log.valor_anterior,
+                            valor_nuevo: log.valor_nuevo,
+                            usuario_nombre: log.user_id ? (profileMap.get(log.user_id) || 'Usuario') : 'Sistema/Vendedor',
+                            created_at: log.created_at
+                        });
+                    });
+                }
+            } catch (err) {
+                console.error("Error fetching audit logs", err);
+            }
+        }
+
+        // Sort chronologically descending (newest first)
+        return timeline.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    },
+
     getCompras: async (): Promise<NodrizaTesoreria[]> => {
-        const { data, error } = await supabase.from('nodriza_tesoreria').select('*').eq('tipo_movimiento', 'EGRESO').order('created_at', { ascending: false });
-        if (error) return [];
-        return data || [];
+        const [comprasResult, profilesResult] = await Promise.all([
+            supabase
+                .from('nodriza_tesoreria')
+                .select('*')
+                .eq('tipo_movimiento', 'EGRESO')
+                .order('created_at', { ascending: false }),
+            supabase
+                .from('profiles')
+                .select('id, display_name')
+        ]);
+        const data = comprasResult.data || [];
+        const profileMap = new Map<string, string>();
+        (profilesResult.data || []).forEach((p: any) => {
+            if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+        });
+        return data.map((m: any) => ({
+            ...m,
+            usuario_nombre: m.usuario_nombre ?? (m.user_id ? (profileMap.get(m.user_id) ?? null) : null)
+        })) || [];
     },
 
     // --- Proveedores ---
