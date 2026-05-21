@@ -207,6 +207,13 @@ export default function AdministradorPage() {
     // ── Ajuste Avanzado modal ───────────────────────────────────────────────
     const [ajusteOpen, setAjusteOpen] = useState(false);
     const [ajusteClosing, setAjusteClosing] = useState(false);
+    const [ajusteTab, setAjusteTab] = useState<'materiales' | 'usuarios'>('materiales');
+    // USUARIOS sub-tab
+    const [sysUsers, setSysUsers] = useState<{ id: string; full_name: string; role: string; email: string }[]>([]);
+    const [sysUsersLoading, setSysUsersLoading] = useState(false);
+    const [generatingLinkUserId, setGeneratingLinkUserId] = useState<string | null>(null);
+    const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>({});
+    const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
     // Materiales Controlados sub-tab
     const [controlProducts, setControlProducts] = useState<any[]>([]);
     const [controlLoading, setControlLoading] = useState(false);
@@ -716,15 +723,48 @@ export default function AdministradorPage() {
         finally { setControlLoading(false); }
     };
 
+    const fetchSysUsers = async () => {
+        setSysUsersLoading(true);
+        try {
+            const { data, error } = await supabase.rpc('get_all_users_for_admin');
+            if (error) throw error;
+            setSysUsers(data || []);
+        } catch (e) { console.error(e); }
+        finally { setSysUsersLoading(false); }
+    };
+
+    const generateResetLink = async (userId: string, email: string) => {
+        setGeneratingLinkUserId(userId);
+        try {
+            const { data, error } = await supabase.functions.invoke('generate-reset-link', {
+                body: { email, redirectTo: `${window.location.origin}/set-password` },
+            });
+            if (error || !data?.link) throw error || new Error('no_link');
+            setGeneratedLinks(prev => ({ ...prev, [userId]: data.link as string }));
+        } catch {
+            setGeneratedLinks(prev => ({ ...prev, [userId]: '__error__' }));
+            setTimeout(() => setGeneratedLinks(prev => {
+                const next = { ...prev };
+                delete next[userId];
+                return next;
+            }), 4000);
+        } finally {
+            setGeneratingLinkUserId(null);
+        }
+    };
+
     const openAjuste = () => {
         setAjusteOpen(true);
         setAjusteClosing(false);
+        setAjusteTab('materiales');
         setControlSearch('');
         setControlPage(1);
         setFilterCat('');
         setFilterFam('');
         setFilterSub('');
         fetchControlProducts();
+        setGeneratedLinks({});
+        fetchSysUsers();
         // Pre-fetch taxonomy in case it's not loaded yet
         if (addProdCats.length === 0) {
             loadAddProdTaxonomy().catch(console.error);
@@ -2227,13 +2267,24 @@ export default function AdministradorPage() {
                         </div>
                         {/* Sub-tabs */}
                         <div className="px-8 pt-4 pb-0 border-b border-[#d3dcdb]/30 bg-white/20 flex gap-1">
-                            <div className="flex items-center gap-2 px-5 py-2.5 text-[11px] font-black tracking-widest uppercase rounded-t-xl border-b-2 border-[#366480] text-[#366480] bg-white/60">
+                            <button
+                                onClick={() => setAjusteTab('materiales')}
+                                className={`flex items-center gap-2 px-5 py-2.5 text-[11px] font-black tracking-widest uppercase rounded-t-xl border-b-2 transition-all ${ajusteTab === 'materiales' ? 'border-[#366480] text-[#366480] bg-white/60' : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-white/30'}`}
+                            >
                                 <Package className="w-3.5 h-3.5" />
                                 Materiales Controlados
-                            </div>
+                            </button>
+                            <button
+                                onClick={() => setAjusteTab('usuarios')}
+                                className={`flex items-center gap-2 px-5 py-2.5 text-[11px] font-black tracking-widest uppercase rounded-t-xl border-b-2 transition-all ${ajusteTab === 'usuarios' ? 'border-[#366480] text-[#366480] bg-white/60' : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-white/30'}`}
+                            >
+                                <Users className="w-3.5 h-3.5" />
+                                Usuarios
+                            </button>
                         </div>
                         {/* Content */}
                         <div className="flex-1 overflow-y-auto">
+                            {ajusteTab === 'materiales' && (<>
                             {/* Toolbar */}
                             <div className="px-8 py-5 flex items-center justify-between">
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
@@ -2373,6 +2424,147 @@ export default function AdministradorPage() {
                                         >
                                             <ChevronRight className="w-4 h-4" />
                                         </button>
+                                    </div>
+                                </div>
+                            )}
+                            </>)}
+
+                            {/* ── USUARIOS TAB ─────────────────────────────── */}
+                            {ajusteTab === 'usuarios' && (
+                                <div>
+                                    <div className="px-8 py-5 flex items-center justify-between">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                            {sysUsersLoading ? 'Cargando...' : `${sysUsers.length} usuario${sysUsers.length !== 1 ? 's' : ''}`}
+                                        </p>
+                                        <button
+                                            onClick={fetchSysUsers}
+                                            disabled={sysUsersLoading}
+                                            className="p-2 rounded-xl text-slate-400 hover:text-[#366480] hover:bg-[#f0f5f4] transition-all disabled:opacity-40"
+                                            title="Actualizar lista"
+                                        >
+                                            <RefreshCw className={`w-4 h-4 ${sysUsersLoading ? 'animate-spin' : ''}`} />
+                                        </button>
+                                    </div>
+                                    <div className="px-8 pb-8">
+                                        {sysUsersLoading ? (
+                                            <div className="py-16 text-center text-[11px] font-black text-slate-300 uppercase tracking-widest animate-pulse">
+                                                Sincronizando...
+                                            </div>
+                                        ) : sysUsers.length === 0 ? (
+                                            <div className="py-16 text-center text-[11px] font-black text-slate-300 uppercase tracking-widest">
+                                                Sin usuarios
+                                            </div>
+                                        ) : (
+                                            <table className="w-full border-collapse">
+                                                <thead>
+                                                    <tr className="border-b border-[#d3dcdb]/40">
+                                                        {['Usuario', 'Rol', 'Correo', ''].map(h => (
+                                                            <th key={h} className="pb-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest pr-6 last:pr-0">{h}</th>
+                                                        ))}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sysUsers.map((u: { id: string; full_name: string; role: string; email: string }) => {
+                                                        const nameParts = (u.full_name || '').split(' ').filter(Boolean);
+                                                        const initials = nameParts.slice(0, 2).map((n: string) => n[0].toUpperCase()).join('') || '?';
+                                                        const roleMap: Record<string, { label: string; color: string; bg: string }> = {
+                                                            admin:          { label: 'Admin',          color: '#2c3434', bg: '#e8eded' },
+                                                            administrador:  { label: 'Administrador',  color: '#366480', bg: '#e0eef4' },
+                                                            ventas:         { label: 'Ventas',         color: '#15803d', bg: '#dcfce7' },
+                                                            asistente_admin:{ label: 'Asistente Admin',color: '#6d28d9', bg: '#ede9fe' },
+                                                        };
+                                                        const roleInfo = roleMap[u.role] || { label: u.role, color: '#2c3434', bg: '#f0f5f4' };
+                                                        const link = generatedLinks[u.id];
+                                                        const isLoading = generatingLinkUserId === u.id;
+                                                        const isCopied = copiedUserId === u.id;
+                                                        return (
+                                                            <React.Fragment key={u.id}>
+                                                            <tr className="border-b border-[#d3dcdb]/20 hover:bg-[#f0f5f4]/40 transition-colors">
+                                                                <td className="py-4 pr-6">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white text-[10px] font-black shrink-0">
+                                                                            {initials}
+                                                                        </div>
+                                                                        <span className="text-[13px] font-bold text-[#2c3434]">{u.full_name || '(Sin nombre)'}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="py-4 pr-6">
+                                                                    <span
+                                                                        className="text-[10px] font-black px-2.5 py-1 rounded-lg"
+                                                                        style={{ color: roleInfo.color, background: roleInfo.bg }}
+                                                                    >
+                                                                        {roleInfo.label}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="py-4 pr-6">
+                                                                    <span className="text-[12px] font-bold text-slate-500">{u.email}</span>
+                                                                </td>
+                                                                <td className="py-4">
+                                                                    {link === '__error__' ? (
+                                                                        <span className="text-[10px] font-black px-3 py-1.5 rounded-xl text-rose-600 bg-rose-50">
+                                                                            Error al generar
+                                                                        </span>
+                                                                    ) : link ? (
+                                                                        <button
+                                                                            onClick={() => setGeneratedLinks(prev => { const n = { ...prev }; delete n[u.id]; return n; })}
+                                                                            className="text-[10px] font-black text-slate-400 hover:text-slate-600 uppercase tracking-widest transition-colors"
+                                                                        >
+                                                                            Ocultar
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => generateResetLink(u.id, u.email)}
+                                                                            disabled={isLoading}
+                                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#d3dcdb]/30 text-[#366480] hover:bg-[#f0f5f4] hover:border-[#366480]/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm disabled:opacity-40"
+                                                                        >
+                                                                            {isLoading ? (
+                                                                                <span
+                                                                                    className="w-3 h-3 rounded-full border-2 animate-spin"
+                                                                                    style={{ borderColor: 'rgba(54,100,128,0.3)', borderTopColor: '#366480' }}
+                                                                                />
+                                                                            ) : (
+                                                                                <span className="material-icons-round text-[13px]">link</span>
+                                                                            )}
+                                                                            Generar enlace
+                                                                        </button>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                            {link && link !== '__error__' && (
+                                                                <tr>
+                                                                    <td colSpan={4} className="pb-4 pt-0">
+                                                                        <div className="mr-2 px-4 py-3 rounded-xl bg-[#f0f5f4] border border-[#d3dcdb]/30 flex items-center gap-3">
+                                                                            <span className="material-icons-round text-[14px] text-[#366480] shrink-0">link</span>
+                                                                            <input
+                                                                                type="text"
+                                                                                value={link}
+                                                                                readOnly
+                                                                                onClick={e => (e.target as HTMLInputElement).select()}
+                                                                                className="flex-1 bg-transparent text-[11px] font-mono text-slate-600 outline-none min-w-0"
+                                                                            />
+                                                                            <button
+                                                                                onClick={async () => {
+                                                                                    await navigator.clipboard.writeText(link);
+                                                                                    setCopiedUserId(u.id);
+                                                                                    setTimeout(() => setCopiedUserId(null), 2000);
+                                                                                }}
+                                                                                className={`shrink-0 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isCopied ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-[#366480] border border-[#d3dcdb]/30 hover:bg-[#366480] hover:text-white hover:border-[#366480]'}`}
+                                                                            >
+                                                                                {isCopied ? '¡Copiado!' : 'Copiar'}
+                                                                            </button>
+                                                                        </div>
+                                                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-2 px-1">
+                                                                            Enlace de un solo uso · expira en 1 hora · comparte por chat o WhatsApp
+                                                                        </p>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        )}
                                     </div>
                                 </div>
                             )}

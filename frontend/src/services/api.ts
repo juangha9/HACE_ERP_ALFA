@@ -1565,8 +1565,109 @@ export const api = {
             }
         }
 
+        // 3. Fetch ventas_audit_log for this venta (tipo_proyecto changes, etc.)
+        try {
+            const [ventaAuditResult, profilesResult] = await Promise.all([
+                supabase
+                    .from('ventas_audit_log')
+                    .select('*')
+                    .eq('venta_id', ventaId)
+                    .order('created_at', { ascending: false }),
+                supabase
+                    .from('profiles')
+                    .select('id, display_name')
+            ]);
+
+            if (ventaAuditResult.data && ventaAuditResult.data.length > 0) {
+                const profileMap = new Map<string, string>();
+                (profilesResult.data || []).forEach((p: any) => {
+                    if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+                });
+
+                ventaAuditResult.data.forEach((log: any) => {
+                    timeline.push({
+                        id: log.id,
+                        type: 'AUDIT',
+                        campo: log.campo,
+                        valor_anterior: log.valor_anterior,
+                        valor_nuevo: log.valor_nuevo,
+                        usuario_nombre: log.usuario_nombre || (log.user_id ? (profileMap.get(log.user_id) || 'Usuario') : 'Sistema'),
+                        created_at: log.created_at
+                    });
+                });
+            }
+        } catch (err) {
+            console.error("Error fetching ventas_audit_log", err);
+        }
+
         // Sort chronologically descending (newest first)
         return timeline.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    },
+
+    updateVentaTipoProyecto: async (ventaId: string, newTipo: 'OBRA' | 'TABLEROS' | null, oldTipo: 'OBRA' | 'TABLEROS' | null) => {
+        const { error } = await supabase
+            .from('ventas_cabecera')
+            .update({ tipo_proyecto: newTipo })
+            .eq('id', ventaId);
+        if (error) throw new Error(error.message);
+
+        let user_id: string | null = null;
+        let usuario_nombre: string | null = null;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                user_id = user.id;
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('display_name')
+                    .eq('id', user.id)
+                    .maybeSingle();
+                if (profile) usuario_nombre = (profile as any).display_name;
+            }
+        } catch {}
+
+        await supabase.from('ventas_audit_log').insert([{
+            venta_id: ventaId,
+            campo: 'tipo_proyecto',
+            valor_anterior: oldTipo || null,
+            valor_nuevo: newTipo || null,
+            user_id,
+            usuario_nombre,
+        }]);
+    },
+
+    updateEgresoTipoProyecto: async (egresoId: string, newTipo: 'OBRA' | 'TABLEROS' | null, oldTipo: 'OBRA' | 'TABLEROS' | null) => {
+        const { error } = await supabase
+            .from('nodriza_tesoreria')
+            .update({ tipo_proyecto: newTipo })
+            .eq('id', egresoId);
+        if (error) throw new Error(error.message);
+
+        let user_id: string | null = null;
+        let usuario_nombre: string | null = null;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                user_id = user.id;
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('display_name')
+                    .eq('id', user.id)
+                    .maybeSingle();
+                if (profile) usuario_nombre = (profile as any).display_name;
+            }
+        } catch {}
+
+        const oldLabel = oldTipo || 'Sin asignar';
+        const newLabel = newTipo || 'Sin asignar';
+
+        await supabase.from('nodriza_tesoreria_audit_log').insert([{
+            egreso_id: egresoId,
+            evento: 'TIPO_PROYECTO_CAMBIADO',
+            detalle: `Tipo de proyecto cambiado de "${oldLabel}" a "${newLabel}"`,
+            user_id,
+            usuario_nombre,
+        }]);
     },
 
     getCompras: async (): Promise<NodrizaTesoreria[]> => {

@@ -53,11 +53,12 @@ export const DepositModal: React.FC<DepositModalProps> = ({ venta, onClose, onRe
     }, [cuentaDestino]);
 
     const ALL_ACCOUNTS = [
-        { value: 'Efectivo',   label: 'Efectivo (Caja)' },
-        { value: '2049/YAPE', label: '2049 / YAPE' },
-        { value: '4071',      label: '4071' },
-        { value: '9001',      label: '9001' },
-        { value: '8059',      label: '8059' },
+        { value: 'Efectivo',      label: 'Efectivo (Caja)' },
+        { value: '2049/YAPE',    label: '2049 / YAPE' },
+        { value: '4071',         label: '4071' },
+        { value: '9001',         label: '9001' },
+        { value: '8059',         label: '8059' },
+        { value: 'DETRACCIONES', label: 'Detracciones' },
     ];
 
     const missingMonto   = touched && (!cobroMonto || Number(cobroMonto) <= 0);

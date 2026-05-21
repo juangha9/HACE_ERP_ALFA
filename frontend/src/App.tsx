@@ -18,6 +18,7 @@ import { SalesTreasuryPage } from './pages/SalesTreasuryPage';
 import AdministradorPage from './pages/AdministradorPage';
 import { SolicitudesPage } from './pages/SolicitudesPage';
 import { CotizacionesPage } from './pages/CotizacionesPage';
+import { SetPasswordPage } from './pages/SetPasswordPage';
 import { OptimizationLayout } from './pages/Optimization/OptimizationLayout';
 import InventoryLayout from './pages/Inventory/InventoryLayout';
 import InventoryDashboard from './pages/Inventory/InventoryDashboard';
@@ -36,6 +37,9 @@ const App = () => {
 
           {/* Public: login */}
           <Route path="/login" element={<LoginPage />} />
+
+          {/* Public: password set / reset (arrived via recovery email link) */}
+          <Route path="/set-password" element={<SetPasswordPage />} />
 
           {/* Protected: all app routes wrapped in Layout */}
           <Route

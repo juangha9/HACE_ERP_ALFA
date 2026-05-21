@@ -202,6 +202,7 @@ export interface NodrizaTesoreria {
     user_id?: string | null;
     usuario_nombre?: string | null;
     tipo_documento?: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION' | null;
+    tipo_proyecto?: 'OBRA' | 'TABLEROS' | null;
 }
 
 export interface VentaCabecera {
@@ -223,6 +224,7 @@ export interface VentaCabecera {
     cotizacion_tipo_documento?: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION' | null;
     cotizacion_comprobante_locked?: boolean | null;
     cotizacion_sustento_comprobante_url?: string | null;
+    tipo_proyecto?: 'OBRA' | 'TABLEROS' | null;
 }
 
 

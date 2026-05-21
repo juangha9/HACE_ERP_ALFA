@@ -9,7 +9,7 @@ import { es } from 'date-fns/locale';
 import { RangeDatePicker } from './RangeDatePicker';
 import type { VentaCabecera, NodrizaTesoreria } from '../services/types';
 
-const BANK_ACCOUNTS = ['2049/YAPE', '4071', '9001', '8059'];
+const BANK_ACCOUNTS = ['2049/YAPE', '4071', '9001', '8059', 'DETRACCIONES'];
 const ALL_ACCOUNTS = ['Efectivo', ...BANK_ACCOUNTS];
 
 interface InternalTransferModalProps {

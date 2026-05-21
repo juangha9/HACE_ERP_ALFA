@@ -595,6 +595,24 @@ export const SalesTreasuryPage = () => {
 
     // handleConfirmTransfer logic is now isolated in InternalTransferModal component
 
+    const handleVentaTipoChange = async (ventaId: string, newTipo: 'OBRA' | 'TABLEROS' | null, oldTipo: 'OBRA' | 'TABLEROS' | null | undefined) => {
+        setVentas(prev => prev.map(v => v.id === ventaId ? { ...v, tipo_proyecto: newTipo } : v));
+        try {
+            await api.updateVentaTipoProyecto(ventaId, newTipo, oldTipo ?? null);
+        } catch {
+            setVentas(prev => prev.map(v => v.id === ventaId ? { ...v, tipo_proyecto: oldTipo ?? null } : v));
+        }
+    };
+
+    const handleEgresoTipoChange = async (egresoId: string, newTipo: 'OBRA' | 'TABLEROS' | null, oldTipo: 'OBRA' | 'TABLEROS' | null | undefined) => {
+        setCompras(prev => prev.map(c => c.id === egresoId ? { ...c, tipo_proyecto: newTipo } : c));
+        try {
+            await api.updateEgresoTipoProyecto(egresoId, newTipo, oldTipo ?? null);
+        } catch {
+            setCompras(prev => prev.map(c => c.id === egresoId ? { ...c, tipo_proyecto: oldTipo ?? null } : c));
+        }
+    };
+
     const openHistory = async (venta: VentaCabecera) => {
         setShowHistoryModal(venta);
         setExpandedCobro(null);
@@ -1391,16 +1409,17 @@ export const SalesTreasuryPage = () => {
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
                                             <tr className="text-[#366480]/50 text-[13px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
-                                                <th className="py-5 pl-4 text-left w-[18%]">Transacción / OT</th>
-                                                <th className="py-5 text-left w-[13%]">Usuario</th>
-                                                <th className="py-5 text-left w-[22%]">Cliente</th>
-                                                <th className="py-5 text-left w-[12%]">Monto Total</th>
-                                                <th className="py-5 text-left pl-8 w-[20%]">Balance de Pago</th>
+                                                <th className="py-5 pl-4 text-left w-[17%]">Transacción / OT</th>
+                                                <th className="py-5 text-left w-[11%]">Usuario</th>
+                                                <th className="py-5 text-left w-[9%]">Tipo</th>
+                                                <th className="py-5 text-left w-[19%]">Cliente</th>
+                                                <th className="py-5 text-left w-[11%]">Monto Total</th>
+                                                <th className="py-5 text-left pl-8 w-[18%]">Balance de Pago</th>
                                                 <th className="py-5 text-left w-[15%]">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={6} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={6} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : paginatedVentas.map(venta => {
+                                            {loading ? <tr><td colSpan={7} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : paginatedVentas.map(venta => {
                                                 const isStub = venta.id.startsWith('opt::');
                                                 return (
                                                     <React.Fragment key={venta.id}>
@@ -1454,6 +1473,29 @@ export const SalesTreasuryPage = () => {
                                                                 </span>
                                                             </td>
                                                             <td className="py-5 text-left">
+                                                                {!isStub && (
+                                                                    <select
+                                                                        value={venta.tipo_proyecto || ''}
+                                                                        onChange={(e) => {
+                                                                            const val = e.target.value as 'OBRA' | 'TABLEROS' | '';
+                                                                            handleVentaTipoChange(venta.id, val || null, venta.tipo_proyecto);
+                                                                        }}
+                                                                        className={`appearance-none text-[10px] font-black uppercase px-2.5 py-1.5 rounded-xl border cursor-pointer outline-none transition-all ${
+                                                                            venta.tipo_proyecto === 'OBRA'
+                                                                                ? 'bg-violet-50 text-violet-700 border-violet-200'
+                                                                                : venta.tipo_proyecto === 'TABLEROS'
+                                                                                    ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                                                                    : 'bg-[#f8faf9] text-[#8b9ba5] border-[#e8eded]'
+                                                                        }`}
+                                                                        title="Tipo de proyecto"
+                                                                    >
+                                                                        <option value="">— Tipo —</option>
+                                                                        <option value="OBRA">OBRA</option>
+                                                                        <option value="TABLEROS">TABLEROS</option>
+                                                                    </select>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-5 text-left">
                                                                 <p className="text-[15px] font-black text-[#2c3434] uppercase tracking-tight"
                                                                     dangerouslySetInnerHTML={{ __html: highlightMatchHtml(venta.cliente_nombre, deferredSearch) }}
                                                                 />
@@ -1500,7 +1542,7 @@ export const SalesTreasuryPage = () => {
                                                         </tr>
                                                         {(expandedVenta === venta.id || exitingDesglose === venta.id) && (
                                                             <tr>
-                                                                <td colSpan={6} className="p-0 border-none bg-[#f7faf9]/30">
+                                                                <td colSpan={7} className="p-0 border-none bg-[#f7faf9]/30">
                                                                     <div className={`px-10 py-4 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
                                                                         <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm">
                                                                             <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] mb-6 border-b border-[#d3dcdb]/10 pb-4 italic">Desglose Técnico del Proyecto</p>
@@ -1596,17 +1638,18 @@ export const SalesTreasuryPage = () => {
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
                                             <tr className="text-[#366480]/50 text-[13px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
-                                                <th className="py-5 pl-4 text-left w-[15%]">Registro</th>
-                                                <th className="py-5 text-left w-[13%]">Usuario</th>
-                                                <th className="py-5 text-left w-[17%]">Clasificación</th>
-                                                <th className="py-5 text-left w-[14%]">Documento</th>
-                                                <th className="py-5 text-left w-[20%]">Descripción</th>
-                                                <th className="py-5 text-left w-[13%]">Monto</th>
-                                                <th className="py-5 text-left w-[8%]">Gestión</th>
+                                                <th className="py-5 pl-4 text-left w-[13%]">Registro</th>
+                                                <th className="py-5 text-left w-[11%]">Usuario</th>
+                                                <th className="py-5 text-left w-[8%]">Tipo</th>
+                                                <th className="py-5 text-left w-[14%]">Clasificación</th>
+                                                <th className="py-5 text-left w-[12%]">Documento</th>
+                                                <th className="py-5 text-left w-[18%]">Descripción</th>
+                                                <th className="py-5 text-left w-[12%]">Monto</th>
+                                                <th className="py-5 text-left w-[12%]">Gestión</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={7} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
+                                            {loading ? <tr><td colSpan={8} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={8} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
                                                 <React.Fragment key={compra.id}>
                                                     <tr className="group hover:bg-[#fff0f2]/30 transition-all duration-300">
                                                         <td className="py-5 pl-4 text-left">
@@ -1623,6 +1666,27 @@ export const SalesTreasuryPage = () => {
                                                             <span className="text-[15px] font-bold text-[#2c3434]/80 uppercase truncate block max-w-[110px]" title={compra.usuario_nombre || '—'}>
                                                                 {compra.usuario_nombre || '—'}
                                                             </span>
+                                                        </td>
+                                                        <td className="py-5 text-left">
+                                                            <select
+                                                                value={compra.tipo_proyecto || ''}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value as 'OBRA' | 'TABLEROS' | '';
+                                                                    handleEgresoTipoChange(compra.id, val || null, compra.tipo_proyecto);
+                                                                }}
+                                                                className={`appearance-none text-[10px] font-black uppercase px-2.5 py-1.5 rounded-xl border cursor-pointer outline-none transition-all ${
+                                                                    compra.tipo_proyecto === 'OBRA'
+                                                                        ? 'bg-violet-50 text-violet-700 border-violet-200'
+                                                                        : compra.tipo_proyecto === 'TABLEROS'
+                                                                            ? 'bg-sky-50 text-sky-700 border-sky-200'
+                                                                            : 'bg-[#f8faf9] text-[#8b9ba5] border-[#e8eded]'
+                                                                }`}
+                                                                title="Tipo de proyecto"
+                                                            >
+                                                                <option value="">— Tipo —</option>
+                                                                <option value="OBRA">OBRA</option>
+                                                                <option value="TABLEROS">TABLEROS</option>
+                                                            </select>
                                                         </td>
                                                         <td className="py-5 text-left">
                                                             <span className="px-4 py-1.5 bg-white text-[#366480] text-[12px] font-black rounded-full uppercase border border-[#d3dcdb]/40 tracking-widest shadow-sm">{compra.categoria}</span>
@@ -1664,7 +1728,7 @@ export const SalesTreasuryPage = () => {
                                                     </tr>
                                                     {expandedCompra === compra.id && (
                                                         <tr>
-                                                            <td colSpan={7} className="p-0 border-none bg-[#fff0f2]/20">
+                                                            <td colSpan={8} className="p-0 border-none bg-[#fff0f2]/20">
                                                                 <div className="px-10 py-4 animate-in slide-in-from-top-4 duration-500">
                                                                     <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm flex items-center justify-between">
                                                                         <div className="flex items-center gap-12">
@@ -1917,12 +1981,21 @@ export const SalesTreasuryPage = () => {
                                                 const isDocType = audit.campo === 'tipo_documento';
                                                 const isNumComp = audit.campo === 'numero_comprobante';
                                                 const isLock = audit.campo === 'comprobante_locked';
-                                                
+                                                const isTipoProyecto = audit.campo === 'tipo_proyecto';
+
                                                 let title = "Modificación de Comprobante";
                                                 let content = "";
                                                 let iconColor = "bg-sky-50 text-sky-500 border-sky-100";
-                                                
-                                                if (isDocType) {
+
+                                                if (isTipoProyecto) {
+                                                    title = "Tipo de Proyecto Asignado";
+                                                    const anterior = audit.valor_anterior || 'Sin asignar';
+                                                    const nuevo = audit.valor_nuevo || 'Sin asignar';
+                                                    content = `Tipo de proyecto cambiado de "${anterior}" a "${nuevo}"`;
+                                                    iconColor = audit.valor_nuevo === 'OBRA'
+                                                        ? 'bg-violet-50 text-violet-600 border-violet-200/50'
+                                                        : 'bg-sky-50 text-sky-600 border-sky-200/50';
+                                                } else if (isDocType) {
                                                     title = "Tipo de Documento Modificado";
                                                     content = `Tipo de documento cambiado de "${audit.valor_anterior || 'COTIZACION'}" a "${audit.valor_nuevo}"`;
                                                     iconColor = "bg-[#4A90E2]/10 text-[#4A90E2] border-[#4A90E2]/20";
