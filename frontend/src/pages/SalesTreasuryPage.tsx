@@ -964,7 +964,12 @@ export const SalesTreasuryPage = () => {
         const start = startDate ? new Date(startDate) : null;
         const end = endDate ? new Date(endDate + 'T23:59:59') : null;
         return compras.filter(c => {
-            if (term && !(c.observaciones || '').toLowerCase().includes(term) && !(c.categoria || '').toLowerCase().includes(term)) return false;
+            if (term) {
+                const matchesObs = (c.observaciones || '').toLowerCase().includes(term);
+                const matchesCat = (c.categoria || '').toLowerCase().includes(term);
+                const matchesDesc = Array.isArray(c.invoice_details) && c.invoice_details.some((d: any) => (d.description || '').toLowerCase().includes(term));
+                if (!matchesObs && !matchesCat && !matchesDesc) return false;
+            }
             const fecha = new Date(c.created_at!);
             return (!start || fecha >= start) && (!end || fecha <= end);
         });
@@ -1595,7 +1600,7 @@ export const SalesTreasuryPage = () => {
                                                 <th className="py-5 text-left w-[13%]">Usuario</th>
                                                 <th className="py-5 text-left w-[17%]">Clasificación</th>
                                                 <th className="py-5 text-left w-[14%]">Documento</th>
-                                                <th className="py-5 text-left w-[20%]">Referencia</th>
+                                                <th className="py-5 text-left w-[20%]">Descripción</th>
                                                 <th className="py-5 text-left w-[13%]">Monto</th>
                                                 <th className="py-5 text-left w-[8%]">Gestión</th>
                                             </tr>
@@ -1782,8 +1787,8 @@ export const SalesTreasuryPage = () => {
                                                 <HistoryIcon className="w-4 h-4 text-white" />
                                             </div>
                                             <div>
-                                                <h2 className="text-base font-black text-[#2c3434] uppercase tracking-tight">Historial de la Venta</h2>
-                                                <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">{showHistoryModal.cliente_nombre}</p>
+                                                <h2 className="text-[20px] font-black text-[#2c3434] uppercase tracking-tight">Historial de la Venta</h2>
+                                                <p className="text-[14px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">{showHistoryModal.cliente_nombre}</p>
                                             </div>
                                         </div>
                                         <button onClick={closeHistoryModal} className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all">
@@ -1794,13 +1799,13 @@ export const SalesTreasuryPage = () => {
                                     {/* Totals strip */}
                                     <div className="px-5 py-3 border-b border-[#d3dcdb]/20 bg-white/30 flex items-center gap-5">
                                         <div className="flex flex-col">
-                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Monto Total</span>
-                                            <span className="text-base font-bold text-[#2c3434] tabular-nums">S/ {ventaTotal.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                            <span className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Monto Total</span>
+                                            <span className="text-[16px] font-bold text-[#2c3434] tabular-nums">S/ {ventaTotal.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
                                         </div>
                                         <div className="w-px h-8 bg-[#e8eded]" />
                                         <div className="flex flex-col">
-                                            <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Pendiente</span>
-                                            <span className={`text-base font-bold tabular-nums ${Number(showHistoryModal.saldo_pendiente) > 0 ? 'text-[#366480]' : 'text-[#166534]'}`}>S/ {Number(showHistoryModal.saldo_pendiente).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                            <span className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Pendiente</span>
+                                            <span className={`text-[16px] font-bold tabular-nums ${Number(showHistoryModal.saldo_pendiente) > 0 ? 'text-[#366480]' : 'text-[#166534]'}`}>S/ {Number(showHistoryModal.saldo_pendiente).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
                                         </div>
                                     </div>
 
@@ -1808,11 +1813,11 @@ export const SalesTreasuryPage = () => {
                                         {loadingHistory ? (
                                             <div className="py-10 flex flex-col items-center gap-3">
                                                 <RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" />
-                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[11px]">Consultando historial...</p>
+                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[15px]">Consultando historial...</p>
                                             </div>
                                         ) : reversedRows.length === 0 ? (
                                             <div className="py-10 text-center border-2 border-dashed border-[#e8eded] rounded-2xl">
-                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[11px] italic">No hay registros en el historial</p>
+                                                <p className="text-[#8b9ba5] font-semibold uppercase tracking-widest text-[13px] italic">No hay registros en el historial</p>
                                             </div>
                                         ) : reversedRows.map((item) => {
                                             if (item.type === 'COBRO') {
@@ -1838,30 +1843,30 @@ export const SalesTreasuryPage = () => {
                                                                     {isEfectivo ? <Banknote className="w-4 h-4" /> : <CreditCard className="w-4 h-4" />}
                                                                 </div>
                                                                 <div className="flex flex-col min-w-0">
-                                                                    <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Ingreso #{cobro.index}</span>
-                                                                    <span className="text-base font-bold tabular-nums text-emerald-600 leading-tight">+ S/ {Number(cobro.monto).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
-                                                                    <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate">{format(new Date(cobro.created_at), "dd MMM yyyy · HH:mm", { locale: es })}</span>
+                                                                    <span className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Ingreso #{cobro.index}</span>
+                                                                    <span className="text-[16px] font-bold tabular-nums text-emerald-600 leading-tight">+ S/ {Number(cobro.monto).toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate">{format(new Date(cobro.created_at), "dd MMM yyyy · HH:mm", { locale: es })}</span>
                                                                 </div>
                                                             </div>
                                                             {/* Right: saldo restante */}
                                                             <div className="flex flex-col items-end">
-                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Restante</span>
+                                                                <span className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider">Saldo Restante</span>
                                                                 <span className={`text-lg font-bold tabular-nums leading-tight ${cobro.saldoDespues === 0 ? 'text-[#166534]' : 'text-[#366480]'}`}>S/ {cobro.saldoDespues.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</span>
-                                                                <span className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate max-w-[140px]">{cobro.cuenta_destino}</span>
+                                                                <span className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider truncate max-w-[140px]">{cobro.cuenta_destino}</span>
                                                             </div>
                                                         </div>
 
                                                         {isExpanded && (
                                                             <div className="px-3.5 pb-3.5 pt-2 border-t border-[#e8eded]/60 animate-in fade-in slide-in-from-top-1 duration-200">
                                                                 {cobro.motivo_excedente && (
-                                                                    <div className="mb-2.5 text-[11px] font-semibold text-rose-500 bg-rose-50/70 px-2.5 py-2 rounded-lg border border-rose-100 uppercase tracking-wide">
+                                                                    <div className="mb-2.5 text-[13px] font-semibold text-rose-500 bg-rose-50/70 px-2.5 py-2 rounded-lg border border-rose-100 uppercase tracking-wide">
                                                                         Excedente: {cobro.motivo_excedente}
                                                                     </div>
                                                                 )}
                                                                 <div className="flex items-center gap-3">
                                                                     <div className="flex-1 min-w-0">
-                                                                        <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider">N° Operación</p>
-                                                                        <p className="text-sm font-bold font-mono text-[#2c3434] truncate">
+                                                                        <p className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider">N° Operación</p>
+                                                                        <p className="text-[14px] font-bold font-mono text-[#2c3434] truncate">
                                                                             {cobro.numero_operacion ? `#${cobro.numero_operacion}` : '—'}
                                                                         </p>
                                                                     </div>
@@ -1880,25 +1885,25 @@ export const SalesTreasuryPage = () => {
                                                                 </div>
 
                                                                 {loadingCobroTrail && !cobroTrail[cobro.id] && (
-                                                                    <div className="mt-2.5 flex items-center gap-2 text-[#8b9ba5] text-[11px] font-semibold uppercase tracking-widest">
+                                                                    <div className="mt-2.5 flex items-center gap-2 text-[#8b9ba5] text-[13px] font-semibold uppercase tracking-widest">
                                                                         <RefreshCw className="w-3 h-3 animate-spin" /> Rastreando fondos...
                                                                     </div>
                                                                 )}
                                                                 {cobroTrail[cobro.id] && cobroTrail[cobro.id].length > 0 && (
                                                                     <div className="mt-2.5 space-y-1.5">
-                                                                        <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider mb-1">Ruta del Depósito</p>
+                                                                        <p className="text-[11px] font-semibold text-[#8b9ba5] uppercase tracking-wider mb-1">Ruta del Depósito</p>
                                                                         {cobroTrail[cobro.id].map((m, i) => (
                                                                             <div key={m.id} className="flex items-center gap-2 px-2.5 py-2 bg-white/70 rounded-lg border border-[#e8eded]/70">
-                                                                                <span className="w-5 h-5 rounded-full bg-[#4A90E2]/10 text-[#4A90E2] flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
+                                                                                <span className="w-5 h-5 rounded-full bg-[#4A90E2]/10 text-[#4A90E2] flex items-center justify-center text-[11px] font-bold">{i + 1}</span>
                                                                                 <div className="flex-1 min-w-0">
-                                                                                    <p className="text-[11px] font-bold uppercase text-[#2c3434] truncate">
+                                                                                    <p className="text-[13px] font-bold uppercase text-[#2c3434] truncate">
                                                                                         {m.tipo_movimiento === 'INGRESO'
                                                                                             ? (sortedHistory.filter(h => h.type === 'COBRO')[0]?.id === cobro.id ? 'PAGO INICIAL' : 'AMORTIZACIÓN')
                                                                                             : m.tipo_movimiento}
                                                                                     </p>
-                                                                                    <p className="text-[10px] text-[#8b9ba5] truncate">{m.cuenta_destino || m.cuenta_origen}</p>
+                                                                                    <p className="text-[11px] text-[#8b9ba5] truncate">{m.cuenta_destino || m.cuenta_origen}</p>
                                                                                 </div>
-                                                                                <span className={`text-[12px] font-bold tabular-nums ${m.tipo_movimiento === 'INGRESO' ? 'text-emerald-600' : 'text-[#2c3434]'}`}>S/ {Number(m.monto).toFixed(2)}</span>
+                                                                                <span className={`text-[14px] font-bold tabular-nums ${m.tipo_movimiento === 'INGRESO' ? 'text-emerald-600' : 'text-[#2c3434]'}`}>S/ {Number(m.monto).toFixed(2)}</span>
                                                                             </div>
                                                                         ))}
                                                                     </div>
@@ -1938,13 +1943,13 @@ export const SalesTreasuryPage = () => {
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center justify-between gap-2">
-                                                                <span className="text-[13px] font-bold text-slate-800 tracking-tight">{title}</span>
-                                                                <span className="text-[11px] font-medium text-slate-400 tabular-nums">
+                                                                <span className="text-[17px] font-bold text-slate-800 tracking-tight">{title}</span>
+                                                                <span className="text-[14px] font-medium text-slate-400 tabular-nums">
                                                                     {format(new Date(audit.created_at), "dd/MM/yyyy · HH:mm", { locale: es })}
                                                                 </span>
                                                             </div>
-                                                            <p className="text-[12px] font-medium text-slate-500 mt-1 leading-relaxed">{content}</p>
-                                                            <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-[#366480] uppercase tracking-wider bg-[#366480]/5 px-2 py-0.5 rounded w-fit">
+                                                            <p className="text-[14px] font-medium text-slate-500 mt-1 leading-relaxed">{content}</p>
+                                                            <div className="flex items-center gap-1 mt-2 text-[11px] font-bold text-[#366480] uppercase tracking-wider bg-[#366480]/5 px-2 py-0.5 rounded w-fit">
                                                                 <span>Por: {audit.usuario_nombre}</span>
                                                             </div>
                                                         </div>
@@ -2105,8 +2110,8 @@ export const SalesTreasuryPage = () => {
                                         <Edit3 className="w-4 h-4 text-white" />
                                     </div>
                                     <div>
-                                        <h2 className="text-base font-black text-[#2c3434] uppercase tracking-tight">Verificar Comprobante</h2>
-                                        <p className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">
+                                        <h2 className="text-[20px] font-black text-[#2c3434] uppercase tracking-tight">Verificar Comprobante</h2>
+                                        <p className="text-[14px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">
                                             Venta: {showConfirmComprobanteModal.cliente_nombre}
                                         </p>
                                     </div>
@@ -2125,8 +2130,8 @@ export const SalesTreasuryPage = () => {
                                     <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl flex gap-3 text-left">
                                         <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                                         <div>
-                                            <p className="text-[12px] font-bold text-emerald-800">Comprobante verificado y bloqueado</p>
-                                            <p className="text-[11px] text-emerald-600 mt-0.5 leading-relaxed">
+                                            <p className="text-[14px] font-bold text-emerald-800">Comprobante verificado y bloqueado</p>
+                                            <p className="text-[13px] text-emerald-600 mt-0.5 leading-relaxed">
                                                 Los vendedores ya no pueden editar esta información. Como tesorero, puedes realizar correcciones administrativas si es necesario.
                                             </p>
                                         </div>
@@ -2135,8 +2140,8 @@ export const SalesTreasuryPage = () => {
                                     <div className="p-3.5 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3 text-left">
                                         <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                                         <div>
-                                            <p className="text-[12px] font-bold text-amber-800">Comprobante pendiente de verificación</p>
-                                            <p className="text-[11px] text-amber-600 mt-0.5 leading-relaxed">
+                                            <p className="text-[14px] font-bold text-amber-800">Comprobante pendiente de verificación</p>
+                                            <p className="text-[13px] text-amber-600 mt-0.5 leading-relaxed">
                                                 Al confirmar y bloquear, esta información quedará inmutable para los vendedores en la sección de Cotizaciones.
                                             </p>
                                         </div>
@@ -2145,7 +2150,7 @@ export const SalesTreasuryPage = () => {
 
                                 {/* Document Type */}
                                 <div className="space-y-2 text-left">
-                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Tipo de Documento</label>
+                                    <label className="text-[13px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Tipo de Documento</label>
                                     <select
                                         value={confirmComprobanteType}
                                         onChange={(e) => setConfirmComprobanteType(e.target.value as 'FACTURA' | 'BOLETA' | 'TICKET')}
@@ -2159,7 +2164,7 @@ export const SalesTreasuryPage = () => {
 
                                 {/* Voucher Number */}
                                 <div className="space-y-2 text-left">
-                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">N° de Comprobante</label>
+                                    <label className="text-[13px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">N° de Comprobante</label>
                                     <div className="relative">
                                         <input
                                             type="text"
@@ -2173,7 +2178,7 @@ export const SalesTreasuryPage = () => {
 
                                 {/* Sustento Image */}
                                 <div className="space-y-2 text-left">
-                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Imagen de Sustento</label>
+                                    <label className="text-[13px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Imagen de Sustento</label>
                                     {confirmComprobanteSustentoPreview ? (
                                         <div className="relative rounded-xl overflow-hidden border border-[#e8eded]">
                                             <img
@@ -2215,7 +2220,7 @@ export const SalesTreasuryPage = () => {
                                                 }}
                                             />
                                             <Camera className="w-5 h-5 text-slate-400 group-hover:text-[#4A90E2] transition-colors" />
-                                            <span className="text-[11px] font-semibold text-slate-400 group-hover:text-[#4A90E2] text-center transition-colors">
+                                            <span className="text-[13px] font-semibold text-slate-400 group-hover:text-[#4A90E2] text-center transition-colors">
                                                 Pegar imagen <span className="font-black">Ctrl+V</span> o clic para seleccionar
                                             </span>
                                         </label>
@@ -2224,14 +2229,14 @@ export const SalesTreasuryPage = () => {
 
                                 {/* Mini History / Audit Log */}
                                 <div className="space-y-2.5 text-left border-t border-[#d3dcdb]/20 pt-4">
-                                    <label className="text-[10px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Historial de Cambios</label>
+                                    <label className="text-[13px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Historial de Cambios</label>
                                     <div className="space-y-2 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
                                         {loadingConfirmComprobanteAuditLogs ? (
-                                            <div className="py-4 flex items-center justify-center gap-2 text-[#8b9ba5] text-[11px] font-semibold uppercase tracking-widest">
+                                            <div className="py-4 flex items-center justify-center gap-2 text-[#8b9ba5] text-[13px] font-semibold uppercase tracking-widest">
                                                 <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Cargando auditoría...
                                             </div>
                                         ) : confirmComprobanteAuditLogs.length === 0 ? (
-                                            <p className="text-[11px] font-medium text-slate-400 italic py-2 text-center">No hay modificaciones previas registradas</p>
+                                            <p className="text-[13px] font-medium text-slate-400 italic py-2 text-center">No hay modificaciones previas registradas</p>
                                         ) : (
                                             confirmComprobanteAuditLogs.map((log) => {
                                                 const isDoc = log.campo === 'tipo_documento';
@@ -2245,8 +2250,8 @@ export const SalesTreasuryPage = () => {
                                                     desc = `N° Comprobante corregido de "${log.valor_anterior || '—'}" a "${log.valor_nuevo || '—'}"`;
                                                 }
                                                 return (
-                                                    <div key={log.id} className="p-2.5 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-[11px] space-y-1">
-                                                        <div className="flex items-center justify-between text-slate-400 font-semibold uppercase tracking-wider text-[9px]">
+                                                    <div key={log.id} className="p-2.5 bg-[#f8faf9] border border-[#e8eded] rounded-xl text-[13px] space-y-1">
+                                                        <div className="flex items-center justify-between text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
                                                             <span>Por: {log.usuario_nombre}</span>
                                                             <span className="tabular-nums">{format(new Date(log.created_at), "dd/MM/yyyy · HH:mm", { locale: es })}</span>
                                                         </div>
@@ -2263,14 +2268,14 @@ export const SalesTreasuryPage = () => {
                             <div className="px-5 py-4 border-t border-[#d3dcdb]/30 bg-white/40 flex items-center justify-end gap-3 rounded-b-3xl shrink-0">
                                 <button
                                     onClick={() => setShowConfirmComprobanteModal(null)}
-                                    className="px-5 py-2.5 bg-[#f0f5f4] text-slate-600 text-[11px] font-black rounded-xl uppercase tracking-widest hover:bg-[#e8eded] transition-all"
+                                    className="px-5 py-2.5 bg-[#f0f5f4] text-slate-600 text-[13px] font-black rounded-xl uppercase tracking-widest hover:bg-[#e8eded] transition-all"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     onClick={handleConfirmComprobante}
                                     disabled={savingConfirmComprobante}
-                                    className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white text-[11px] font-black rounded-xl uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-600/10 transition-all disabled:opacity-50"
+                                    className="flex items-center gap-1.5 px-5 py-2.5 bg-emerald-600 text-white text-[13px] font-black rounded-xl uppercase tracking-widest hover:bg-emerald-700 shadow-lg shadow-emerald-600/10 transition-all disabled:opacity-50"
                                 >
                                     {savingConfirmComprobante ? (
                                         <>

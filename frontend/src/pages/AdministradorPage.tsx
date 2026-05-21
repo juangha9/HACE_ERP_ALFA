@@ -1573,10 +1573,10 @@ export default function AdministradorPage() {
                             <div className="flex items-center gap-4">
                                 <HistoryIcon className="w-7 h-7 text-[#4A90E2] drop-shadow-sm" />
                                 <div>
-                                    <h2 className="text-xl font-black text-[#2c3434] uppercase tracking-tight">
+                                    <h2 className="text-[25px] font-black text-[#2c3434] uppercase tracking-tight">
                                         Historial de Servicios
                                     </h2>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                    <p className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                                         Detalle técnico por cotización
                                     </p>
                                 </div>
@@ -1598,14 +1598,14 @@ export default function AdministradorPage() {
                                     value={historySearch}
                                     onChange={e => setHistorySearch(e.target.value)}
                                     placeholder="Buscar por código o cliente..."
-                                    className="w-full pl-12 pr-6 py-3 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#8b9ba5]"
+                                    className="w-full pl-12 pr-6 py-3 bg-[#f8faf9] border-none rounded-full text-[15px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#8b9ba5]"
                                 />
                             </div>
                             <div className="relative">
                                 <select
                                     value={historyEstado}
                                     onChange={e => setHistoryEstado(e.target.value as any)}
-                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
+                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[15px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
                                 >
                                     <option value="TODOS">Todos</option>
                                     <option value="PENDIENTE">Pendiente</option>
@@ -1618,7 +1618,7 @@ export default function AdministradorPage() {
                                 <select
                                     value={historyQuickFilter}
                                     onChange={e => applyHistoryQuickFilter(e.target.value as any)}
-                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
+                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[15px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
                                 >
                                     <option value="ULTIMOS_7">Últimos 7 días</option>
                                     <option value="ULTIMOS_30">Últimos 30 días</option>
@@ -1631,7 +1631,7 @@ export default function AdministradorPage() {
                                 <div ref={historyDatePickerWrapRef} className="relative">
                                     <button
                                         onClick={() => setHistoryDatePickerOpen(o => !o)}
-                                        className="flex items-center gap-3 px-6 py-3 bg-[#f8faf9] text-[#366480] rounded-full text-[12px] font-bold hover:bg-[#e8eded] transition-all"
+                                        className="flex items-center gap-3 px-6 py-3 bg-[#f8faf9] text-[#366480] rounded-full text-[15px] font-bold hover:bg-[#e8eded] transition-all"
                                     >
                                         <Calendar className="w-4 h-4 text-[#4A90E2]" />
                                         {format(parseISO(historyStart), 'dd MMM', { locale: es })} — {format(parseISO(historyEnd), 'dd MMM', { locale: es })}
@@ -1658,7 +1658,7 @@ export default function AdministradorPage() {
                         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                             {historyItemsByCotizacion.length === 0 ? (
                                 <div className="py-24 text-center border-2 border-dashed border-slate-100 rounded-[2rem]">
-                                    <p className="text-slate-300 font-black uppercase tracking-widest text-xs italic">
+                                    <p className="text-slate-300 font-black uppercase tracking-widest text-[15px] italic">
                                         Sin cotizaciones en el rango seleccionado
                                     </p>
                                 </div>
@@ -1678,20 +1678,20 @@ export default function AdministradorPage() {
                                             >
                                                 <div className="flex items-center gap-6 min-w-0">
                                                     <div className="flex flex-col">
-                                                        <span className="text-[13px] font-bold text-[#2c3434] uppercase tracking-tight">
+                                                        <span className="text-[16px] font-bold text-[#2c3434] uppercase tracking-tight">
                                                             #{highlight(cot.codigo, historySearch)}
                                                         </span>
-                                                        <span className="text-[10px] font-medium text-[#366480]/50 uppercase tracking-widest mt-0.5">
+                                                        <span className="text-[13px] font-medium text-[#366480]/50 uppercase tracking-widest mt-0.5">
                                                             {format(parseISO(cot.fecha_emision), "dd MMM, yyyy", { locale: es })}
                                                         </span>
                                                     </div>
                                                     <div className="w-px h-10 bg-[#d3dcdb]/30 hidden sm:block" />
                                                     <div className="flex flex-col min-w-0">
-                                                        <p className="text-[13px] font-semibold text-[#366480] uppercase tracking-tight truncate">
+                                                        <p className="text-[16px] font-semibold text-[#366480] uppercase tracking-tight truncate">
                                                             {highlight(cot.cliente_nombre || '—', historySearch)}
                                                         </p>
                                                         {cot.descripcion && (
-                                                            <span className="text-[10px] font-medium text-slate-400 truncate max-w-[200px]" title={cot.descripcion}>
+                                                            <span className="text-[13px] font-medium text-slate-400 truncate max-w-[200px]" title={cot.descripcion}>
                                                                 {cot.descripcion}
                                                             </span>
                                                         )}
@@ -1702,12 +1702,12 @@ export default function AdministradorPage() {
                                                         const ve = ventasParaDashboard.find(v => v.codigo_cotizacion === cot.codigo);
                                                         const ds = ve?.estado_pago || (cot.estado === 'BORRADOR' ? 'BORRADOR' : 'LISTO');
                                                         return (
-                                                            <span className={`px-4 py-1.5 text-[10px] font-bold rounded-full border tracking-widest uppercase ${ESTADO_BADGE[ds] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                                            <span className={`px-4 py-1.5 text-[13px] font-bold rounded-full border tracking-widest uppercase ${ESTADO_BADGE[ds] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                                                                 {ds}
                                                             </span>
                                                         );
                                                     })()}
-                                                    <span className="text-[14px] font-bold text-[#2c3434] tabular-nums">
+                                                    <span className="text-[18px] font-bold text-[#2c3434] tabular-nums">
                                                         S/ {formatNumber(Number(cot.total) || 0, 2)}
                                                     </span>
                                                     {isExpanded ? <ChevronUp className="w-4 h-4 text-[#4A90E2]" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
@@ -1716,12 +1716,12 @@ export default function AdministradorPage() {
                                             {isExpanded && (
                                                 <div className="px-7 pb-6 animate-desglose">
                                                     <div className="bg-[#f7faf9]/40 border border-[#d3dcdb]/20 rounded-[20px] p-6">
-                                                        <p className="text-[10px] font-semibold text-[#366480]/40 uppercase tracking-[0.2em] mb-5 border-b border-[#d3dcdb]/20 pb-3 italic">
+                                                        <p className="text-[13px] font-semibold text-[#366480]/40 uppercase tracking-[0.2em] mb-5 border-b border-[#d3dcdb]/20 pb-3 italic">
                                                             Desglose Técnico del Proyecto
                                                         </p>
-                                                        <table className="w-full text-[12px]">
+                                                        <table className="w-full text-[15px]">
                                                             <thead className="text-[#366480]/40 uppercase border-b border-[#d3dcdb]/10">
-                                                                <tr className="text-[10px] tracking-[0.2em]">
+                                                                <tr className="text-[13px] tracking-[0.2em]">
                                                                     <th className="pb-3 text-left font-semibold">Componente / Recurso</th>
                                                                     <th className="pb-3 text-left font-semibold">Unidad</th>
                                                                     <th className="pb-3 text-left font-semibold">Cantidad</th>
@@ -1734,7 +1734,7 @@ export default function AdministradorPage() {
                                                                         <td className="py-3 text-left uppercase text-[#366480]/80 font-semibold tracking-tight">
                                                                             {r.descripcion || '—'}
                                                                         </td>
-                                                                        <td className="py-3 text-left text-[#366480]/60 font-medium uppercase tracking-widest text-[10px]">
+                                                                        <td className="py-3 text-left text-[#366480]/60 font-medium uppercase tracking-widest text-[13px]">
                                                                             {r.unidad}
                                                                         </td>
                                                                         <td className="py-3 text-left tabular-nums font-semibold text-[#2c3434]">
@@ -1752,16 +1752,16 @@ export default function AdministradorPage() {
                                                                     return (
                                                                         <>
                                                                             <tr className="border-t-2 border-[#d3dcdb]/20">
-                                                                                <td colSpan={3} className="pt-4 pb-1 text-right text-[10px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">Subtotal</td>
+                                                                                <td colSpan={3} className="pt-4 pb-1 text-right text-[13px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">Subtotal</td>
                                                                                 <td className="pt-4 pb-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(subtotal, 2)}</td>
                                                                             </tr>
                                                                             <tr>
-                                                                                <td colSpan={3} className="py-1 text-right text-[10px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">IGV (18%)</td>
+                                                                                <td colSpan={3} className="py-1 text-right text-[13px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">IGV (18%)</td>
                                                                                 <td className="py-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(igv, 2)}</td>
                                                                             </tr>
                                                                             <tr className="border-t border-[#d3dcdb]/20">
-                                                                                <td colSpan={3} className="pt-3 text-right text-[11px] font-bold text-[#2c3434] uppercase tracking-widest pr-3">Total</td>
-                                                                                <td className="pt-3 text-right text-[14px] font-extrabold text-[#2c3434] tabular-nums">S/ {formatNumber(grandTotal, 2)}</td>
+                                                                                <td colSpan={3} className="pt-3 text-right text-[14px] font-bold text-[#2c3434] uppercase tracking-widest pr-3">Total</td>
+                                                                                <td className="pt-3 text-right text-[18px] font-extrabold text-[#2c3434] tabular-nums">S/ {formatNumber(grandTotal, 2)}</td>
                                                                             </tr>
                                                                         </>
                                                                     );
@@ -1797,10 +1797,10 @@ export default function AdministradorPage() {
                             <div className="flex items-center gap-4">
                                 <Users className="w-7 h-7 text-[#4A90E2] drop-shadow-sm" />
                                 <div>
-                                    <h2 className="text-xl font-black text-[#2c3434] uppercase tracking-tight">
+                                    <h2 className="text-[25px] font-black text-[#2c3434] uppercase tracking-tight">
                                         Clientes
                                     </h2>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                    <p className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                                         Ventas, consumo y deuda por cliente
                                     </p>
                                 </div>
@@ -1808,14 +1808,14 @@ export default function AdministradorPage() {
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => { setEditClientSearch(''); setEditClientListOpen(true); setEditClientListClosing(false); }}
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all"
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all"
                                 >
                                     <Pencil className="w-3.5 h-3.5" />
                                     <span>Editar</span>
                                 </button>
                                 <button
                                     onClick={openNewClient}
-                                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all"
+                                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all"
                                 >
                                     <UserPlus className="w-3.5 h-3.5" />
                                     <span>Registrar</span>
@@ -1838,14 +1838,14 @@ export default function AdministradorPage() {
                                     value={clientsInputValue}
                                     onChange={e => setClientsInputValue(e.target.value)}
                                     placeholder="Buscar cliente..."
-                                    className="w-full pl-12 pr-6 py-3 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#8b9ba5]"
+                                    className="w-full pl-12 pr-6 py-3 bg-[#f8faf9] border-none rounded-full text-[15px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#8b9ba5]"
                                 />
                             </div>
                             <div className="relative">
                                 <select
                                     value={clientsDebtFilter}
                                     onChange={e => setClientsDebtFilter(e.target.value as any)}
-                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
+                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[15px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
                                 >
                                     <option value="TODOS">Todos</option>
                                     <option value="CON_DEUDA">Con deuda</option>
@@ -1857,7 +1857,7 @@ export default function AdministradorPage() {
                                 <select
                                     value={clientsQuickFilter}
                                     onChange={e => applyClientsQuickFilter(e.target.value as any)}
-                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[12px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
+                                    className="bg-[#f8faf9] border-none px-6 py-3 rounded-full text-[15px] font-bold text-[#366480] outline-none appearance-none cursor-pointer pr-10 transition-all"
                                 >
                                     <option value="TODO">Histórico completo</option>
                                     <option value="HOY">Hoy</option>
@@ -1872,7 +1872,7 @@ export default function AdministradorPage() {
                                 <div ref={clientsDatePickerWrapRef} className="relative">
                                     <button
                                         onClick={() => setClientsDatePickerOpen(o => !o)}
-                                        className="flex items-center gap-3 px-6 py-3 bg-[#f8faf9] text-[#366480] rounded-full text-[12px] font-bold hover:bg-[#e8eded] transition-all"
+                                        className="flex items-center gap-3 px-6 py-3 bg-[#f8faf9] text-[#366480] rounded-full text-[15px] font-bold hover:bg-[#e8eded] transition-all"
                                     >
                                         <Calendar className="w-4 h-4 text-[#4A90E2]" />
                                         {format(parseISO(clientsStart), 'dd MMM', { locale: es })} — {format(parseISO(clientsEnd), 'dd MMM', { locale: es })}
@@ -1896,13 +1896,13 @@ export default function AdministradorPage() {
 
                         {/* Summary strip */}
                         <div className="px-8 py-3 flex items-center gap-6 border-b border-[#f0f5f4] bg-white/30">
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                            <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
                                 {clientsRows.length} cliente{clientsRows.length === 1 ? '' : 's'}
                             </span>
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                            <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
                                 Tableros · <span className="text-[#2c3434] tabular-nums">{formatNumber(clientsRows.reduce((a, r) => a + r.tableros, 0), 0)}</span>
                             </span>
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                            <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
                                 Deuda total · <span className="text-rose-500 tabular-nums">S/ {formatNumber(clientsRows.reduce((a, r) => a + r.deuda, 0), 2)}</span>
                             </span>
                         </div>
@@ -1911,14 +1911,14 @@ export default function AdministradorPage() {
                         <div className="flex-1 overflow-y-auto custom-scrollbar">
                             {clientsRows.length === 0 ? (
                                 <div className="py-24 text-center">
-                                    <p className="text-slate-300 font-black uppercase tracking-widest text-xs italic">
+                                    <p className="text-slate-300 font-black uppercase tracking-widest text-[15px] italic">
                                         Sin clientes en el rango seleccionado
                                     </p>
                                 </div>
                             ) : (
                                 <table className="w-full text-left">
                                     <thead className="sticky top-0 bg-white/90 backdrop-blur-md z-10">
-                                        <tr className="text-slate-400 text-[9px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/30">
+                                        <tr className="text-slate-400 text-[11px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/30">
                                             <th className="px-7 py-4">Cliente</th>
                                             <th className="px-7 py-4 text-right">
                                                 <button
@@ -1966,31 +1966,31 @@ export default function AdministradorPage() {
                                             <tr key={row.cliente} className="hover:bg-slate-50/40 transition-colors group">
                                                 <td className="px-7 py-4">
                                                     <div className="flex flex-col">
-                                                        <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight">
+                                                        <span className="text-[16px] font-black text-[#2c3434] uppercase tracking-tight">
                                                             {highlight(row.cliente, clientsInputValue)}
                                                         </span>
-                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                                                             Última compra: {format(parseISO(row.ultimaFecha), "dd MMM, yyyy", { locale: es })}
                                                         </span>
                                                     </div>
                                                 </td>
-                                                <td className="px-7 py-4 text-right text-[13px] font-black text-[#366480] tabular-nums">
+                                                <td className="px-7 py-4 text-right text-[16px] font-black text-[#366480] tabular-nums">
                                                     {row.ventas}
                                                 </td>
-                                                <td className="px-7 py-4 text-right text-[13px] font-black text-[#2c3434] tabular-nums">
+                                                <td className="px-7 py-4 text-right text-[16px] font-black text-[#2c3434] tabular-nums">
                                                     {formatNumber(row.tableros, 0)}
                                                 </td>
-                                                <td className="px-7 py-4 text-[11px] font-bold text-slate-500 uppercase tracking-tight truncate max-w-[260px]" title={row.topMaterial}>
+                                                <td className="px-7 py-4 text-[14px] font-bold text-slate-500 uppercase tracking-tight truncate max-w-[260px]" title={row.topMaterial}>
                                                     {row.topMaterial}
                                                 </td>
                                                 <td className="px-7 py-4 text-right">
                                                     {row.deuda > 0 ? (
-                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-black rounded-full border bg-rose-50 text-rose-600 border-rose-200 tracking-widest uppercase tabular-nums">
+                                                        <span className="inline-flex items-center gap-1.5 px-3 py-1 text-[13px] font-black rounded-full border bg-rose-50 text-rose-600 border-rose-200 tracking-widest uppercase tabular-nums">
                                                             <AlertCircle className="w-3 h-3" />
                                                             S/ {formatNumber(row.deuda, 2)}
                                                         </span>
                                                     ) : (
-                                                        <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">
+                                                        <span className="text-[13px] font-black text-emerald-600 uppercase tracking-widest">
                                                             Al día
                                                         </span>
                                                     )}
@@ -2020,8 +2020,8 @@ export default function AdministradorPage() {
                         <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10" />
                         <div className="px-7 pt-7 pb-5 flex items-center justify-between border-b border-[#d3dcdb]/30">
                             <div>
-                                <h2 className="text-[16px] font-black text-[#2c3434] tracking-tight">Editar Cliente</h2>
-                                <p className="text-[10px] font-bold text-slate-400 mt-0.5 tracking-wide">Selecciona un cliente registrado para editar sus datos</p>
+                                <h2 className="text-[20px] font-black text-[#2c3434] tracking-tight">Editar Cliente</h2>
+                                <p className="text-[13px] font-bold text-slate-400 mt-0.5 tracking-wide">Selecciona un cliente registrado para editar sus datos</p>
                             </div>
                             <button
                                 onClick={() => { setEditClientListClosing(true); window.setTimeout(() => { setEditClientListOpen(false); setEditClientListClosing(false); }, 220); }}
@@ -2038,14 +2038,14 @@ export default function AdministradorPage() {
                                     value={editClientSearch}
                                     onChange={e => setEditClientSearch(e.target.value)}
                                     placeholder="Buscar cliente..."
-                                    className="w-full pl-10 pr-5 py-2.5 bg-[#f8faf9] border-none rounded-full text-[12px] font-bold text-[#2c3434] outline-none placeholder:text-[#8b9ba5]"
+                                    className="w-full pl-10 pr-5 py-2.5 bg-[#f8faf9] border-none rounded-full text-[15px] font-bold text-[#2c3434] outline-none placeholder:text-[#8b9ba5]"
                                 />
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto custom-scrollbar">
                             {clientContacts.filter(c => !editClientSearch.trim() || c.name.toLowerCase().includes(editClientSearch.toLowerCase())).length === 0 ? (
                                 <div className="py-16 text-center">
-                                    <p className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">Sin clientes registrados</p>
+                                    <p className="text-[14px] font-bold text-slate-300 uppercase tracking-widest">Sin clientes registrados</p>
                                 </div>
                             ) : (
                                 <div className="divide-y divide-slate-50">
@@ -2054,9 +2054,9 @@ export default function AdministradorPage() {
                                         .map(contact => (
                                             <div key={contact.id} className="flex items-center justify-between px-7 py-4 hover:bg-slate-50/50 transition-colors">
                                                 <div className="flex flex-col min-w-0">
-                                                    <span className="text-[13px] font-black text-[#2c3434] uppercase tracking-tight truncate">{highlight(contact.name, editClientSearch)}</span>
+                                                    <span className="text-[16px] font-black text-[#2c3434] uppercase tracking-tight truncate">{highlight(contact.name, editClientSearch)}</span>
                                                     {contact.tax_id && (
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">RUC/DNI: {highlight(contact.tax_id, editClientSearch)}</span>
+                                                        <span className="text-[13px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">RUC/DNI: {highlight(contact.tax_id, editClientSearch)}</span>
                                                     )}
                                                 </div>
                                                 <button
@@ -2091,10 +2091,10 @@ export default function AdministradorPage() {
                         <div className="px-8 pt-8 pb-6">
                             <div className="flex items-start justify-between">
                                 <div>
-                                    <h2 className="text-[18px] font-black text-[#2c3434] tracking-tight leading-snug">
+                                    <h2 className="text-[23px] font-black text-[#2c3434] tracking-tight leading-snug">
                                         {newClientIsEdit ? 'Editar Cliente / Empresa' : 'Registrar Nuevo Cliente / Empresa'}
                                     </h2>
-                                    <p className="text-[11px] font-bold text-slate-400 mt-1.5 tracking-wide leading-relaxed">
+                                    <p className="text-[14px] font-bold text-slate-400 mt-1.5 tracking-wide leading-relaxed">
                                         {newClientIsEdit
                                             ? 'Modifica los datos fiscales o de contacto del registro.'
                                             : 'Ingrese los datos fiscales y de contacto para dar de alta en el sistema.'}
@@ -2112,7 +2112,7 @@ export default function AdministradorPage() {
                         <div className="px-8 pb-8 flex flex-col gap-5">
                             {/* Nombre */}
                             <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">
+                                <label className="text-[13px] font-black text-[#2c3434] uppercase tracking-widest">
                                     Nombre / Razón Social
                                 </label>
                                 <input
@@ -2120,18 +2120,18 @@ export default function AdministradorPage() {
                                     value={newClientData.name}
                                     onChange={e => setNewClientData(d => ({ ...d, name: e.target.value }))}
                                     placeholder="Ej: Corporación Industrial S.A."
-                                    className="w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
+                                    className="w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[16px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
                                 />
                             </div>
                             {/* Tipo + DNI/RUC */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Tipo</label>
+                                    <label className="text-[13px] font-black text-[#2c3434] uppercase tracking-widest">Tipo</label>
                                     <div className="relative">
                                         <select
                                             value={newClientData.type}
                                             onChange={e => setNewClientData(d => ({ ...d, type: e.target.value as 'CLIENT' | 'SUPPLIER' | 'BOTH' }))}
-                                            className="appearance-none w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none cursor-pointer transition-all focus:border-[#4A90E2]/40 focus:bg-white pr-10"
+                                            className="appearance-none w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[16px] font-bold text-[#2c3434] outline-none cursor-pointer transition-all focus:border-[#4A90E2]/40 focus:bg-white pr-10"
                                         >
                                             <option value="CLIENT">Cliente</option>
                                             <option value="SUPPLIER">Proveedor</option>
@@ -2141,19 +2141,19 @@ export default function AdministradorPage() {
                                     </div>
                                 </div>
                                 <div className="flex flex-col gap-2">
-                                    <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">DNI / RUC</label>
+                                    <label className="text-[13px] font-black text-[#2c3434] uppercase tracking-widest">DNI / RUC</label>
                                     <input
                                         type="text"
                                         value={newClientData.tax_id}
                                         onChange={e => setNewClientData(d => ({ ...d, tax_id: e.target.value }))}
                                         placeholder="20XXXXXXXXX"
-                                        className="w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
+                                        className="w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[16px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
                                     />
                                 </div>
                             </div>
                             {/* Teléfono */}
                             <div className="flex flex-col gap-2">
-                                <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Teléfono</label>
+                                <label className="text-[13px] font-black text-[#2c3434] uppercase tracking-widest">Teléfono</label>
                                 <div className="relative">
                                     <Phone className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#b0bec5] pointer-events-none" />
                                     <input
@@ -2161,7 +2161,7 @@ export default function AdministradorPage() {
                                         value={newClientData.phone}
                                         onChange={e => setNewClientData(d => ({ ...d, phone: e.target.value }))}
                                         placeholder="+51 900 000.000"
-                                        className="w-full px-5 pr-12 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
+                                        className="w-full px-5 pr-12 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[16px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
                                     />
                                 </div>
                             </div>
@@ -2169,13 +2169,13 @@ export default function AdministradorPage() {
                             {newClientSuccess && (
                                 <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-2xl">
                                     <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                                    <p className="text-[11px] font-bold text-emerald-700">
+                                    <p className="text-[14px] font-bold text-emerald-700">
                                         {newClientIsEdit ? 'Datos actualizados con éxito. Cerrando…' : 'Cliente registrado con éxito. Cerrando…'}
                                     </p>
                                 </div>
                             )}
                             {newClientError && !newClientSuccess && (
-                                <p className="text-[11px] font-bold text-rose-500 bg-rose-50 px-4 py-3 rounded-2xl border border-rose-100">
+                                <p className="text-[14px] font-bold text-rose-500 bg-rose-50 px-4 py-3 rounded-2xl border border-rose-100">
                                     {newClientError}
                                 </p>
                             )}
@@ -2183,14 +2183,14 @@ export default function AdministradorPage() {
                             <div className="flex items-center justify-end gap-3 pt-2">
                                 <button
                                     onClick={closeNewClient}
-                                    className="px-6 py-3 text-[10px] font-black text-slate-500 hover:text-slate-700 transition-all uppercase tracking-widest"
+                                    className="px-6 py-3 text-[13px] font-black text-slate-500 hover:text-slate-700 transition-all uppercase tracking-widest"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     onClick={saveNewClient}
                                     disabled={newClientSaving || newClientSuccess}
-                                    className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all disabled:opacity-60"
+                                    className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all disabled:opacity-60"
                                 >
                                     <Check className="w-3.5 h-3.5" />
                                     {newClientSaving ? 'Guardando...' : newClientIsEdit ? 'Guardar Cambios' : 'Guardar Registro'}
