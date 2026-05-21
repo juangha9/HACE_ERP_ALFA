@@ -763,7 +763,12 @@ export const SalesTreasuryPage = () => {
     useEffect(() => { setVentasPage(1); }, [ventas, deferredSearch, filterEstado, startDate, endDate]);
 
     const ventasPageTotal = Math.ceil(filteredVentas.length / VENTAS_PAGE_SIZE);
-    const paginatedVentas = filteredVentas.slice((ventasPage - 1) * VENTAS_PAGE_SIZE, ventasPage * VENTAS_PAGE_SIZE);
+    // Memoizado: evita crear un arreglo nuevo en cada render, lo que hacía que el
+    // useEffect de carga por lotes (que depende de paginatedVentas) se disparara siempre.
+    const paginatedVentas = useMemo(
+        () => filteredVentas.slice((ventasPage - 1) * VENTAS_PAGE_SIZE, ventasPage * VENTAS_PAGE_SIZE),
+        [filteredVentas, ventasPage]
+    );
 
     // Dynamic linked purchase allocation lookup
     const linkedPurchases = useMemo(() => {

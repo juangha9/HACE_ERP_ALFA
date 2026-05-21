@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { API_URL } from '../../services/apiConfig';
 
 // Fix for default marker icon in React Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -63,7 +64,7 @@ export function LogisticsCard() {
         const fetchData = async () => {
             try {
                 // Fetch Zone
-                const zoneRes = await fetch('http://localhost:8787/api/cost-zones/default');
+                const zoneRes = await fetch(`${API_URL}/cost-zones/default`);
                 if (zoneRes.ok) {
                     const zoneData = await zoneRes.json();
                     if (zoneData) {
@@ -81,7 +82,7 @@ export function LogisticsCard() {
                 }
 
                 // Fetch Rates
-                const ratesRes = await fetch('http://localhost:8787/api/transport-rates/default');
+                const ratesRes = await fetch(`${API_URL}/transport-rates/default`);
                 if (ratesRes.ok) {
                     const ratesData = await ratesRes.json();
                     if (ratesData) {
@@ -117,7 +118,7 @@ export function LogisticsCard() {
     // 3. Backend Save Functions
     const saveZoneToBackend = async (name: string, pos: [number, number]) => {
         try {
-            await fetch('http://localhost:8787/api/cost-zones/default', {
+            await fetch(`${API_URL}/cost-zones/default`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -133,7 +134,7 @@ export function LogisticsCard() {
 
     const saveRatesToBackend = async (freight: number, bands: any[]) => {
         try {
-            await fetch('http://localhost:8787/api/transport-rates/default', {
+            await fetch(`${API_URL}/transport-rates/default`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

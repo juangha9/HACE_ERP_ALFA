@@ -5,6 +5,7 @@ import { useReactToPrint } from 'react-to-print';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PieceInputPanel, PieceListPanel } from './components/PieceList';
 import { api } from '../../services/api';
+import { API_URL } from '../../services/apiConfig';
 import { CuttingMap } from './components/CuttingMap';
 import { optimizeCuttingMap, safeFallbackPack, prepareEvolution, evolveStep, type Board } from './lib/optimizationAlgorithm';
 import { SettingsModal } from './components/SettingsModal';
@@ -109,7 +110,7 @@ export const OptimizationLayout = () => {
                 setCustomBoards(cb);
                 
                 // Cargar Inteligencia Global (Meta-aprendizaje) de Supabase
-                const brainData = await fetch('http://localhost:8787/api/ai-brain-weights').then(res => res.json());
+                const brainData = await fetch(`${API_URL}/ai-brain-weights`).then(res => res.json());
                 if (brainData && brainData.length > 0) {
                     setAiBrainWeights(brainData[0].weights);
                     console.log("[ML] Inteligencia Global activada.");
@@ -486,7 +487,7 @@ export const OptimizationLayout = () => {
                     version: finalVersion 
                 } 
             };
-            const res = await fetch('http://localhost:8787/api/optimizations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const res = await fetch(`${API_URL}/optimizations`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!res.ok) throw new Error(await res.text());
             const savedData = await res.json();
             setOptimizationId(savedData.id); setOptimizationCode(savedData.code); setOptimizationStatus(savedData.status);
@@ -499,7 +500,7 @@ export const OptimizationLayout = () => {
             // META-APRENDIZAJE: Actualizar el "Cerebro Global" con los pesos actuales si el resultado fue bueno
             if (stats.wastePercent < 15) { // Solo aprendemos de optimizaciones con menos de 15% de desperdicio
                 try {
-                    await fetch('http://localhost:8787/api/ai-brain-weights', {
+                    await fetch(`${API_URL}/ai-brain-weights`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 

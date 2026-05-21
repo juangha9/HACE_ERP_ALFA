@@ -104,6 +104,8 @@ DECLARE
     v_venta_id UUID;
     v_item   JSONB;
     v_user_id UUID;
+    v_new_saldo NUMERIC(15, 2);
+    v_new_estado TEXT;
 BEGIN
     v_user_id := auth.uid();
 
@@ -114,6 +116,12 @@ BEGIN
 
     -- Crear cabecera si aún no existe
     IF v_cot.venta_id IS NULL THEN
+        -- El adelanto de la cotización es puramente informativo para el vendedor.
+        -- En Ventas y Tesorería la venta nace con el saldo pendiente completo igual al total,
+        -- y el asistente administrativo registra manualmente el cobro tras conciliar.
+        v_new_saldo := v_cot.total;
+        v_new_estado := 'PENDIENTE';
+
         INSERT INTO ventas_cabecera (
             codigo_cotizacion,
             cliente_nombre,
@@ -126,8 +134,8 @@ BEGIN
             v_cot.codigo,
             v_cot.cliente_nombre,
             v_cot.total,
-            v_cot.total,
-            'PENDIENTE',
+            v_new_saldo,
+            v_new_estado,
             'Cotización ' || v_cot.codigo,
             v_user_id
         )
@@ -137,11 +145,28 @@ BEGIN
     ELSE
         v_venta_id := v_cot.venta_id;
 
-        -- Actualizar montos en cabecera si la cotización fue editada
+        -- Actualizar montos en cabecera si la cotización fue editada.
+        -- IMPORTANTE: preservar los pagos ya cobrados. El monto cobrado es
+        -- (monto_total - saldo_pendiente) ANTES del update. El nuevo saldo es
+        -- el nuevo total menos lo ya cobrado, nunca negativo.
+        -- También se actualiza el estado_pago de acuerdo con el nuevo saldo calculado.
+        SELECT GREATEST(v_cot.total - (monto_total - saldo_pendiente), 0) INTO v_new_saldo
+        FROM ventas_cabecera
+        WHERE id = v_venta_id;
+
+        IF v_new_saldo = 0 THEN
+            v_new_estado := 'CANCELADO';
+        ELSIF v_new_saldo < v_cot.total THEN
+            v_new_estado := 'PARCIAL';
+        ELSE
+            v_new_estado := 'PENDIENTE';
+        END IF;
+
         UPDATE ventas_cabecera
         SET cliente_nombre       = v_cot.cliente_nombre,
+            saldo_pendiente      = v_new_saldo,
+            estado_pago          = v_new_estado,
             monto_total          = v_cot.total,
-            saldo_pendiente      = v_cot.total,
             descripcion_resumen  = 'Cotización ' || v_cot.codigo,
             user_id              = COALESCE(user_id, v_user_id)
         WHERE id = v_venta_id;

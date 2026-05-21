@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { OptimizationFlow } from '../../../services/types';
+import { API_URL } from '../../../services/apiConfig';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 
 interface OptimizationHistoryModalProps {
@@ -23,7 +24,7 @@ const OptimizationHistoryModalComponent: React.FC<OptimizationHistoryModalProps>
             setLoading(true);
             setError(null);
             try {
-                const res = await fetch('http://localhost:8787/api/optimizations');
+                const res = await fetch(`${API_URL}/optimizations`);
                 if (!res.ok) throw new Error('Error al cargar historial.');
                 const data: OptimizationFlow[] = await res.json();
                 

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { API_URL } from './apiConfig';
 
 const toWebP = (file: File, quality = 0.85): Promise<File> =>
     new Promise((resolve, reject) => {
@@ -38,7 +39,6 @@ import type {
     OrdenPago,
     DetalleOrden
 } from './types';
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:8787/api' : 'https://erp-backend.juangutierrezhancco43.workers.dev/api');
 
 export interface CreateMermaRequest {
     product_id: string;

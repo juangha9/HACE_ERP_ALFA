@@ -143,6 +143,10 @@ export default function AdministradorPage() {
     const defaultEnd = format(today, 'yyyy-MM-dd');
 
     const [items, setItems] = useState<CotizacionItemRow[]>([]);
+    // Estados propios de los modales: cada uno consulta su propio rango y NO contamina
+    // el arreglo `items` del dashboard (que solo lo llena fetchData).
+    const [clientsItems, setClientsItems] = useState<CotizacionItemRow[]>([]);
+    const [historyItems, setHistoryItems] = useState<CotizacionItemRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -983,15 +987,7 @@ export default function AdministradorPage() {
                 ]);
                 if (cancelled) return;
                 if (itemsRes.data) {
-                    setItems(prev => {
-                        const seen = new Set(prev.map(p => `${p.cotizacion_id}|${p.descripcion}|${p.cantidad}`));
-                        const merged = [...prev];
-                        for (const row of itemsRes.data as unknown as CotizacionItemRow[]) {
-                            const key = `${row.cotizacion_id}|${row.descripcion}|${row.cantidad}`;
-                            if (!seen.has(key)) merged.push(row);
-                        }
-                        return merged;
-                    });
+                    setClientsItems(itemsRes.data as unknown as CotizacionItemRow[]);
                 }
                 if (ventasRes.data) {
                     setVentasCabecera(ventasRes.data as any);
@@ -1015,7 +1011,7 @@ export default function AdministradorPage() {
 
     // Aggregate per-client stats
     const clientsRows = useMemo(() => {
-        const inRange = items.filter(it => {
+        const inRange = clientsItems.filter(it => {
             const f = it.cotizaciones?.fecha_emision;
             if (!f) return false;
             return f >= clientsStart && f <= clientsEnd;
@@ -1057,10 +1053,13 @@ export default function AdministradorPage() {
             if (c.fecha_emision > agg.ultimaFecha) agg.ultimaFecha = c.fecha_emision;
         }
 
-        // Build deuda lookup from ventas_cabecera
+        // Build deuda lookup from ventas_cabecera.
+        // Clave normalizada (mayúsculas + espacios colapsados) para que el cruce no
+        // falle por diferencias de mayúsculas/espaciado entre cotizaciones y ventas.
+        const normName = (s: string | null | undefined) => (s || '').trim().toUpperCase().replace(/\s+/g, ' ');
         const debtByClient = new Map<string, number>();
         for (const v of ventasCabecera) {
-            const k = (v.cliente_nombre || '').trim();
+            const k = normName(v.cliente_nombre);
             if (!k) continue;
             if (v.estado_pago === 'CANCELADO') continue;
             debtByClient.set(k, (debtByClient.get(k) || 0) + (Number(v.saldo_pendiente) || 0));
@@ -1075,7 +1074,7 @@ export default function AdministradorPage() {
                     topMaterial = name;
                 }
             }
-            const deuda = debtByClient.get(agg.cliente) || 0;
+            const deuda = debtByClient.get(normName(agg.cliente)) || 0;
             return {
                 cliente: agg.cliente,
                 ventas: agg.ventas.size,
@@ -1105,7 +1104,7 @@ export default function AdministradorPage() {
             rows = rows.sort((a, b) => a.cliente.localeCompare(b.cliente, 'es'));
         }
         return rows;
-    }, [items, ventasCabecera, clientsStart, clientsEnd, clientsSearch, clientsDebtFilter, clientsSort]);
+    }, [clientsItems, ventasCabecera, clientsStart, clientsEnd, clientsSearch, clientsDebtFilter, clientsSort]);
 
     const applyHistoryQuickFilter = (val: typeof historyQuickFilter) => {
         setHistoryQuickFilter(val);
@@ -1125,7 +1124,7 @@ export default function AdministradorPage() {
     // History: independent slice so the filter inside the modal is decoupled
     const historyItemsByCotizacion = useMemo(() => {
         // Pull items that fall in the history range (separate from the dashboard range)
-        const inRange = items.filter(it => {
+        const inRange = historyItems.filter(it => {
             const f = it.cotizaciones?.fecha_emision;
             if (!f) return false;
             return f >= historyStart && f <= historyEnd;
@@ -1162,50 +1161,33 @@ export default function AdministradorPage() {
             const bCreated = bVenta?.created_at ?? '';
             return aCreated < bCreated ? 1 : -1;
         });
-    }, [items, historyStart, historyEnd, historyEstado, historySearch, ventasParaDashboard]);
+    }, [historyItems, historyStart, historyEnd, historyEstado, historySearch, ventasParaDashboard]);
 
-    // Make sure the underlying fetch covers the history range too
+    // Carga los ítems del rango del historial en su propio estado (historyItems), sin
+    // contaminar el arreglo `items` del dashboard. Es autosuficiente: siempre consulta
+    // su propio rango al abrir el modal o cambiar las fechas.
     useEffect(() => {
-        if (historyOpen) {
-            // No-op: data fetched on demand uses dashboard range; we extend it
-            // here so the modal can show the user-selected range.
-            // Done via a transient extension: refetch the broader window if needed.
-            const needsRefetch =
-                historyStart < startDate || historyEnd > endDate;
-            if (needsRefetch) {
-                // Temporarily widen the fetch by using supabase directly so we
-                // don't pollute the dashboard's stat scope.
-                (async () => {
-                    try {
-                        const { data } = await supabase
-                            .from('cotizaciones_items')
-                            .select(
-                                'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                                    'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
-                            )
-                            .neq('cotizaciones.estado', 'ELIMINADO')
-                            .gte('cotizaciones.fecha_emision', historyStart)
-                            .lte('cotizaciones.fecha_emision', historyEnd)
-                            .order('created_at', { ascending: false });
-                        if (data) {
-                            // Merge into items state, deduping by id
-                            setItems(prev => {
-                                const seen = new Set(prev.map(p => `${p.cotizacion_id}|${p.descripcion}|${p.cantidad}`));
-                                const merged = [...prev];
-                                for (const row of data as unknown as CotizacionItemRow[]) {
-                                    const key = `${row.cotizacion_id}|${row.descripcion}|${row.cantidad}`;
-                                    if (!seen.has(key)) merged.push(row);
-                                }
-                                return merged;
-                            });
-                        }
-                    } catch {
-                        /* ignore */
-                    }
-                })();
+        if (!historyOpen) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const { data } = await supabase
+                    .from('cotizaciones_items')
+                    .select(
+                        'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
+                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
+                    )
+                    .neq('cotizaciones.estado', 'ELIMINADO')
+                    .gte('cotizaciones.fecha_emision', historyStart)
+                    .lte('cotizaciones.fecha_emision', historyEnd)
+                    .order('created_at', { ascending: false });
+                if (!cancelled && data) setHistoryItems(data as unknown as CotizacionItemRow[]);
+            } catch {
+                /* ignore */
             }
-        }
-    }, [historyOpen, historyStart, historyEnd, startDate, endDate]);
+        })();
+        return () => { cancelled = true; };
+    }, [historyOpen, historyStart, historyEnd]);
 
     // ── Render ──────────────────────────────────────────────────────────────
     return (

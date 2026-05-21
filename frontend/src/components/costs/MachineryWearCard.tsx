@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import Modal from '../Modal';
-
-const API_URL = 'http://localhost:8787/api';
+import { API_URL } from '../../services/apiConfig';
 
 /* Database Interfaces */
 interface MachineryWearItem {

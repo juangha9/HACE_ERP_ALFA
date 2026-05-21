@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
+import { API_URL } from '../../services/apiConfig';
 import type { OptimizationFlow, Project } from '../../services/types';
 import { 
   RefreshCw, 
@@ -190,7 +191,7 @@ export const ProjectsList = () => {
                 }
             };
 
-            const res = await fetch('http://localhost:8787/api/optimizations', {
+            const res = await fetch(`${API_URL}/optimizations`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

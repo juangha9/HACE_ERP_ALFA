@@ -1819,7 +1819,12 @@ export function CotizacionesPage() {
             const clienteNombreFinal = (!clientFromList && form.cliente_nombre.trim())
                 ? `PÚBLICO GENERAL (${form.cliente_nombre.trim()})`
                 : form.cliente_nombre;
-            const payload = { ...form, cliente_nombre: clienteNombreFinal, estado: estadoOverride ?? form.estado };
+            // Al procesar (LISTO) persistimos los datos SIN cambiar aún el estado. Solo
+            // marcamos LISTO después de crear la venta con éxito, para no dejar una
+            // cotización LISTO (solo lectura) sin venta asociada si la RPC falla.
+            const processingToListo = estadoOverride === 'LISTO';
+            const estadoToPersist = processingToListo ? form.estado : (estadoOverride ?? form.estado);
+            const payload = { ...form, cliente_nombre: clienteNombreFinal, estado: estadoToPersist };
             let cotizacionId = editingId;
 
             const { comprobante_locked, ...payloadWithoutLock } = payload;
@@ -1862,9 +1867,12 @@ export function CotizacionesPage() {
                 await syncItemsTable(cotizacionId, form.items);
             }
 
-            if (estadoOverride === 'LISTO' && cotizacionId) {
+            if (processingToListo && cotizacionId) {
                 const { error: rpcError } = await supabase.rpc('cotizacion_to_venta', { p_cotizacion_id: cotizacionId }).maybeSingle();
                 if (rpcError) throw rpcError;
+                // La venta se creó correctamente: ahora sí marcamos la cotización como LISTO.
+                const { error: estadoError } = await supabase.from('cotizaciones').update({ estado: 'LISTO' }).eq('id', cotizacionId);
+                if (estadoError) throw estadoError;
             }
 
             setSaveStatus('success');
