@@ -8,7 +8,11 @@
     },
     "env": {
         "production": {
-            "name": "erp-backend"
+            "name": "erp-backend",
+            "vars": {
+                "SUPABASE_URL": "https://vzamokhnojohoedrnkxk.supabase.co",
+                "SUPABASE_KEY": "sb_publishable_3KQD8ioToNx4ZO7igPcCug_MBSUr662"
+            }
         }
     }
 }
