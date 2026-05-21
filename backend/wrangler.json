@@ -1,5 +1,14 @@
 {
-    "name": "erp-backend",
+    "name": "erp-backend-dev",
     "main": "src/index.ts",
-    "compatibility_date": "2024-02-08"
+    "compatibility_date": "2024-02-08",
+    "vars": {
+        "SUPABASE_URL": "https://lehebpzmozawdtrlphnw.supabase.co",
+        "SUPABASE_KEY": "sb_publishable_ZdyTx48_S7h5y_tMqkDk4w_fWe8RZiW"
+    },
+    "env": {
+        "production": {
+            "name": "erp-backend"
+        }
+    }
 }
