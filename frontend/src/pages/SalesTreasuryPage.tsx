@@ -104,7 +104,7 @@ export const SalesTreasuryPage = () => {
     
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
-    const [filterEstado, setFilterEstado] = useState<'TODOS' | 'PENDIENTE' | 'PARCIAL' | 'CANCELADO'>('TODOS');
+    const [filterEstado, setFilterEstado] = useState<'TODOS' | 'PENDIENTE' | 'PARCIAL' | 'CANCELADO' | 'ANULADO'>('TODOS');
     const [startDate, setStartDate] = useState<string>(defaultStartOfWeek);
     const [endDate, setEndDate] = useState<string>(defaultEndOfWeek);
     const [tempStartDate, setTempStartDate] = useState<string>(defaultStartOfWeek);
@@ -137,6 +137,10 @@ export const SalesTreasuryPage = () => {
     const [showDeposit8059Modal, setShowDeposit8059Modal] = useState(false);
     const [showPayOrderModal, setShowPayOrderModal] = useState<OrdenPago | null>(null);
     const [zoomImage, setZoomImage] = useState<string | null>(null);
+    const [activeDropdownId, setActiveDropdownId] = useState<string | null>(null);
+    const [showAnularModal, setShowAnularModal] = useState<VentaCabecera | null>(null);
+    const [anularMotivo, setAnularMotivo] = useState('');
+    const [savingAnular, setSavingAnular] = useState(false);
     const [showKardexModal, setShowKardexModal] = useState(false);
     const [isClosingKardexModal, setIsClosingKardexModal] = useState(false);
     const [kardexAccount, setKardexAccount] = useState('2049/YAPE');
@@ -161,7 +165,7 @@ export const SalesTreasuryPage = () => {
     const [loadingEgresoHistory, setLoadingEgresoHistory] = useState(false);
     const [isClosingEgresoHistory, setIsClosingEgresoHistory] = useState(false);
 
-    useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showConfirmComprobanteModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice || !!showEgresoHistoryModal);
+    useScrollLock(showKardexModal || !!showTrailModal || showCashAccountModal || !!showCobroModal || !!showHistoryModal || !!showConfirmComprobanteModal || !!showPayOrderModal || !!showGastoModal || showTransferModal || showDeposit8059Modal || !!zoomImage || !!managingInvoice || !!showEgresoHistoryModal || !!showAnularModal);
     
     // Cash Modal Filters
     const [cashFilterStart, setCashFilterStart] = useState(defaultStartOfWeek);
@@ -714,6 +718,26 @@ export const SalesTreasuryPage = () => {
         }
     };
 
+    const handleAnularVenta = async () => {
+        if (!showAnularModal) return;
+        if (!anularMotivo.trim()) {
+            alert("Debe ingresar un motivo para la anulación");
+            return;
+        }
+        setSavingAnular(true);
+        try {
+            await api.anularVenta(showAnularModal.id, anularMotivo);
+            setShowAnularModal(null);
+            setAnularMotivo('');
+            await loadData();
+        } catch (error: any) {
+            console.error("Error al anular venta:", error);
+            alert("Error al anular: " + error.message);
+        } finally {
+            setSavingAnular(false);
+        }
+    };
+
     const toggleCobroTrail = async (cobroId: string) => {
         if (expandedCobro === cobroId) {
             setExpandedCobro(null);
@@ -753,7 +777,11 @@ export const SalesTreasuryPage = () => {
         const end = endDate ? new Date(endDate + 'T23:59:59') : null;
         return ventas.filter(v => {
             if (term && !v.cliente_nombre.toLowerCase().includes(term) && !(v.codigo_cotizacion || '').toLowerCase().includes(term) && !(v.cotizacion_numero_comprobante || '').toLowerCase().includes(term)) return false;
-            if (filterEstado !== 'TODOS' && v.estado_pago !== filterEstado) return false;
+            if (filterEstado === 'TODOS') {
+                if (v.estado_pago === 'ANULADO') return false;
+            } else {
+                if (v.estado_pago !== filterEstado) return false;
+            }
             const fecha = new Date(v.created_at);
             return (!start || fecha >= start) && (!end || fecha <= end);
         });
@@ -819,7 +847,7 @@ export const SalesTreasuryPage = () => {
                         supabase
                             .from('ventas_detalle')
                             .select('*')
-                            .in('venta_id', missingDetailsIds)
+                            .in('venta_id', missingDetailsIds) as any
                     );
                 } else {
                     promises.push(Promise.resolve({ data: [] }));
@@ -830,7 +858,7 @@ export const SalesTreasuryPage = () => {
                         supabase
                             .from('cotizaciones_items')
                             .select('descripcion, unidad, cantidad, total, cotizaciones!inner(codigo)')
-                            .in('cotizaciones.codigo', missingItemsCodes)
+                            .in('cotizaciones.codigo', missingItemsCodes) as any
                     );
                 } else {
                     promises.push(Promise.resolve({ data: [] }));
@@ -1326,6 +1354,7 @@ export const SalesTreasuryPage = () => {
                                                 <option value="PENDIENTE">{viewMode === 'VENTAS' ? 'Pendiente' : 'Enviado'}</option>
                                                 {viewMode === 'VENTAS' && <option value="PARCIAL">Parcial</option>}
                                                 <option value="CANCELADO">{viewMode === 'VENTAS' ? 'Cancelado' : 'Pagado'}</option>
+                                                {viewMode === 'VENTAS' && <option value="ANULADO">Anulado</option>}
                                             </select>
                                             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
                                         </div>
@@ -1414,7 +1443,8 @@ export const SalesTreasuryPage = () => {
                                     <table className="w-full text-left">
                                         <thead className="sticky top-0 z-10 bg-[#f7faf9]/80 backdrop-blur-md">
                                             <tr className="text-[#366480]/50 text-[13px] font-black uppercase tracking-[0.2em] border-b border-[#d3dcdb]/10">
-                                                <th className="py-5 pl-4 text-left w-[17%]">Transacción / OT</th>
+                                                <th className="py-5 pl-4 text-left w-[15%]">Código</th>
+                                                <th className="py-5 text-left w-[12%]">Cotización</th>
                                                 <th className="py-5 text-left w-[11%]">Usuario</th>
                                                 <th className="py-5 text-left w-[9%]">Tipo</th>
                                                 <th className="py-5 text-left w-[19%]">Cliente</th>
@@ -1424,7 +1454,7 @@ export const SalesTreasuryPage = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading && filteredVentas.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : paginatedVentas.map(venta => {
+                                            {loading && filteredVentas.length === 0 ? <tr><td colSpan={8} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={8} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : paginatedVentas.map(venta => {
                                                 const isStub = venta.id.startsWith('opt::');
                                                 return (
                                                     <React.Fragment key={venta.id}>
@@ -1434,7 +1464,7 @@ export const SalesTreasuryPage = () => {
                                                                     <button onClick={() => toggleExpand(venta.id)} className={`p-2 rounded-xl border transition-all ${expandedVenta === venta.id ? 'bg-[#4A90E2] text-white border-[#4A90E2]' : 'bg-white border-[#d3dcdb]/40 text-[#366480]/40 hover:text-[#4A90E2] shadow-sm'}`}>{expandedVenta === venta.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</button>
                                                                     <div className="flex flex-col gap-0.5">
                                                                         <span className="text-[16px] font-[900] text-[#2c3434] tracking-tight uppercase"
-                                                                            dangerouslySetInnerHTML={{ __html: '#' + highlightMatchHtml(venta.codigo_cotizacion || venta.id.slice(0,8), deferredSearch) }}
+                                                                            dangerouslySetInnerHTML={{ __html: highlightMatchHtml(venta.codigo_venta || '—', deferredSearch) }}
                                                                         />
                                                                         <span className="text-[13px] font-medium text-[#366480]/60 uppercase tracking-widest">
                                                                             {format(new Date(venta.created_at), "dd MMM, yyyy")}
@@ -1471,6 +1501,11 @@ export const SalesTreasuryPage = () => {
                                                                         })()}
                                                                     </div>
                                                                 </div>
+                                                            </td>
+                                                            <td className="py-5 text-left">
+                                                                <span className="text-[15px] font-[900] text-[#2c3434] tracking-tight uppercase"
+                                                                    dangerouslySetInnerHTML={{ __html: venta.codigo_cotizacion ? ('#' + highlightMatchHtml(venta.codigo_cotizacion, deferredSearch)) : '—' }}
+                                                                />
                                                             </td>
                                                             <td className="py-5 text-left">
                                                                 <span className="text-[15px] font-bold text-[#2c3434]/80 uppercase tracking-tight truncate block max-w-[120px]" title={venta.usuario_nombre || '—'}>
@@ -1515,7 +1550,7 @@ export const SalesTreasuryPage = () => {
                                                             </td>
                                                             <td className="py-5 pl-8 text-left">
                                                                 <div className="flex items-center gap-4">
-                                                                    <span className={`px-4 py-1.5 text-[12px] font-black rounded-full border tracking-widest uppercase ${isStub ? 'bg-slate-100 text-slate-400 border-slate-200' : venta.estado_pago === 'CANCELADO' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
+                                                                    <span className={`px-4 py-1.5 text-[12px] font-black rounded-full border tracking-widest uppercase ${isStub ? 'bg-slate-100 text-slate-400 border-slate-200' : venta.estado_pago === 'CANCELADO' ? 'bg-[#dcfce7] text-[#166534] border-[#bbf7d0]' : venta.estado_pago === 'ANULADO' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>
                                                                         {isStub ? 'Listo para Corte' : venta.estado_pago}
                                                                     </span>
                                                                     {!isStub && <span className="text-[14px] font-[900] text-[#366480]/60 tabular-nums">S/ {formatCurrency(venta.saldo_pendiente)}</span>}
@@ -1523,31 +1558,88 @@ export const SalesTreasuryPage = () => {
                                                             </td>
                                                             <td className="py-5 text-left">
                                                                 <div className="flex items-center justify-start gap-3 transition-all duration-300">
-                                                                    {!isStub && <button onClick={() => openHistory(venta)} title="Historial de cobros" className="p-3 bg-white text-[#366480] hover:bg-[#f0f5f4] hover:text-[#4A90E2] rounded-xl transition-all shadow-sm border border-[#d3dcdb]/20"><HistoryIcon className="w-4 h-4" /></button>}
-                                                                    {!isStub && venta.codigo_cotizacion && (
+                                                                    {!isStub && Number(venta.saldo_pendiente) > 0 && venta.estado_pago !== 'ANULADO' && (
                                                                         <button
-                                                                            onClick={() => openConfirmComprobanteModal(venta)}
-                                                                            title={venta.cotizacion_comprobante_locked ? "Comprobante verificado y bloqueado" : "Verificar/Confirmar comprobante"}
-                                                                            className={`p-3 rounded-xl transition-all shadow-sm border ${
-                                                                                venta.cotizacion_comprobante_locked 
-                                                                                    ? "bg-emerald-50 text-emerald-600 border-emerald-200/60 hover:bg-emerald-100/60" 
-                                                                                    : "bg-white text-amber-500 border-[#d3dcdb]/20 hover:bg-amber-50 hover:text-amber-600"
-                                                                            }`}
+                                                                            onClick={() => setShowCobroModal(venta)}
+                                                                            className="px-6 py-3 bg-[#4A90E2] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD] transition-all shrink-0"
                                                                         >
-                                                                            {venta.cotizacion_comprobante_locked ? (
-                                                                                <ShieldCheck className="w-4 h-4" />
-                                                                            ) : (
-                                                                                <Edit3 className="w-4 h-4" />
-                                                                            )}
+                                                                            Cobrar
                                                                         </button>
                                                                     )}
-                                                                    {!isStub && Number(venta.saldo_pendiente) > 0 && <button onClick={() => setShowCobroModal(venta)} className="px-6 py-3 bg-[#4A90E2] text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-[#4A90E2]/10 hover:bg-[#357ABD] transition-all">Cobrar</button>}
+                                                                    {!isStub && (
+                                                                        <div className="relative inline-block text-left">
+                                                                            <button
+                                                                                onClick={() => setActiveDropdownId(activeDropdownId === venta.id ? null : venta.id)}
+                                                                                className="p-3 bg-white text-[#366480] hover:bg-[#f0f5f4] rounded-xl transition-all shadow-sm border border-[#d3dcdb]/20 flex items-center gap-1 font-bold text-[11px] uppercase tracking-wider select-none"
+                                                                                title="Más acciones"
+                                                                            >
+                                                                                <span>Acciones</span>
+                                                                                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${activeDropdownId === venta.id ? 'rotate-180' : ''}`} />
+                                                                            </button>
+
+                                                                            {activeDropdownId === venta.id && (
+                                                                                <>
+                                                                                    {/* Overlay transparent to close dropdown on click-outside */}
+                                                                                    <div className="fixed inset-0 z-[100]" onClick={() => setActiveDropdownId(null)}></div>
+                                                                                    
+                                                                                    <div className="absolute right-0 mt-2 w-56 bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.08)] border border-[#d3dcdb]/30 z-[101] py-2 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                                        {/* Option 1: Historial */}
+                                                                                        <button
+                                                                                            onClick={() => {
+                                                                                                setActiveDropdownId(null);
+                                                                                                openHistory(venta);
+                                                                                            }}
+                                                                                            className="w-full px-4 py-2.5 hover:bg-[#f0f5f4] text-[#366480] transition-colors flex items-center gap-3 text-left font-semibold text-[13px]"
+                                                                                        >
+                                                                                            <HistoryIcon className="w-4 h-4 text-[#366480]/70" />
+                                                                                            <span>Historial de Cobros</span>
+                                                                                        </button>
+
+                                                                                        {/* Option 2: Verificar Comprobante */}
+                                                                                        {venta.codigo_cotizacion && (
+                                                                                            <button
+                                                                                                onClick={() => {
+                                                                                                    setActiveDropdownId(null);
+                                                                                                    openConfirmComprobanteModal(venta);
+                                                                                                }}
+                                                                                                className="w-full px-4 py-2.5 hover:bg-[#f0f5f4] text-[#366480] transition-colors flex items-center gap-3 text-left font-semibold text-[13px]"
+                                                                                            >
+                                                                                                {venta.cotizacion_comprobante_locked ? (
+                                                                                                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                                                                                                ) : (
+                                                                                                    <Edit3 className="w-4 h-4 text-amber-500" />
+                                                                                                )}
+                                                                                                <span>Verificar Comprobante</span>
+                                                                                            </button>
+                                                                                        )}
+
+                                                                                        {/* Divider if not already annulled */}
+                                                                                        {venta.estado_pago !== 'ANULADO' && <div className="border-t border-[#d3dcdb]/10 my-1"></div>}
+
+                                                                                        {/* Option 3: Anular */}
+                                                                                        {venta.estado_pago !== 'ANULADO' && (
+                                                                                            <button
+                                                                                                onClick={() => {
+                                                                                                    setActiveDropdownId(null);
+                                                                                                    setShowAnularModal(venta);
+                                                                                                }}
+                                                                                                className="w-full px-4 py-2.5 hover:bg-rose-50 text-rose-600 transition-colors flex items-center gap-3 text-left font-bold text-[13px]"
+                                                                                            >
+                                                                                                <X className="w-4 h-4 text-rose-500" />
+                                                                                                <span>Anular Venta / Cotiz.</span>
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </td>
                                                         </tr>
                                                         {(expandedVenta === venta.id || exitingDesglose === venta.id) && (
                                                             <tr>
-                                                                <td colSpan={7} className="p-0 border-none bg-[#f7faf9]/30">
+                                                                <td colSpan={8} className="p-0 border-none bg-[#f7faf9]/30">
                                                                     <div className={`px-10 py-4 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
                                                                         <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm">
                                                                             <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] mb-6 border-b border-[#d3dcdb]/10 pb-4 italic">Desglose Técnico del Proyecto</p>
@@ -1987,12 +2079,23 @@ export const SalesTreasuryPage = () => {
                                                 const isNumComp = audit.campo === 'numero_comprobante';
                                                 const isLock = audit.campo === 'comprobante_locked';
                                                 const isTipoProyecto = audit.campo === 'tipo_proyecto';
+                                                const isEstadoPago = audit.campo === 'estado_pago';
 
                                                 let title = "Modificación de Comprobante";
                                                 let content = "";
                                                 let iconColor = "bg-sky-50 text-sky-500 border-sky-100";
 
-                                                if (isTipoProyecto) {
+                                                if (isEstadoPago) {
+                                                    if (audit.valor_nuevo === 'ANULADO') {
+                                                        title = "Venta / Cotización Anulada";
+                                                        content = "Se anuló la venta y se revirtieron los cobros asociados";
+                                                        iconColor = "bg-rose-50 text-rose-600 border-rose-200/50";
+                                                    } else {
+                                                        title = "Estado de Pago Modificado";
+                                                        content = `Estado cambiado de "${audit.valor_anterior || '—'}" a "${audit.valor_nuevo || '—'}"`;
+                                                        iconColor = "bg-amber-50 text-amber-600 border-amber-200/50";
+                                                    }
+                                                } else if (isTipoProyecto) {
                                                     title = "Tipo de Proyecto Asignado";
                                                     const anterior = audit.valor_anterior || 'Sin asignar';
                                                     const nuevo = audit.valor_nuevo || 'Sin asignar';
@@ -2017,7 +2120,13 @@ export const SalesTreasuryPage = () => {
                                                 return (
                                                     <div key={audit.id} className="rounded-2xl border border-slate-100 bg-[#f8faf9]/50 p-4 transition-all shadow-sm flex items-start gap-3 text-left">
                                                         <div className={`shrink-0 w-9 h-9 rounded-lg border flex items-center justify-center ${iconColor}`}>
-                                                            {isLock ? <Lock className="w-4.5 h-4.5" /> : <FileText className="w-4.5 h-4.5" />}
+                                                            {isLock ? (
+                                                                <Lock className="w-4.5 h-4.5" />
+                                                            ) : isEstadoPago && audit.valor_nuevo === 'ANULADO' ? (
+                                                                <X className="w-4.5 h-4.5" />
+                                                            ) : (
+                                                                <FileText className="w-4.5 h-4.5" />
+                                                            )}
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center justify-between gap-2">
@@ -2364,6 +2473,90 @@ export const SalesTreasuryPage = () => {
                                             <ShieldCheck className="w-3.5 h-3.5" /> Confirmar y Bloquear
                                         </>
                                     )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
+                {showAnularModal && createPortal(
+                    <div
+                        className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-[#2c3434]/30 overflow-hidden animate-backdrop"
+                        style={{ backdropFilter: 'blur(8px)', fontFamily: "'Manrope', sans-serif" }}
+                    >
+                        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.15)] w-full max-w-md border border-white/60 flex flex-col max-h-[90vh] relative overflow-hidden animate-modal-panel">
+                            <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/60 z-10"></div>
+
+                            {/* Header */}
+                            <div className="px-5 py-4 border-b border-[#d3dcdb]/30 flex items-center justify-between bg-white/40">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-xl bg-rose-500 flex items-center justify-center shadow-sm">
+                                        <X className="w-4 h-4 text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-[20px] font-black text-[#2c3434] uppercase tracking-tight">Anular Venta / Cotiz.</h2>
+                                        <p className="text-[14px] font-semibold text-[#8b9ba5] uppercase tracking-widest mt-0.5">
+                                            {showAnularModal.codigo_cotizacion || showAnularModal.id.slice(0, 8)}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setShowAnularModal(null);
+                                        setAnularMotivo('');
+                                    }}
+                                    className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar text-left">
+                                <div className="p-3.5 bg-rose-50 border border-rose-100 rounded-2xl flex gap-3">
+                                    <X className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="text-[14px] font-bold text-rose-800">Advertencia de Anulación</p>
+                                        <p className="text-[13px] text-rose-600 mt-0.5 leading-relaxed">
+                                            Esta acción cambiará el estado de la venta a <strong className="uppercase">Anulado</strong>. Todos los cobros asociados a esta venta se registrarán como reversos (egresos) en la tesorería para cuadrar caja.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-[13px] font-semibold text-[#8b9ba5] uppercase tracking-wider block">Motivo de Anulación <span className="text-rose-500 font-bold">*</span></label>
+                                    <textarea
+                                        value={anularMotivo}
+                                        onChange={(e) => setAnularMotivo(e.target.value)}
+                                        placeholder="Escriba el motivo detallado de la anulación aquí..."
+                                        rows={4}
+                                        className="w-full px-4 py-3 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-sm font-medium text-[#2c3434] placeholder-slate-400 focus:outline-none focus:border-rose-500 focus:bg-white transition-colors resize-none"
+                                        required
+                                    />
+                                    <p className="text-[11px] text-[#8b9ba5] italic">
+                                        El motivo quedará guardado en la columna de observaciones de los movimientos de tesorería generados.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div className="px-5 py-4 border-t border-[#d3dcdb]/30 bg-white/40 flex items-center justify-end gap-3 rounded-b-3xl shrink-0">
+                                <button
+                                    onClick={() => {
+                                        setShowAnularModal(null);
+                                        setAnularMotivo('');
+                                    }}
+                                    className="px-5 py-2.5 bg-slate-100 text-slate-700 rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-slate-200 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleAnularVenta}
+                                    disabled={savingAnular || !anularMotivo.trim()}
+                                    className="px-6 py-2.5 bg-rose-600 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-rose-700 transition-colors shadow-lg shadow-rose-600/10 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                                >
+                                    {savingAnular ? 'Anulando...' : 'Confirmar Anulación'}
                                 </button>
                             </div>
                         </div>

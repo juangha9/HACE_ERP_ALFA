@@ -207,11 +207,12 @@ export interface NodrizaTesoreria {
 
 export interface VentaCabecera {
     id: string;
+    codigo_venta?: string | null;
     codigo_cotizacion: string | null;
     cliente_nombre: string;
     monto_total: number;
     saldo_pendiente: number;
-    estado_pago: 'PENDIENTE' | 'PARCIAL' | 'CANCELADO';
+    estado_pago: 'PENDIENTE' | 'PARCIAL' | 'CANCELADO' | 'ANULADO';
     descripcion_resumen?: string | null;
     created_at: string;
     optimization_id?: string | null;

@@ -20,11 +20,12 @@ CREATE TABLE IF NOT EXISTS nodriza_tesoreria (
 -- 2. Tabla Cabecera de Ventas
 CREATE TABLE IF NOT EXISTS ventas_cabecera (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    codigo_cotizacion TEXT, -- Ej: VTA-260326-001 (Viene de optimizations.code o generado)
+    codigo_venta TEXT UNIQUE, -- Ej: VTA-260525-001 (Código único autogenerado de venta)
+    codigo_cotizacion TEXT, -- Ej: COT-260521-002 (Código de cotización de procedencia)
     cliente_nombre TEXT NOT NULL,
     monto_total NUMERIC(15, 2) NOT NULL DEFAULT 0,
     saldo_pendiente NUMERIC(15, 2) NOT NULL DEFAULT 0,
-    estado_pago TEXT CHECK (estado_pago IN ('PENDIENTE', 'PARCIAL', 'CANCELADO')) DEFAULT 'PENDIENTE',
+    estado_pago TEXT CHECK (estado_pago IN ('PENDIENTE', 'PARCIAL', 'CANCELADO', 'ANULADO')) DEFAULT 'PENDIENTE',
     descripcion_resumen TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     optimization_id UUID REFERENCES optimizations(id), -- Link a la tabla de optimizaciones existente

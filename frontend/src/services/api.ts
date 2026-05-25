@@ -1636,6 +1636,88 @@ export const api = {
         }]);
     },
 
+    anularVenta: async (ventaId: string, motivo: string) => {
+        const { data: venta, error: vError } = await supabase
+            .from('ventas_cabecera')
+            .select('*')
+            .eq('id', ventaId)
+            .single();
+        if (vError || !venta) throw new Error("Venta no encontrada");
+
+        let user_id: string | null = null;
+        let usuario_nombre: string | null = null;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                user_id = user.id;
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('display_name')
+                    .eq('id', user.id)
+                    .maybeSingle();
+                if (profile) usuario_nombre = (profile as any).display_name;
+            }
+        } catch {}
+
+        const { error: updateError } = await supabase
+            .from('ventas_cabecera')
+            .update({ 
+                estado_pago: 'ANULADO',
+                saldo_pendiente: 0
+            })
+            .eq('id', ventaId);
+        if (updateError) throw new Error(updateError.message);
+
+        // Find all cobros (payments) for this sale
+        const { data: cobros, error: cobrosError } = await supabase
+            .from('ventas_cobros')
+            .select('*')
+            .eq('venta_id', ventaId);
+        
+        if (cobrosError) throw new Error(cobrosError.message);
+
+        // Reverse payments if they exist
+        if (cobros && cobros.length > 0) {
+            for (const cobro of cobros) {
+                await api.createTesoreriaMovement({
+                    monto: cobro.monto,
+                    tipo_movimiento: 'EGRESO',
+                    cuenta_origen: cobro.cuenta_destino,
+                    cuenta_destino: 'CLIENTE',
+                    categoria: 'Venta',
+                    referencia_id: ventaId,
+                    cobro_id: cobro.id,
+                    observaciones: `Reverso de cobro por Anulación. Motivo: ${motivo}`
+                });
+            }
+        } else {
+            // Register a log movement of 0 to store the annulment reason
+            await api.createTesoreriaMovement({
+                monto: 0,
+                tipo_movimiento: 'EGRESO',
+                cuenta_origen: 'Efectivo',
+                cuenta_destino: 'CLIENTE',
+                categoria: 'Venta',
+                referencia_id: ventaId,
+                observaciones: `Anulación de venta/cotización sin cobros. Motivo: ${motivo}`
+            });
+        }
+
+        // Log in ventas_audit_log
+        try {
+            await supabase.from('ventas_audit_log').insert([{
+                venta_id: ventaId,
+                campo: 'estado_pago',
+                valor_anterior: venta.estado_pago,
+                valor_nuevo: 'ANULADO',
+                user_id,
+                usuario_nombre,
+            }]);
+        } catch (auditErr) {
+            console.error("Error logging audit for annulment:", auditErr);
+        }
+    },
+
     updateEgresoTipoProyecto: async (egresoId: string, newTipo: 'OBRA' | 'TABLEROS' | null, oldTipo: 'OBRA' | 'TABLEROS' | null) => {
         const { error } = await supabase
             .from('nodriza_tesoreria')
