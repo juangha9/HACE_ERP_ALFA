@@ -315,8 +315,8 @@ export const SalesTreasuryPage = () => {
         loadData();
     }, []);
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    const loadData = useCallback(async (silent = false) => {
+        if (!silent) setLoading(true);
         try {
             const [mvs, vts, cms, ops] = await Promise.all([
                 api.getTesoreriaMovements(),
@@ -331,7 +331,7 @@ export const SalesTreasuryPage = () => {
         } catch (error) {
             console.error("Error loading data", error);
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     }, []);
 
@@ -342,7 +342,7 @@ export const SalesTreasuryPage = () => {
         const reloadDebounce = { t: null as ReturnType<typeof setTimeout> | null };
         const triggerReload = () => {
             if (reloadDebounce.t) clearTimeout(reloadDebounce.t);
-            reloadDebounce.t = setTimeout(() => loadDataRef.current(), 800);
+            reloadDebounce.t = setTimeout(() => loadDataRef.current(true), 800);
         };
         const channel = supabase
             .channel('treasury-ventas-realtime')
@@ -1424,7 +1424,7 @@ export const SalesTreasuryPage = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={7} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : paginatedVentas.map(venta => {
+                                            {loading && filteredVentas.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Sincronizando logic...</td></tr> : filteredVentas.length === 0 ? <tr><td colSpan={7} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No se encontraron registros</td></tr> : paginatedVentas.map(venta => {
                                                 const isStub = venta.id.startsWith('opt::');
                                                 return (
                                                     <React.Fragment key={venta.id}>
@@ -1654,7 +1654,7 @@ export const SalesTreasuryPage = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={8} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={8} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
+                                            {loading && filteredCompras.length === 0 ? <tr><td colSpan={8} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Escaneando egresos...</td></tr> : filteredCompras.length === 0 ? <tr><td colSpan={8} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">Sin movimientos registrados</td></tr> : filteredCompras.map(compra => (
                                                 <React.Fragment key={compra.id}>
                                                     <tr className="group hover:bg-[#fff0f2]/30 transition-all duration-300">
                                                         <td className="py-5 pl-4 text-left">
@@ -1778,7 +1778,7 @@ export const SalesTreasuryPage = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                            {loading ? <tr><td colSpan={5} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Recuperando requerimientos...</td></tr> : filteredOrdenes.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No hay órdenes pendientes</td></tr> : filteredOrdenes.map(op => (
+                                            {loading && filteredOrdenes.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black animate-pulse text-[#366480]/30 uppercase tracking-[0.3em] text-[12px]">Recuperando requerimientos...</td></tr> : filteredOrdenes.length === 0 ? <tr><td colSpan={5} className="py-20 text-center font-black text-[#366480]/20 uppercase tracking-[0.3em] text-[12px]">No hay órdenes pendientes</td></tr> : filteredOrdenes.map(op => (
                                                 <tr key={op.id} className="hover:bg-amber-50/20 transition-all group duration-300">
                                                     <td className="py-5 pl-4 text-left">
                                                         <div className="flex flex-col">
