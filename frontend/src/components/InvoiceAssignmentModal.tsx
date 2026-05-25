@@ -58,6 +58,7 @@ export const InvoiceAssignmentModal: React.FC<InvoiceAssignmentModalProps> = ({ 
     const [showMismatchPopup, setShowMismatchPopup] = useState(false);
     const [mismatchReason, setMismatchReason] = useState(egreso.mismatch_reason || '');
     const [showFinalConfirm, setShowFinalConfirm] = useState(false);
+    const [referenciaObraVenta, setReferenciaObraVenta] = useState(egreso.referencia_obra_venta || '');
 
     const isEditingLocked = egreso.invoice_status === 'REGISTRADO';
 
@@ -180,6 +181,7 @@ export const InvoiceAssignmentModal: React.FC<InvoiceAssignmentModalProps> = ({ 
                 has_invoice: true,
                 invoice_status: 'REGISTRADO',
                 proveedor_nombre: proveedorNombre.trim() || null,
+                referencia_obra_venta: referenciaObraVenta.trim() || null,
             } as Partial<NodrizaTesoreria>);
 
             // Audit log
@@ -362,17 +364,17 @@ export const InvoiceAssignmentModal: React.FC<InvoiceAssignmentModalProps> = ({ 
                         </div>
                     </div>
 
-                    {/* DESCRIPCIÓN DE REFERENCIA + PROVEEDOR */}
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* DESCRIPCIÓN DE REFERENCIA + PROVEEDOR + OBRA/VENTA */}
+                    <div className="grid grid-cols-3 gap-4">
                         {/* Descripción del egreso (solo referencia, no va en factura) */}
                         <div className="flex flex-col gap-1.5">
                             <label className="text-[9.5px] font-medium text-[#366480] uppercase tracking-wider pl-1 leading-none flex items-center gap-1.5">
                                 <AlignLeft className="w-3 h-3" /> Descripción / Ref. del Egreso
-                                <span className="ml-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-[8px] font-medium text-amber-600 uppercase tracking-wider">Solo referencia</span>
+                                <span className="ml-1 px-1.5 py-0.5 bg-amber-50 border border-amber-200 rounded text-[8px] font-medium text-amber-600 uppercase tracking-wider">Ref</span>
                             </label>
-                            <div className="bg-[#f7faf9] border border-[#d3dcdb] rounded-xl px-3 py-2.5 min-h-[52px]">
+                            <div className="bg-[#f7faf9] border border-[#d3dcdb] rounded-xl px-3 py-2.5 min-h-[52px] overflow-y-auto max-h-[80px] custom-scrollbar flex items-center">
                                 {Array.isArray(egreso.invoice_details) && egreso.invoice_details.length > 0 ? (
-                                    <ul className="space-y-1">
+                                    <ul className="space-y-1 w-full">
                                         {egreso.invoice_details.map((item: any, idx: number) => (
                                             <li key={idx} className="flex items-start gap-1.5 text-[10.5px] font-medium text-[#366480] leading-snug italic">
                                                 <span className="text-[#4A90E2] shrink-0 mt-px select-none">·</span>
@@ -401,6 +403,24 @@ export const InvoiceAssignmentModal: React.FC<InvoiceAssignmentModalProps> = ({ 
                                     value={proveedorNombre}
                                     disabled={isEditingLocked}
                                     onChange={(e) => setProveedorNombre(e.target.value.toUpperCase())}
+                                    className="w-full h-[52px] bg-white pl-8 pr-3 rounded-xl border border-[#d3dcdb] text-[10.5px] font-medium text-slate-800 outline-none focus:border-[#4A90E2] uppercase shadow-sm disabled:opacity-60 transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Obra / Venta */}
+                        <div className="flex flex-col gap-1.5">
+                            <label className="text-[9.5px] font-medium text-[#366480] uppercase tracking-wider pl-1 leading-none flex items-center gap-1.5">
+                                <FileText className="w-3 h-3" /> Obra / Venta
+                            </label>
+                            <div className="relative">
+                                <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-[#8b9ba5]" />
+                                <input
+                                    type="text"
+                                    placeholder={isEditingLocked ? '—' : 'OBRA / VENTA...'}
+                                    value={referenciaObraVenta}
+                                    disabled={isEditingLocked}
+                                    onChange={(e) => setReferenciaObraVenta(e.target.value.toUpperCase())}
                                     className="w-full h-[52px] bg-white pl-8 pr-3 rounded-xl border border-[#d3dcdb] text-[10.5px] font-medium text-slate-800 outline-none focus:border-[#4A90E2] uppercase shadow-sm disabled:opacity-60 transition-all"
                                 />
                             </div>

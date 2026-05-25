@@ -37,7 +37,7 @@ interface ExpenseModalProps {
     onSuccess: () => Promise<void>;
     calculateGlobalBalance: (account: string) => number;
     formatCurrency: (n: number | string) => string;
-    initialData?: { monto: string, categoria: string, cuenta: string, desc: string };
+    initialData?: { monto: string, categoria: string, cuenta: string, desc: string, referencia_obra_venta?: string };
 }
 
 export const ExpenseModal: React.FC<ExpenseModalProps> = ({ 
@@ -48,11 +48,17 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
     initialData
 }) => {
     // --- LOCAL STATE ---
-    const [gastoData, setGastoData] = useState(initialData || { 
-        monto: '', 
-        categoria: 'Luz', 
-        cuenta: 'Efectivo', 
-        desc: '' 
+    const [gastoData, setGastoData] = useState(() => {
+        const init = initialData || { 
+            monto: '', 
+            categoria: 'Luz', 
+            cuenta: 'Efectivo', 
+            desc: '' 
+        };
+        return {
+            ...init,
+            referencia_obra_venta: init.referencia_obra_venta || ''
+        };
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
@@ -207,7 +213,8 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 invoice_url: invoiceUrl,
                 invoice_details: hasInvoice ? invoiceBreakdown : null,
                 invoice_status: 'BORRADOR',
-                referencia_id: (gastoData.categoria === 'REQUERIMIENTO DE COMPRA' && !hasInvoice) ? selectedProject?.id : null
+                referencia_id: (gastoData.categoria === 'REQUERIMIENTO DE COMPRA' && !hasInvoice) ? selectedProject?.id : null,
+                referencia_obra_venta: gastoData.referencia_obra_venta.trim() || null
             });
 
             await onSuccess();
@@ -296,6 +303,16 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                     onChange={(e) => setGastoData({...gastoData, desc: e.target.value})}
                                     className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-transparent focus:border-rose-400 px-3 py-2 rounded-xl text-[11px] font-bold outline-none h-14 transition-all uppercase resize-none shadow-inner"
                                 />
+                                <div className="space-y-1 mt-1">
+                                    <label className="text-[9px] font-black text-[#366480]/60 uppercase block pl-1 tracking-[0.2em]">Obra / Venta</label>
+                                    <input
+                                        type="text"
+                                        placeholder="OBRA / VENTA..."
+                                        value={gastoData.referencia_obra_venta}
+                                        onChange={(e) => setGastoData({...gastoData, referencia_obra_venta: e.target.value})}
+                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-transparent focus:border-[#4A90E2] px-3 py-2.5 rounded-xl text-[11px] font-bold outline-none transition-all uppercase shadow-inner"
+                                    />
+                                </div>
                             </div>
 
                             <button

@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS nodriza_tesoreria (
     categoria TEXT, -- Ej: 'Venta', 'Compra Material', 'Sueldos', 'Servicios'
     referencia_id UUID, -- Conecta con ventas_cabecera o gastos (opcional)
     cobro_id UUID, -- Conexión directa con el registro de cobro específico
-    observaciones TEXT
+    observaciones TEXT,
+    referencia_obra_venta TEXT -- Referencia libre de la obra o venta asociada
 );
 
 -- 2. Tabla Cabecera de Ventas

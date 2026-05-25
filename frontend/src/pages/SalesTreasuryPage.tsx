@@ -776,7 +776,12 @@ export const SalesTreasuryPage = () => {
         const start = startDate ? new Date(startDate) : null;
         const end = endDate ? new Date(endDate + 'T23:59:59') : null;
         return ventas.filter(v => {
-            if (term && !v.cliente_nombre.toLowerCase().includes(term) && !(v.codigo_cotizacion || '').toLowerCase().includes(term) && !(v.cotizacion_numero_comprobante || '').toLowerCase().includes(term)) return false;
+            if (term && 
+                !v.cliente_nombre.toLowerCase().includes(term) && 
+                !(v.codigo_cotizacion || '').toLowerCase().includes(term) && 
+                !(v.codigo_venta || '').toLowerCase().includes(term) && 
+                !(v.cotizacion_numero_comprobante || '').toLowerCase().includes(term)
+            ) return false;
             if (filterEstado === 'TODOS') {
                 if (v.estado_pago === 'ANULADO') return false;
             } else {
@@ -1018,8 +1023,9 @@ export const SalesTreasuryPage = () => {
             if (term) {
                 const matchesObs = (c.observaciones || '').toLowerCase().includes(term);
                 const matchesCat = (c.categoria || '').toLowerCase().includes(term);
+                const matchesRef = (c.referencia_obra_venta || '').toLowerCase().includes(term);
                 const matchesDesc = Array.isArray(c.invoice_details) && c.invoice_details.some((d: any) => (d.description || '').toLowerCase().includes(term));
-                if (!matchesObs && !matchesCat && !matchesDesc) return false;
+                if (!matchesObs && !matchesCat && !matchesRef && !matchesDesc) return false;
             }
             const fecha = new Date(c.created_at!);
             return (!start || fecha >= start) && (!end || fecha <= end);
@@ -1812,6 +1818,14 @@ export const SalesTreasuryPage = () => {
                                                                 </ul>
                                                             ) : (
                                                                 <span className="text-[15px] font-bold uppercase text-[#366480] tracking-tight">{compra.observaciones}</span>
+                                                            )}
+                                                            {compra.referencia_obra_venta && (
+                                                                <div className="flex items-center gap-1.5 mt-1.5">
+                                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase bg-indigo-50 text-indigo-600 border border-indigo-100 shadow-sm" title="Obra / Venta">
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                                                                        {compra.referencia_obra_venta}
+                                                                    </span>
+                                                                </div>
                                                             )}
                                                         </td>
                                                         <td className="py-5 text-left font-[900] text-rose-500 text-[17px] tabular-nums">S/ {formatCurrency(compra.monto)}</td>

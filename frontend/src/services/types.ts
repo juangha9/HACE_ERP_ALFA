@@ -203,6 +203,7 @@ export interface NodrizaTesoreria {
     usuario_nombre?: string | null;
     tipo_documento?: 'FACTURA' | 'BOLETA' | 'TICKET' | 'COTIZACION' | null;
     tipo_proyecto?: 'OBRA' | 'TABLEROS' | null;
+    referencia_obra_venta?: string | null;
 }
 
 export interface VentaCabecera {
