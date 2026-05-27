@@ -123,6 +123,8 @@ export const MassUploadModal: React.FC<MassUploadModalProps> = ({ onClose, onSuc
                     features: row.features ? row.features.toString().trim() : null,
                     min_stock: row.min_stock ? Number(row.min_stock) : 0,
                     stock_alerts: row.stock_alerts === 'true' || row.stock_alerts === true,
+                    min_price: 0,
+                    reference_cost: 0,
                     status: 'Activo'
                 });
             }

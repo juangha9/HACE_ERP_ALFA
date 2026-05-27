@@ -25,7 +25,8 @@ import {
   ShieldCheck,
   Edit3,
   Lock,
-  CheckCircle2
+  CheckCircle2,
+  Printer
 } from 'lucide-react';
 import { api } from '../services/api';
 import { supabase } from '../services/supabase';
@@ -39,6 +40,7 @@ import { ExpenseModal } from '../components/ExpenseModal';
 import { InvoiceAssignmentModal } from '../components/InvoiceAssignmentModal';
 import { PayOrderModal } from '../components/solicitudes/PayOrderModal';
 import { exportToPDF, exportToExcel, exportImagesToPDF } from '../utils/exportUtils';
+import { generateQuotePDF, printQuotePDF } from '../services/pdfExport';
 import { ImageLightbox } from '../components/ImageLightbox';
 import { RangeDatePicker } from '../components/RangeDatePicker';
 
@@ -548,6 +550,61 @@ export const SalesTreasuryPage = () => {
             }
         }
         setShowExportMenu(false);
+    };
+
+    const handleVentaPDF = async (venta: VentaCabecera, action: 'pdf' | 'print') => {
+        const cotItems = ventaCotizacionItems[venta.id];
+        const fallbackItems = ventaDetails[venta.id];
+        const desgloseRows = cotItems || fallbackItems?.map(d => ({
+            descripcion: d.material_insumo,
+            unidad: '',
+            cantidad: d.cantidad,
+            total: d.total,
+        })) || [];
+        const subtotal = desgloseRows.reduce((s, d) => s + d.total, 0);
+        const discount = Number(venta.cotizacion_descuento) || 0;
+        const base = Math.max(0, subtotal - discount);
+        const igv = parseFloat((base * 0.18).toFixed(2));
+        const grandTotal = parseFloat((base + igv).toFixed(2));
+
+        const exportData = {
+            items: desgloseRows.map(r => ({
+                quantity: r.cantidad,
+                unit: r.unidad || '',
+                type: 'PRODUCTO',
+                description: r.descripcion,
+                unitPrice: r.cantidad ? parseFloat((r.total / r.cantidad).toFixed(2)) : r.total,
+                total: r.total,
+            })),
+            totals: {
+                subtotal,
+                discount,
+                igv,
+                total: grandTotal,
+                advance: 0,
+                balance: venta.saldo_pendiente,
+            },
+            code: venta.codigo_venta || venta.codigo_cotizacion || 'VTA',
+            clientData: {
+                name: venta.cliente_nombre,
+                doi: '',
+                address: '',
+                deliveryDate: null,
+                descripcion: venta.cotizacion_descripcion || '',
+                notas: '',
+            },
+            businessInfo: null,
+        };
+
+        try {
+            if (action === 'pdf') {
+                await generateQuotePDF(exportData, `Venta_${venta.codigo_venta || venta.id.slice(0, 8)}`);
+            } else {
+                await printQuotePDF(exportData);
+            }
+        } catch (e) {
+            console.error('Failed to generate venta PDF:', e);
+        }
     };
 
     const toggleExpand = async (ventaId: string) => {
@@ -1648,14 +1705,36 @@ export const SalesTreasuryPage = () => {
                                                                 <td colSpan={8} className="p-0 border-none bg-[#f7faf9]/30">
                                                                     <div className={`px-10 py-4 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
                                                                         <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm">
-                                                                            <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] mb-6 border-b border-[#d3dcdb]/10 pb-4 italic">Desglose Técnico del Proyecto</p>
+                                                                            <div className="flex items-center justify-between mb-6 border-b border-[#d3dcdb]/10 pb-4">
+                                                                                <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] italic">Desglose Técnico del Proyecto</p>
+                                                                                <div className="flex items-center gap-1">
+                                                                                    <button
+                                                                                        onClick={() => handleVentaPDF(venta, 'print')}
+                                                                                        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-[#366480]/60 hover:text-[#366480] hover:bg-[#f0f5f4] rounded-xl transition-all"
+                                                                                        title="Imprimir cotización"
+                                                                                    >
+                                                                                        <Printer className="w-3.5 h-3.5" />
+                                                                                        Imprimir
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleVentaPDF(venta, 'pdf')}
+                                                                                        className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-[#366480]/60 hover:text-[#366480] hover:bg-[#f0f5f4] rounded-xl transition-all"
+                                                                                        title="Descargar PDF"
+                                                                                    >
+                                                                                        <FileText className="w-3.5 h-3.5" />
+                                                                                        PDF
+                                                                                    </button>
+                                                                        </div>
+                                                                            </div>
                                                                             {(() => {
                                                                                 const cotItems = ventaCotizacionItems[venta.id];
                                                                                 const fallbackItems = ventaDetails[venta.id];
                                                                                 const desgloseRows = cotItems || fallbackItems?.map(d => ({ descripcion: d.material_insumo, unidad: '', cantidad: d.cantidad, total: d.total }));
                                                                                 const subtotal = desgloseRows?.reduce((s, d) => s + d.total, 0) ?? 0;
-                                                                                const igv = subtotal * 0.18;
-                                                                                const grandTotal = subtotal + igv;
+                                                                                const descuento = Number(venta.cotizacion_descuento) || 0;
+                                                                                const base = Math.max(0, subtotal - descuento);
+                                                                                const igv = base * 0.18;
+                                                                                const grandTotal = base + igv;
                                                                                 return (
                                                                                     <table className="desglose-table w-full">
                                                                                         <thead className="text-[#366480]/40 uppercase border-b border-[#d3dcdb]/10">
@@ -1684,6 +1763,12 @@ export const SalesTreasuryPage = () => {
                                                                                                         <td colSpan={3} className="pt-4 pb-1 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">Subtotal</td>
                                                                                                         <td className="pt-4 pb-1 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(subtotal)}</td>
                                                                                                     </tr>
+                                                                                                    {descuento > 0 && (
+                                                                                                        <tr>
+                                                                                                            <td colSpan={3} className="py-1 text-right text-[10px] font-black text-rose-500/80 uppercase tracking-widest pr-4">Descuento</td>
+                                                                                                            <td className="py-1 text-left text-rose-600 font-black tabular-nums">- S/ {formatCurrency(descuento)}</td>
+                                                                                                        </tr>
+                                                                                                    )}
                                                                                                     <tr>
                                                                                                         <td colSpan={3} className="py-1 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">IGV (18%)</td>
                                                                                                         <td className="py-1 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(igv)}</td>
@@ -2326,28 +2411,7 @@ export const SalesTreasuryPage = () => {
                             </div>
 
                             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5 custom-scrollbar">
-                                {/* Locking status alert */}
-                                {showConfirmComprobanteModal.cotizacion_comprobante_locked ? (
-                                    <div className="p-3.5 bg-emerald-50 border border-emerald-100 rounded-2xl flex gap-3 text-left">
-                                        <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                                        <div>
-                                            <p className="text-[14px] font-bold text-emerald-800">Comprobante verificado y bloqueado</p>
-                                            <p className="text-[13px] text-emerald-600 mt-0.5 leading-relaxed">
-                                                Los vendedores ya no pueden editar esta información. Como tesorero, puedes realizar correcciones administrativas si es necesario.
-                                            </p>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="p-3.5 bg-amber-50 border border-amber-100 rounded-2xl flex gap-3 text-left">
-                                        <Lock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                                        <div>
-                                            <p className="text-[14px] font-bold text-amber-800">Comprobante pendiente de verificación</p>
-                                            <p className="text-[13px] text-amber-600 mt-0.5 leading-relaxed">
-                                                Al confirmar y bloquear, esta información quedará inmutable para los vendedores en la sección de Cotizaciones.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
+
 
                                 {/* Document Type */}
                                 <div className="space-y-2 text-left">
@@ -2484,7 +2548,7 @@ export const SalesTreasuryPage = () => {
                                         </>
                                     ) : (
                                         <>
-                                            <ShieldCheck className="w-3.5 h-3.5" /> Confirmar y Bloquear
+                                            <ShieldCheck className="w-3.5 h-3.5" /> Guardar
                                         </>
                                     )}
                                 </button>

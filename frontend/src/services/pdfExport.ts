@@ -119,10 +119,10 @@ const buildQuotePDF = async (exportData: any): Promise<jsPDF> => {
     doc.text(`COTIZACIÓN ${quoteNumber}`, pageWidth / 2, 44, { align: 'center' });
 
     // 2. Bloque DATOS DEL CLIENTE — fondo pastel gris.
-    // Orden de campos: CLIENTE / RAZÓN SOCIAL (fusionado), DIRECCIÓN, DNI/RUC,
-    // FECHA DE EMISIÓN, FECHA DE ENTREGA.
+    // Left column: client fields. Right column: DESCRIPCIÓN / OBSERVACIONES.
     const clientBoxTop = headerHeight + 10;
-    const clientBoxHeight = 50;
+    const hasDesc = !!(clientData.descripcion || clientData.notas);
+    const clientBoxHeight = hasDesc ? 66 : 50;
     doc.setFillColor(248, 250, 252); // slate-50
     doc.rect(15, clientBoxTop, pageWidth - 30, clientBoxHeight, 'F');
     doc.setDrawColor(226, 232, 240);
@@ -155,6 +155,21 @@ const buildQuotePDF = async (exportData: any): Promise<jsPDF> => {
     renderRow('DNI/RUC:',                clientData.doi);
     renderRow('FECHA DE EMISIÓN:',       formatNiceDate(new Date()));
     renderRow('FECHA DE ENTREGA:',       formatNiceDate(parseInputDate(clientData.deliveryDate)));
+
+    // Right column — DESCRIPCIÓN / OBSERVACIONES
+    if (hasDesc) {
+        const midX = pageWidth / 2 + 5;
+        const rightColWidth = pageWidth - midX - 20;
+        doc.setTextColor(71, 85, 105);
+        doc.setFont(fontName, 'bold');
+        doc.setFontSize(9);
+        doc.text('DESCRIPCIÓN / OBSERVACIONES:', midX, clientBoxTop + 8);
+        doc.setFont(fontName, 'normal');
+        doc.setTextColor(30, 41, 59);
+        const descText = [clientData.descripcion, clientData.notas].filter(Boolean).join('\n');
+        const descLines = doc.splitTextToSize(descText, rightColWidth);
+        doc.text(descLines.slice(0, 6), midX, clientBoxTop + 16);
+    }
 
     // 3. Items Table — tabla de la optimización (sin la columna TIPO)
     const tableData = items.map((item: any) => [

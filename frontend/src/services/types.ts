@@ -227,6 +227,7 @@ export interface VentaCabecera {
     cotizacion_comprobante_locked?: boolean | null;
     cotizacion_sustento_comprobante_url?: string | null;
     tipo_proyecto?: 'OBRA' | 'TABLEROS' | null;
+    cotizacion_descuento?: number | null;
 }
 
 

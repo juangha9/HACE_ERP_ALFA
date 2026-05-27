@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../../../services/supabase';
 import { catalogService } from '../../../services/catalogService';
 import type { CatalogProduct, ProductCategory, ProductFamily, ProductSubfamily } from '../../../services/catalogService';
 
@@ -25,12 +26,25 @@ export const ProductEditionTab: React.FC = () => {
         subfamily_id: '',
         category_id: '',
         family_id: '',
-        unit: 'Unidad'
+        unit: 'Unidad',
+        sku_corto: '',
+        is_service: false,
+        has_associated_service: false,
+        associated_service_id: '',
+        service_pricing_type: 'MONEDA' as 'MONEDA' | 'PORCENTAJE',
+        service_pricing_value: '' as number | ''
     });
     const [initialEditForm, setInitialEditForm] = useState<typeof editForm | null>(null);
 
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [skuWarningModal, setSkuWarningModal] = useState<{
+        isOpen: boolean;
+        oldValue: string;
+        newValue: string;
+        onConfirm: () => void;
+        onCancel: () => void;
+    } | null>(null);
 
     const loadProducts = async () => {
         setLoading(true);
@@ -86,7 +100,13 @@ export const ProductEditionTab: React.FC = () => {
             subfamily_id: product.subfamily_id,
             category_id: catId,
             family_id: famId,
-            unit: product.unit || 'Unidad'
+            unit: product.unit || 'Unidad',
+            sku_corto: product.sku_corto || '',
+            is_service: product.is_service || false,
+            has_associated_service: product.has_associated_service || false,
+            associated_service_id: product.associated_service_id || '',
+            service_pricing_type: product.service_pricing_type || 'MONEDA',
+            service_pricing_value: (product.service_pricing_value === undefined ? '' : product.service_pricing_value) as number | ''
         };
         setEditForm(initialForm);
         setInitialEditForm(initialForm);
@@ -111,12 +131,59 @@ export const ProductEditionTab: React.FC = () => {
             if (editForm.stock_alerts && (!editForm.min_stock || editForm.min_stock <= 0)) {
                 throw new Error("Debe ingresar un stock mínimo mayor a 0 si las alertas están activadas.");
             }
+            if (editForm.sku_corto.trim() && !/^[a-zA-Z0-9]{3,4}$/.test(editForm.sku_corto.trim())) {
+                throw new Error("El SKU Corto debe constar de 3 a 4 caracteres alfanuméricos.");
+            }
 
             if (!editForm.edit_reason.trim()) {
                 setError("ATENCIÓN: Debe ingresar un motivo de edición para guardar los cambios.");
                 document.getElementById('edit_reason_input')?.focus();
                 setSaving(false);
                 return;
+            }
+
+            const currentSkuCorto = (editingProduct.sku_corto || '').trim().toUpperCase();
+            const newSkuCorto = editForm.sku_corto.trim().toUpperCase();
+            
+            if (newSkuCorto !== currentSkuCorto) {
+                setSkuWarningModal({
+                    isOpen: true,
+                    oldValue: currentSkuCorto,
+                    newValue: newSkuCorto,
+                    onConfirm: () => executeSaveProductTab(),
+                    onCancel: () => { setSaving(false); }
+                });
+                return;
+            }
+
+            await executeSaveProductTab();
+        } catch (err: any) {
+            setError(err.message || 'Error al guardar');
+            setSaving(false);
+        }
+    };
+
+    const executeSaveProductTab = async () => {
+        if (!editingProduct) return;
+        setSaving(true);
+        setError(null);
+
+        try {
+            const currentSkuCorto = (editingProduct.sku_corto || '').trim().toUpperCase();
+            const newSkuCorto = editForm.sku_corto.trim().toUpperCase();
+
+            let auditData = undefined;
+            if (newSkuCorto !== currentSkuCorto) {
+                const { data: { user } } = await supabase.auth.getUser();
+                const userName = user?.user_metadata?.nombre || user?.email || 'Administrador';
+
+                auditData = {
+                    campo: 'sku_corto',
+                    valor_anterior: currentSkuCorto || null,
+                    valor_nuevo: newSkuCorto || null,
+                    user_id: user?.id,
+                    usuario_nombre: userName
+                };
             }
 
             await catalogService.updateProduct(editingProduct.id, {
@@ -128,14 +195,23 @@ export const ProductEditionTab: React.FC = () => {
                 stock_alerts: editForm.stock_alerts,
                 subfamily_id: editForm.subfamily_id,
                 status: editForm.status,
-                unit: editForm.unit
-                // SKU no se envía a updateProduct para no modificarlo
-            }, editForm.edit_reason);
+                unit: editForm.unit,
+                sku_corto: newSkuCorto || null,
+                is_service: editForm.is_service,
+                has_associated_service: !editForm.is_service && editForm.has_associated_service,
+                associated_service_id: !editForm.is_service && editForm.has_associated_service && editForm.associated_service_id ? editForm.associated_service_id : null,
+                service_pricing_type: !editForm.is_service && editForm.has_associated_service ? editForm.service_pricing_type : null,
+                service_pricing_value: !editForm.is_service && editForm.has_associated_service ? (editForm.service_pricing_value === '' ? 0 : editForm.service_pricing_value) : null
+            }, editForm.edit_reason, auditData);
 
             setEditingProduct(null);
-            loadProducts(); // Refresh the list
+            loadProducts();
         } catch (err: any) {
-            setError(err.message || 'Error al actualizar el producto');
+            let errorMsg = err.message || 'Error al actualizar el producto';
+            if (errorMsg.includes('catalog_products_sku_corto_key')) {
+                errorMsg = 'El SKU Corto ingresado ya existe en otro producto del catálogo. Debe ser único.';
+            }
+            setError(errorMsg);
         } finally {
             setSaving(false);
         }
@@ -154,8 +230,16 @@ export const ProductEditionTab: React.FC = () => {
         editForm.stock_alerts !== initialEditForm.stock_alerts ||
         editForm.status !== initialEditForm.status ||
         editForm.subfamily_id !== initialEditForm.subfamily_id ||
-        editForm.unit !== initialEditForm.unit
+        editForm.unit !== initialEditForm.unit ||
+        editForm.sku_corto !== initialEditForm.sku_corto ||
+        editForm.is_service !== initialEditForm.is_service ||
+        editForm.has_associated_service !== initialEditForm.has_associated_service ||
+        editForm.associated_service_id !== initialEditForm.associated_service_id ||
+        editForm.service_pricing_type !== initialEditForm.service_pricing_type ||
+        editForm.service_pricing_value !== initialEditForm.service_pricing_value
     ) : false;
+
+    const availableServices = products.filter(p => p.is_service && p.id !== editingProduct?.id);
 
     return (
         <div className="space-y-6">
@@ -312,7 +396,111 @@ export const ProductEditionTab: React.FC = () => {
                                         <option value="Kilogramo">Kilogramo</option>
                                     </select>
                                 </div>
+
+                                <div className="md:col-span-1">
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">SKU Corto (3-4 Alfanuméricos)</label>
+                                    <input
+                                        type="text"
+                                        maxLength={4}
+                                        value={editForm.sku_corto}
+                                        onChange={e => setEditForm(prev => ({ ...prev, sku_corto: e.target.value.toUpperCase().slice(0, 4) }))}
+                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white font-bold"
+                                        placeholder="Ej. PM01 (Opcional)"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-1 flex items-center space-x-3 bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <input
+                                        type="checkbox"
+                                        id="edit_is_service"
+                                        checked={editForm.is_service}
+                                        onChange={e => setEditForm(prev => ({ 
+                                            ...prev, 
+                                            is_service: e.target.checked,
+                                            has_associated_service: e.target.checked ? false : prev.has_associated_service 
+                                        }))}
+                                        className="w-5 h-5 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                                    />
+                                    <label htmlFor="edit_is_service" className="text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                                        ¿Es un servicio no inventariado?
+                                    </label>
+                                </div>
                             </div>
+
+                            {/* Configuración de Servicio Asociado en Edición (Solo si no es servicio) */}
+                            {!editForm.is_service && (
+                                <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4">
+                                    <div className="flex items-center space-x-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <input
+                                            type="checkbox"
+                                            id="edit_has_associated_service"
+                                            checked={editForm.has_associated_service}
+                                            onChange={e => setEditForm(prev => ({ ...prev, has_associated_service: e.target.checked }))}
+                                            className="w-5 h-5 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                                        />
+                                        <label htmlFor="edit_has_associated_service" className="text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                                            ¿Tiene un servicio asociado en catálogo? (Ej: Canto/Tapacanto)
+                                        </label>
+                                    </div>
+
+                                    {editForm.has_associated_service && (
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Servicio Asociado *</label>
+                                                <select
+                                                    required
+                                                    value={editForm.associated_service_id}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, associated_service_id: e.target.value }))}
+                                                    className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                                                >
+                                                    <option value="" disabled hidden>Selecciona un servicio...</option>
+                                                    {availableServices.map(s => (
+                                                        <option key={s.id} value={s.id}>
+                                                            {s.sku_corto ? `[${s.sku_corto}] ` : ''}{s.base_name} ({s.unit || 'SERV'})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {editForm.associated_service_id && (
+                                                    <p className="text-[10px] text-blue-600 mt-1 font-bold">
+                                                        Unidad: {availableServices.find(s => s.id === editForm.associated_service_id)?.unit || 'SERV'}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Tipo de Precio de Servicio *</label>
+                                                <select
+                                                    value={editForm.service_pricing_type}
+                                                    onChange={e => setEditForm(prev => ({ ...prev, service_pricing_type: e.target.value as 'MONEDA' | 'PORCENTAJE' }))}
+                                                    className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                                                >
+                                                    <option value="MONEDA">Monto Nominal (S/)</option>
+                                                    <option value="PORCENTAJE">Porcentaje del Costo (%)</option>
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                                                    Valor del Servicio ({editForm.service_pricing_type === 'MONEDA' ? 'S/' : '%'}) *
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    required
+                                                    min="0"
+                                                    value={editForm.service_pricing_value}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setEditForm(prev => ({ ...prev, service_pricing_value: val === '' ? '' : parseFloat(val) }));
+                                                    }}
+                                                    className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 font-bold text-slate-900 dark:text-white"
+                                                    placeholder="0.00"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Nuevos campos: Motivo de edición y Estado */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800">
@@ -366,7 +554,8 @@ export const ProductEditionTab: React.FC = () => {
                                         type="number"
                                         min={editForm.stock_alerts ? "1" : "0"}
                                         required={editForm.stock_alerts}
-                                        value={editForm.min_stock}
+                                        disabled={editForm.is_service}
+                                        value={editForm.is_service ? 0 : editForm.min_stock}
                                         onKeyDown={(e) => {
                                             if (['e', 'E', '+', '-', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
                                                 e.preventDefault();
@@ -378,16 +567,17 @@ export const ProductEditionTab: React.FC = () => {
                                             const parsed = parseInt(val, 10);
                                             setEditForm(prev => ({ ...prev, min_stock: val === '' || isNaN(parsed) ? '' : parsed }));
                                         }}
-                                        className="w-32 px-4 py-3 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-xl focus:ring-2 focus:ring-amber-500 transition-all text-slate-900 dark:text-white text-center font-bold"
+                                        className="w-32 px-4 py-3 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-xl focus:ring-2 focus:ring-amber-500 transition-all text-slate-900 dark:text-white text-center font-bold disabled:opacity-50"
                                     />
                                 </div>
                                 <div className="flex items-center space-x-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-amber-300 dark:border-amber-700 w-full md:w-auto mt-4 md:mt-0">
                                     <input
                                         type="checkbox"
                                         id="stock_alerts"
-                                        checked={editForm.stock_alerts}
+                                        disabled={editForm.is_service}
+                                        checked={!editForm.is_service && editForm.stock_alerts}
                                         onChange={e => setEditForm(prev => ({ ...prev, stock_alerts: e.target.checked }))}
-                                        className="w-5 h-5 text-amber-600 bg-slate-100 border-slate-300 rounded focus:ring-amber-500 dark:focus:ring-amber-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                                        className="w-5 h-5 text-amber-600 bg-slate-100 border-slate-300 rounded focus:ring-amber-500 dark:focus:ring-amber-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer disabled:opacity-50"
                                     />
                                     <label htmlFor="stock_alerts" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
                                         Activar alertas de stock bajo
@@ -473,6 +663,52 @@ export const ProductEditionTab: React.FC = () => {
                             >
                                 {saving ? 'Guardando...' : 'Guardar Cambios'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {skuWarningModal && skuWarningModal.isOpen && (
+                <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-backdrop mt-16">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-800 relative overflow-hidden animate-modal-panel">
+                        <div className="absolute top-0 left-0 right-0 h-[3px] bg-amber-500" />
+                        <div className="p-6 flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center shrink-0 border border-amber-200 dark:border-amber-800">
+                                <span className="material-symbols-outlined text-amber-600 dark:text-amber-500 text-[26px]">warning</span>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-black text-slate-900 dark:text-white leading-snug">ADVERTENCIA: Cambiar SKU Corto</h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Registro de Seguridad</p>
+                            </div>
+                        </div>
+                        
+                        <div className="px-6 pb-6 flex flex-col gap-4">
+                            <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4 rounded-xl text-sm text-slate-600 dark:text-slate-300 leading-relaxed font-semibold">
+                                Estás modificando el SKU Corto de{' '}
+                                <span className="font-mono font-black text-rose-600 dark:text-rose-400">"{skuWarningModal.oldValue || 'Ninguno'}"</span> a{' '}
+                                <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">"{skuWarningModal.newValue}"</span>.
+                                <p className="mt-2 text-xs font-bold text-slate-400 dark:text-slate-500">Este cambio quedará registrado en una auditoría a nivel de usuario en el log de auditorías.</p>
+                            </div>
+                            
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    onClick={() => {
+                                        skuWarningModal.onCancel();
+                                        setSkuWarningModal(null);
+                                    }}
+                                    className="px-5 py-2.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        skuWarningModal.onConfirm();
+                                        setSkuWarningModal(null);
+                                    }}
+                                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md shadow-blue-500/20 transition-all"
+                                >
+                                    Confirmar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

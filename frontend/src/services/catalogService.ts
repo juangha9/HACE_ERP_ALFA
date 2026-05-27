@@ -35,6 +35,13 @@ export interface CatalogProduct {
     status: 'Activo' | 'Descontinuado' | 'Inactivo';
     unit?: string;
 
+    sku_corto?: string | null;
+    is_service?: boolean | null;
+    has_associated_service?: boolean | null;
+    associated_service_id?: string | null;
+    service_pricing_type?: 'MONEDA' | 'PORCENTAJE' | null;
+    service_pricing_value?: number | null;
+
     // Joins
     product_subfamilies?: {
         name: string;
@@ -187,7 +194,7 @@ export const catalogService = {
         return data as CatalogProduct[];
     },
 
-    async updateProduct(id: string, updates: Partial<CatalogProduct>, editReason?: string) {
+    async updateProduct(id: string, updates: Partial<CatalogProduct>, editReason?: string, audit?: { campo: string; valor_anterior: string | null; valor_nuevo: string | null; user_id?: string; usuario_nombre?: string }) {
         // En un caso real podrías envolver esto en una RPC para que sea una transacción atómica.
         const { data, error } = await supabase
             .from('catalog_products')
@@ -203,6 +210,22 @@ export const catalogService = {
                 .from('product_edit_logs')
                 .insert([{ product_id: id, reason: editReason }]);
             if (logError) console.error('Failed to log edit reason:', logError);
+        }
+
+        // Audit to catalog_products_audit_log if provided
+        if (audit) {
+            const { error: auditError } = await supabase
+                .from('catalog_products_audit_log')
+                .insert([{
+                    product_id: id,
+                    campo: audit.campo,
+                    valor_anterior: audit.valor_anterior,
+                    valor_nuevo: audit.valor_nuevo,
+                    motivo: editReason || '',
+                    user_id: audit.user_id || null,
+                    usuario_nombre: audit.usuario_nombre || 'Sistema'
+                }]);
+            if (auditError) console.error('Failed to write catalog audit log:', auditError);
         }
 
         return data as CatalogProduct;

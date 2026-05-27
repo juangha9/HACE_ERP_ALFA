@@ -72,6 +72,7 @@ interface CotizacionItemRow {
         estado: string;
         total: number;
         descripcion?: string | null;
+        descuento?: number;
     } | null;
 }
 
@@ -226,7 +227,32 @@ export default function AdministradorPage() {
     const [addProdClosing, setAddProdClosing] = useState(false);
     const [addProdSaving, setAddProdSaving] = useState(false);
     const [addProdError, setAddProdError] = useState<string | null>(null);
-    const [addProdForm, setAddProdForm] = useState({ base_name: '', presentation: '', unit: '', min_price: '' as number | '', reference_cost: '' as number | '' });
+    const [addProdForm, setAddProdForm] = useState({
+        base_name: '',
+        presentation: '',
+        unit: '',
+        min_price: '' as number | '',
+        reference_cost: '' as number | '',
+        sku_corto: '',
+        brand: '',
+        is_service: false,
+        has_associated_service: false,
+        associated_service_id: '',
+        service_pricing_type: 'MONEDA' as 'MONEDA' | 'PORCENTAJE',
+        service_pricing_value: '' as number | '',
+    });
+    const [skuWarningModal, setSkuWarningModal] = useState<{
+        isOpen: boolean;
+        oldValue: string;
+        newValue: string;
+        isEdit: boolean;
+        onConfirm: (motive: string) => void;
+        onCancel: () => void;
+    } | null>(null);
+    const [confirmAction, setConfirmAction] = useState<{
+        type: 'APPROVE' | 'REJECT';
+        cot: any;
+    } | null>(null);
     const [addProdMode, setAddProdMode] = useState<'create' | 'edit'>('create');
     const [editProdId, setEditProdId] = useState<string | null>(null);
     const [addProdCats, setAddProdCats] = useState<ProductCategory[]>([]);
@@ -243,6 +269,7 @@ export default function AdministradorPage() {
     const [filterCat, setFilterCat] = useState('');
     const [filterFam, setFilterFam] = useState('');
     const [filterSub, setFilterSub] = useState('');
+    const [filterServices, setFilterServices] = useState<'' | 'SERVICES' | 'PRODUCTS'>('');
 
     // Payment info from ventas_cabecera for the dashboard (KPIs, últimos servicios, history filter)
     const [ventasParaDashboard, setVentasParaDashboard] = useState<{ codigo_cotizacion: string | null; saldo_pendiente: number; estado_pago: string; created_at: string }[]>([]);
@@ -263,6 +290,12 @@ export default function AdministradorPage() {
     const historyDatePickerWrapRef = useRef<HTMLDivElement>(null);
     const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
 
+    // ── Pending Discount Requests ────────────────────────────────────────────
+    const [pendingDiscounts, setPendingDiscounts] = useState<any[]>([]);
+    const [discountActionId, setDiscountActionId] = useState<string | null>(null);
+    const [discountComment, setDiscountComment] = useState('');
+    const [discountActionLoading, setDiscountActionLoading] = useState(false);
+
     // ── Fetch ───────────────────────────────────────────────────────────────
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -280,7 +313,7 @@ export default function AdministradorPage() {
                     .from('cotizaciones_items')
                     .select(
                         'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
+                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion,descuento)'
                     )
                     .neq('cotizaciones.estado', 'ELIMINADO')
                     .gte('cotizaciones.fecha_emision', minStart)
@@ -306,14 +339,86 @@ export default function AdministradorPage() {
         fetchData();
     }, [fetchData]);
 
+    const fetchPendingDiscounts = useCallback(async () => {
+        const [discountsRes, profilesRes] = await Promise.all([
+            supabase
+                .from('cotizaciones')
+                .select('id,codigo,cliente_nombre,descuento_sugerido,descuento_sugerido_porcentaje,descuento_motivo_solicitud,subtotal,adelanto,tipo_documento,total,user_id,items')
+                .eq('descuento_estado_aprobacion', 'PENDIENTE')
+                .neq('estado', 'ELIMINADO')
+                .order('created_at', { ascending: false }),
+            supabase
+                .from('profiles')
+                .select('id, display_name')
+        ]);
+        if (discountsRes.data) {
+            const profileMap = new Map<string, string>();
+            (profilesRes.data || []).forEach((p: any) => {
+                if (p.id && p.display_name) profileMap.set(p.id, p.display_name);
+            });
+            const mapped = discountsRes.data.map((cot: any) => ({
+                ...cot,
+                usuario_nombre: cot.user_id ? (profileMap.get(cot.user_id) || 'Usuario desconocido') : null
+            }));
+            setPendingDiscounts(mapped);
+        }
+    }, []);
+
+    const handleDiscountApprove = async (cot: any) => {
+        setDiscountActionLoading(true);
+        try {
+            const discountAmount = Number(cot.descuento_sugerido) || 0;
+            const subtotal = Number(cot.subtotal) || 0;
+            const adelanto = Number(cot.adelanto) || 0;
+            const base = Math.max(0, subtotal - discountAmount);
+            const needsIgv = cot.tipo_documento === 'FACTURA' || cot.tipo_documento === 'BOLETA' || cot.tipo_documento === 'TICKET';
+            const igv = needsIgv ? parseFloat((base * 0.18).toFixed(2)) : 0;
+            const total = parseFloat((base + igv).toFixed(2));
+            const saldo = parseFloat(Math.max(0, total - adelanto).toFixed(2));
+            await supabase.from('cotizaciones').update({
+                descuento: discountAmount,
+                igv,
+                total,
+                saldo_pendiente: saldo,
+                descuento_estado_aprobacion: 'APROBADO',
+                descuento_comentarios_admin: discountComment.trim() || null,
+            }).eq('id', cot.id);
+            setDiscountActionId(null);
+            setDiscountComment('');
+            await fetchPendingDiscounts();
+        } finally {
+            setDiscountActionLoading(false);
+        }
+    };
+
+    const handleDiscountReject = async (cot: any) => {
+        setDiscountActionLoading(true);
+        try {
+            await supabase.from('cotizaciones').update({
+                descuento_estado_aprobacion: 'RECHAZADO',
+                descuento_comentarios_admin: discountComment.trim() || null,
+            }).eq('id', cot.id);
+            setDiscountActionId(null);
+            setDiscountComment('');
+            await fetchPendingDiscounts();
+        } finally {
+            setDiscountActionLoading(false);
+        }
+    };
+
     // Real-time: reload when cotizaciones or ventas_cabecera change
     const fetchDataRef = useRef(fetchData);
     useEffect(() => { fetchDataRef.current = fetchData; }, [fetchData]);
+    const fetchPendingDiscountsRef = useRef(fetchPendingDiscounts);
+    useEffect(() => { fetchPendingDiscountsRef.current = fetchPendingDiscounts; }, [fetchPendingDiscounts]);
     useEffect(() => {
         const debounce = { t: null as ReturnType<typeof setTimeout> | null };
         const triggerReload = () => {
             if (debounce.t) clearTimeout(debounce.t);
-            debounce.t = setTimeout(() => fetchDataRef.current(), 800);
+            debounce.t = setTimeout(() => {
+                fetchDataRef.current();
+                fetchPendingDiscountsRef.current();
+            }, 800);
         };
         const channel = supabase
             .channel('admin-dashboard-realtime')
@@ -362,7 +467,8 @@ export default function AdministradorPage() {
     useEffect(() => {
         // Pre-fetch product taxonomy for add/edit product modals in the background
         loadAddProdTaxonomy().catch(console.error);
-    }, []);
+        fetchPendingDiscounts();
+    }, [fetchPendingDiscounts]);
 
     // ── Slice items by range ────────────────────────────────────────────────
     const sliceByRange = useCallback(
@@ -718,7 +824,7 @@ export default function AdministradorPage() {
         try {
             const { data } = await supabase
                 .from('catalog_products')
-                .select(`id,sku,base_name,presentation,unit,min_price,reference_cost,subfamily_id,
+                .select(`id,sku,sku_corto,base_name,presentation,unit,brand,min_price,reference_cost,subfamily_id,is_service,has_associated_service,associated_service_id,service_pricing_type,service_pricing_value,
                     product_subfamilies(name,family_id,product_families(name,category_id,product_categories(name)))`)
                 .eq('status', 'Activo')
                 .order('base_name');
@@ -766,6 +872,7 @@ export default function AdministradorPage() {
         setFilterCat('');
         setFilterFam('');
         setFilterSub('');
+        setFilterServices('');
         fetchControlProducts();
         setGeneratedLinks({});
         fetchSysUsers();
@@ -817,16 +924,22 @@ export default function AdministradorPage() {
         return subs.sort((a, b) => a.name.localeCompare(b.name));
     }, [controlProducts, filterFam]);
 
+    const availableServicesInAdmin = useMemo(() => {
+        return controlProducts.filter((p: any) => p.is_service);
+    }, [controlProducts]);
+
     const filteredControlProducts = useMemo(() => {
         const q = controlSearch.toLowerCase().trim();
         return controlProducts.filter((p: any) => {
             if (filterSub && p.subfamily_id !== filterSub) return false;
             if (filterFam && p.product_subfamilies?.family_id !== filterFam) return false;
             if (filterCat && p.product_subfamilies?.product_families?.category_id !== filterCat) return false;
+            if (filterServices === 'SERVICES' && !p.sku?.endsWith('-S')) return false;
+            if (filterServices === 'PRODUCTS' && p.sku?.endsWith('-S')) return false;
             if (q && !p.base_name?.toLowerCase().includes(q) && !p.sku?.toLowerCase().includes(q)) return false;
             return true;
         });
-    }, [controlProducts, filterCat, filterFam, filterSub, controlSearch]);
+    }, [controlProducts, filterCat, filterFam, filterSub, filterServices, controlSearch]);
 
     const CONTROL_PAGE_SIZE = 10;
     const controlTotalPages = Math.max(1, Math.ceil(filteredControlProducts.length / CONTROL_PAGE_SIZE));
@@ -847,7 +960,20 @@ export default function AdministradorPage() {
     const openAddProd = () => {
         setAddProdMode('create');
         setEditProdId(null);
-        setAddProdForm({ base_name: '', presentation: '', unit: '', min_price: '', reference_cost: '' });
+        setAddProdForm({
+            base_name: '',
+            presentation: '',
+            unit: '',
+            min_price: '',
+            reference_cost: '',
+            sku_corto: '',
+            brand: '',
+            is_service: false,
+            has_associated_service: false,
+            associated_service_id: '',
+            service_pricing_type: 'MONEDA',
+            service_pricing_value: '',
+        });
         setAddProdSelCat(''); setAddProdSelFam(''); setAddProdSelSub('');
         setAddProdFams([]); setAddProdSubs([]);
         setAddProdError(null);
@@ -861,7 +987,23 @@ export default function AdministradorPage() {
     const openEditProd = async (p: any) => {
         setAddProdMode('edit');
         setEditProdId(p.id);
-        setAddProdForm({ base_name: p.base_name || '', presentation: p.presentation || '', unit: p.unit || '', min_price: p.min_price ?? '', reference_cost: p.reference_cost ?? '' });
+        const parentProd = p.is_service
+            ? (controlProducts as any[]).find((cp: any) => cp.associated_service_id === p.id)
+            : null;
+        setAddProdForm({
+            base_name: p.base_name || '',
+            presentation: p.presentation || '',
+            unit: p.unit || '',
+            min_price: p.min_price ?? '',
+            reference_cost: p.reference_cost ?? '',
+            sku_corto: p.sku_corto || '',
+            brand: p.brand || parentProd?.brand || '',
+            is_service: p.is_service || false,
+            has_associated_service: p.has_associated_service || false,
+            associated_service_id: p.associated_service_id || '',
+            service_pricing_type: p.service_pricing_type || 'MONEDA',
+            service_pricing_value: p.service_pricing_value ?? '',
+        });
         setAddProdSelCat(''); setAddProdSelFam(''); setAddProdSelSub('');
         setAddProdFams([]); setAddProdSubs([]);
         setAddProdError(null);
@@ -895,34 +1037,151 @@ export default function AdministradorPage() {
         window.setTimeout(() => { setAddProdOpen(false); setAddProdClosing(false); }, 220);
     };
     const saveAddProd = async () => {
-        if (!addProdSelSub) { setAddProdError('Selecciona una subfamilia'); return; }
-        if (!addProdForm.base_name.trim()) { setAddProdError('El nombre base es requerido'); return; }
-        if (!addProdForm.presentation.trim()) { setAddProdError('La presentación es requerida'); return; }
-        if (!addProdForm.unit) { setAddProdError('Selecciona una unidad de medida'); return; }
+        if (!addProdForm.is_service) {
+            if (!addProdSelSub) { setAddProdError('Selecciona una subfamilia'); return; }
+            if (!addProdForm.base_name.trim()) { setAddProdError('El nombre base es requerido'); return; }
+            if (!addProdForm.presentation.trim()) { setAddProdError('La presentación es requerida'); return; }
+            if (!addProdForm.unit) { setAddProdError('Selecciona una unidad de medida'); return; }
+        }
+
+        const newSkuCorto = (addProdForm.sku_corto || '').trim().toUpperCase();
+
+        if (addProdMode === 'edit' && editProdId) {
+            const originalProd = controlProducts.find(p => p.id === editProdId);
+            const currentSkuCorto = (originalProd?.sku_corto || '').trim().toUpperCase();
+            if (newSkuCorto !== currentSkuCorto) {
+                setSkuWarningModal({
+                    isOpen: true,
+                    oldValue: currentSkuCorto,
+                    newValue: newSkuCorto,
+                    isEdit: true,
+                    onConfirm: (motive) => executeSaveAddProd(motive),
+                    onCancel: () => {}
+                });
+                return;
+            }
+        } else if (addProdMode === 'create' && newSkuCorto) {
+            setSkuWarningModal({
+                isOpen: true,
+                oldValue: '',
+                newValue: newSkuCorto,
+                isEdit: false,
+                onConfirm: (motive) => executeSaveAddProd(motive),
+                onCancel: () => {}
+            });
+            return;
+        }
+
+        await executeSaveAddProd();
+    };
+
+    const executeSaveAddProd = async (motive?: string) => {
         setAddProdSaving(true);
         setAddProdError(null);
+        
+        const newSkuCorto = addProdForm.sku_corto?.trim().toUpperCase() || null;
         const payload = {
             subfamily_id: addProdSelSub,
             base_name: addProdForm.base_name.trim(),
             presentation: addProdForm.presentation.trim(),
             unit: addProdForm.unit,
+            brand: addProdForm.brand?.trim() || undefined,
             min_price: addProdForm.min_price === '' ? 0 : Number(addProdForm.min_price),
             reference_cost: addProdForm.reference_cost === '' ? 0 : Number(addProdForm.reference_cost),
             min_stock: 0,
             stock_alerts: false,
             status: 'Activo' as const,
+            sku_corto: newSkuCorto,
+            is_service: addProdForm.is_service,
+            has_associated_service: !addProdForm.is_service && addProdForm.has_associated_service,
+            associated_service_id: !addProdForm.is_service && addProdForm.has_associated_service && addProdForm.associated_service_id ? addProdForm.associated_service_id : null,
+            service_pricing_type: !addProdForm.is_service && addProdForm.has_associated_service ? addProdForm.service_pricing_type : null,
+            service_pricing_value: !addProdForm.is_service && addProdForm.has_associated_service ? (addProdForm.service_pricing_value === '' ? 0 : Number(addProdForm.service_pricing_value)) : null
         };
+
+        const needsServiceCreation = !addProdForm.is_service && addProdForm.has_associated_service && !addProdForm.associated_service_id;
+        const buildServicePayload = () => ({
+            subfamily_id: addProdSelSub,
+            base_name: `${addProdForm.base_name.trim()} - Servicio`,
+            presentation: '',
+            unit: 'Metro',
+            min_price: addProdForm.service_pricing_type === 'PORCENTAJE'
+                ? parseFloat(((Number(addProdForm.service_pricing_value) || 0) * (Number(addProdForm.min_price) || 0) / 100).toFixed(2))
+                : (addProdForm.service_pricing_value === '' ? 0 : Number(addProdForm.service_pricing_value)),
+            reference_cost: 0,
+            min_stock: 0,
+            stock_alerts: false,
+            status: 'Activo' as const,
+            sku_corto: null,
+            is_service: true,
+            has_associated_service: false,
+            associated_service_id: null,
+            service_pricing_type: null,
+            service_pricing_value: null,
+        });
+
         try {
             if (addProdMode === 'edit' && editProdId) {
+                if (addProdForm.is_service) {
+                    const { error } = await supabase.from('catalog_products')
+                        .update({ min_price: addProdForm.min_price === '' ? 0 : Number(addProdForm.min_price) })
+                        .eq('id', editProdId);
+                    if (error) throw error;
+                } else {
                 const { error } = await supabase.from('catalog_products').update(payload).eq('id', editProdId);
                 if (error) throw error;
+
+                if (motive) {
+                    const originalProd = controlProducts.find(p => p.id === editProdId);
+                    const currentSkuCorto = (originalProd?.sku_corto || '').trim().toUpperCase();
+                    const { data: { user } } = await supabase.auth.getUser();
+                    const userName = user?.user_metadata?.nombre || user?.email || 'Administrador';
+
+                    const auditPayload = {
+                        product_id: editProdId,
+                        campo: 'sku_corto',
+                        valor_anterior: currentSkuCorto || null,
+                        valor_nuevo: newSkuCorto || null,
+                        motivo: motive,
+                        user_id: user?.id || null,
+                        usuario_nombre: userName
+                    };
+                    const { error: auditError } = await supabase.from('catalog_products_audit_log').insert(auditPayload);
+                    if (auditError) console.error("Error writing audit log:", auditError);
+                }
+
+                if (addProdForm.has_associated_service && addProdForm.associated_service_id) {
+                    const newSvcMinPrice = addProdForm.service_pricing_type === 'PORCENTAJE'
+                        ? parseFloat(((Number(addProdForm.service_pricing_value) || 0) * (Number(addProdForm.min_price) || 0) / 100).toFixed(2))
+                        : (addProdForm.service_pricing_value === '' ? 0 : Number(addProdForm.service_pricing_value));
+                    await supabase.from('catalog_products')
+                        .update({ min_price: newSvcMinPrice })
+                        .eq('id', addProdForm.associated_service_id);
+                }
+
+                if (needsServiceCreation) {
+                    const parentSku: string = (controlProducts as any[]).find(p => p.id === editProdId)?.sku || '';
+                    const svc = await catalogService.createProduct(buildServicePayload());
+                    await supabase.from('catalog_products').update({ sku: `${parentSku}-S` }).eq('id', svc.id);
+                    await supabase.from('catalog_products').update({ associated_service_id: svc.id }).eq('id', editProdId);
+                }
+                }
             } else {
-                await catalogService.createProduct(payload);
+                const created = await catalogService.createProduct(payload);
+                if (needsServiceCreation) {
+                    const svc = await catalogService.createProduct(buildServicePayload());
+                    await supabase.from('catalog_products').update({ sku: `${created.sku}-S` }).eq('id', svc.id);
+                    await supabase.from('catalog_products').update({ associated_service_id: svc.id }).eq('id', created.id);
+                }
             }
             closeAddProd();
             await fetchControlProducts();
         } catch (e: any) {
-            setAddProdError(e?.message || 'Error al guardar');
+            let errorMsg = e?.message || 'Error al guardar';
+            if (errorMsg.includes('catalog_products_sku_corto_key')) {
+                errorMsg = 'El SKU Corto ingresado ya existe en otro producto del catálogo. Debe ser único.';
+            }
+            setAddProdError(errorMsg);
         } finally { setAddProdSaving(false); }
     };
 
@@ -975,7 +1234,7 @@ export default function AdministradorPage() {
                         .from('cotizaciones_items')
                         .select(
                             'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                                'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
+                                'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion,descuento)'
                         )
                         .neq('cotizaciones.estado', 'ELIMINADO')
                         .gte('cotizaciones.fecha_emision', clientsStart)
@@ -1175,7 +1434,7 @@ export default function AdministradorPage() {
                     .from('cotizaciones_items')
                     .select(
                         'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
-                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion)'
+                            'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion,descuento)'
                     )
                     .neq('cotizaciones.estado', 'ELIMINADO')
                     .gte('cotizaciones.fecha_emision', historyStart)
@@ -1309,6 +1568,168 @@ export default function AdministradorPage() {
                     accent="#2c3434"
                 />
             </div>
+
+            {/* PENDING DISCOUNT REQUESTS */}
+            {pendingDiscounts.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-[2rem] overflow-hidden shadow-sm">
+                    <div className="px-7 py-5 border-b border-amber-200/50 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center animate-pulse shrink-0">
+                            <span className="material-icons-round text-amber-600 text-[16px]">loyalty</span>
+                        </div>
+                        <div>
+                            <h3 className="text-[13px] font-black text-amber-900 uppercase tracking-tight">
+                                Solicitudes de Descuento Pendientes
+                            </h3>
+                            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">
+                                {pendingDiscounts.length} solicitud{pendingDiscounts.length !== 1 ? 'es' : ''} esperando aprobación
+                            </p>
+                        </div>
+                    </div>
+                    <div className="divide-y divide-amber-100">
+                        {pendingDiscounts.map(cot => (
+                            <div key={cot.id} className="px-7 py-5">
+                                <div className="flex items-start justify-between gap-4 flex-wrap">
+                                    <div className="flex-1 min-w-0 space-y-1.5">
+                                        <div className="flex items-center gap-3 flex-wrap">
+                                            <span className="text-[11px] font-black text-[#366480] font-mono bg-[#e0eef4] px-2 py-0.5 rounded-lg">#{cot.codigo}</span>
+                                            <span className="text-[14px] font-bold text-slate-800 truncate">{cot.cliente_nombre}</span>
+                                            {cot.usuario_nombre && (
+                                                <span className="text-[10px] font-black text-[#366480]/60 bg-[#f0f5f4] px-2 py-0.5 rounded-lg uppercase tracking-wider">
+                                                    Solicitado por: {cot.usuario_nombre}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-[14px] font-black text-amber-700">
+                                                - S/ {Number(cot.descuento_sugerido || 0).toFixed(2)}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                                                {Number(cot.descuento_sugerido_porcentaje || 0).toFixed(1)}%
+                                            </span>
+                                        </div>
+                                        {cot.descuento_motivo_solicitud && (
+                                            <p className="text-[12px] font-semibold text-slate-600 italic">
+                                                "{cot.descuento_motivo_solicitud}"
+                                            </p>
+                                        )}
+                                        {discountActionId === cot.id && (() => {
+                                            const items: any[] = Array.isArray(cot.items) ? cot.items : [];
+                                            const discount = Number(cot.descuento_sugerido) || 0;
+                                            const subtotal = Number(cot.subtotal) || 0;
+                                            const factor = subtotal > 0 ? (subtotal - discount) / subtotal : 1;
+                                            const needsIgv = cot.tipo_documento === 'FACTURA' || cot.tipo_documento === 'BOLETA' || cot.tipo_documento === 'TICKET';
+                                            const totalAntes = Number(cot.total) || 0;
+                                            const baseAfter = Math.max(0, subtotal - discount);
+                                            const igvAfter = needsIgv ? parseFloat((baseAfter * 0.18).toFixed(2)) : 0;
+                                            const totalDespues = parseFloat((baseAfter + igvAfter).toFixed(2));
+                                            return (
+                                                <div className="mt-4 space-y-4">
+                                                    {/* Comparison table */}
+                                                    {items.length > 0 && (
+                                                        <div className="overflow-x-auto rounded-xl border border-amber-200 bg-white">
+                                                            <table className="w-full text-[11px]">
+                                                                <thead>
+                                                                    <tr className="bg-amber-50 border-b border-amber-200">
+                                                                        <th className="px-3 py-2 text-left font-black text-amber-800 uppercase tracking-wider">Cant.</th>
+                                                                        <th className="px-3 py-2 text-left font-black text-amber-800 uppercase tracking-wider">Descripción</th>
+                                                                        <th className="px-3 py-2 text-right font-black text-amber-800 uppercase tracking-wider">P.Unit Antes</th>
+                                                                        <th className="px-3 py-2 text-right font-black text-emerald-700 uppercase tracking-wider">P.Unit Después</th>
+                                                                        <th className="px-3 py-2 text-right font-black text-amber-800 uppercase tracking-wider">Total Antes</th>
+                                                                        <th className="px-3 py-2 text-right font-black text-emerald-700 uppercase tracking-wider">Total Después</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-amber-100">
+                                                                    {items.map((it: any, i: number) => {
+                                                                        const unitAntes = Number(it.precio_unitario) || 0;
+                                                                        const unitDespues = parseFloat((unitAntes * factor).toFixed(2));
+                                                                        const totAntes = Number(it.total) || 0;
+                                                                        const totDespues = parseFloat((Number(it.cantidad) * unitDespues).toFixed(2));
+                                                                        return (
+                                                                            <tr key={i} className="hover:bg-amber-50/40 transition-colors">
+                                                                                <td className="px-3 py-2 text-slate-600 font-semibold whitespace-nowrap">{it.cantidad} {it.unidad}</td>
+                                                                                <td className="px-3 py-2 text-slate-700 font-semibold max-w-[200px] truncate">{it.descripcion}</td>
+                                                                                <td className="px-3 py-2 text-right text-slate-500 font-mono">S/ {unitAntes.toFixed(2)}</td>
+                                                                                <td className="px-3 py-2 text-right text-emerald-700 font-mono font-bold">S/ {unitDespues.toFixed(2)}</td>
+                                                                                <td className="px-3 py-2 text-right text-slate-500 font-mono">S/ {totAntes.toFixed(2)}</td>
+                                                                                <td className="px-3 py-2 text-right text-emerald-700 font-mono font-bold">S/ {totDespues.toFixed(2)}</td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
+                                                                </tbody>
+                                                                <tfoot>
+                                                                    <tr className="bg-amber-50 border-t border-amber-200">
+                                                                        <td colSpan={4} className="px-3 py-2 text-right text-[11px] font-black text-amber-800 uppercase">Descuento aplicado</td>
+                                                                        <td className="px-3 py-2 text-right text-[11px] font-black text-slate-500 font-mono">—</td>
+                                                                        <td className="px-3 py-2 text-right text-[11px] font-black text-rose-600 font-mono">- S/ {discount.toFixed(2)}</td>
+                                                                    </tr>
+                                                                    {needsIgv && (
+                                                                        <tr className="bg-amber-50">
+                                                                            <td colSpan={4} className="px-3 py-2 text-right text-[11px] font-black text-amber-800 uppercase">IGV (18%)</td>
+                                                                            <td className="px-3 py-2 text-right text-[11px] font-mono text-slate-500">S/ {(needsIgv ? parseFloat((subtotal * 0.18).toFixed(2)) : 0).toFixed(2)}</td>
+                                                                            <td className="px-3 py-2 text-right text-[11px] font-mono text-emerald-700 font-bold">S/ {igvAfter.toFixed(2)}</td>
+                                                                        </tr>
+                                                                    )}
+                                                                    <tr className="bg-amber-100 border-t border-amber-300">
+                                                                        <td colSpan={4} className="px-3 py-2 text-right text-[12px] font-black text-amber-900 uppercase">TOTAL</td>
+                                                                        <td className="px-3 py-2 text-right text-[12px] font-black text-slate-600 font-mono">S/ {totalAntes.toFixed(2)}</td>
+                                                                        <td className="px-3 py-2 text-right text-[12px] font-black text-emerald-700 font-mono">S/ {totalDespues.toFixed(2)}</td>
+                                                                    </tr>
+                                                                </tfoot>
+                                                            </table>
+                                                        </div>
+                                                    )}
+                                                    {/* Comment + action buttons */}
+                                                    <div className="flex flex-wrap gap-2 items-center">
+                                                        <input
+                                                            type="text"
+                                                            value={discountComment}
+                                                            onChange={e => setDiscountComment(e.target.value)}
+                                                            onKeyDown={e => { if (e.key === 'Enter') setConfirmAction({ type: 'APPROVE', cot }); }}
+                                                            placeholder="Comentario para el vendedor (opcional)..."
+                                                            className="flex-1 min-w-[200px] px-3 py-2 bg-white border border-amber-300 rounded-xl text-[12px] font-bold text-slate-700 outline-none focus:border-amber-500 transition-colors"
+                                                        />
+                                                        <button
+                                                            onClick={() => setConfirmAction({ type: 'APPROVE', cot })}
+                                                            disabled={discountActionLoading}
+                                                            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white text-[11px] font-black uppercase tracking-wider rounded-xl hover:bg-emerald-600 transition-all disabled:opacity-50 shadow-sm"
+                                                        >
+                                                            <span className="material-icons-round text-[14px]">check_circle</span>
+                                                            Aprobar
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setConfirmAction({ type: 'REJECT', cot })}
+                                                            disabled={discountActionLoading}
+                                                            className="flex items-center gap-1.5 px-4 py-2 bg-rose-500 text-white text-[11px] font-black uppercase tracking-wider rounded-xl hover:bg-rose-600 transition-all disabled:opacity-50 shadow-sm"
+                                                        >
+                                                            <span className="material-icons-round text-[14px]">cancel</span>
+                                                            Rechazar
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setDiscountActionId(null); setDiscountComment(''); }}
+                                                            className="px-3 py-2 text-[11px] font-black uppercase text-slate-400 hover:text-slate-700 transition-colors"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                    {discountActionId !== cot.id && (
+                                        <button
+                                            onClick={() => { setDiscountActionId(cot.id); setDiscountComment(''); }}
+                                            className="flex items-center gap-1.5 px-4 py-2 bg-amber-100 text-amber-800 border border-amber-300 rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-amber-200 transition-all shrink-0"
+                                        >
+                                            <span className="material-icons-round text-[14px]">rate_review</span>
+                                            Revisar
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* CHART CARD */}
             <div className="bg-white p-7 rounded-[2rem] border border-slate-200 shadow-[0_10px_40px_rgba(0,0,0,0.04)]">
@@ -1769,14 +2190,22 @@ export default function AdministradorPage() {
                                                                 ))}
                                                                 {(() => {
                                                                     const subtotal = rows.reduce((s, r) => s + (Number(r.total) || 0), 0);
-                                                                    const igv = subtotal * 0.18;
-                                                                    const grandTotal = subtotal + igv;
+                                                                    const descuento = Number(cot.descuento) || 0;
+                                                                    const base = Math.max(0, subtotal - descuento);
+                                                                    const igv = base * 0.18;
+                                                                    const grandTotal = base + igv;
                                                                     return (
                                                                         <>
                                                                             <tr className="border-t-2 border-[#d3dcdb]/20">
                                                                                 <td colSpan={3} className="pt-4 pb-1 text-right text-[13px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">Subtotal</td>
                                                                                 <td className="pt-4 pb-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(subtotal, 2)}</td>
                                                                             </tr>
+                                                                            {descuento > 0 && (
+                                                                                <tr>
+                                                                                    <td colSpan={3} className="py-1 text-right text-[13px] font-semibold text-rose-500/80 uppercase tracking-widest pr-3">Descuento</td>
+                                                                                    <td className="py-1 text-right text-rose-600 font-bold tabular-nums">- S/ {formatNumber(descuento, 2)}</td>
+                                                                                </tr>
+                                                                            )}
                                                                             <tr>
                                                                                 <td colSpan={3} className="py-1 text-right text-[13px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">IGV (18%)</td>
                                                                                 <td className="py-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(igv, 2)}</td>
@@ -2327,6 +2756,18 @@ export default function AdministradorPage() {
                                     </select>
                                     <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
                                 </div>
+                                <div className="flex flex-shrink-0 rounded-xl overflow-hidden border border-[#e8eded] text-[11px] font-black uppercase tracking-widest">
+                                    {([['', 'Todos'], ['PRODUCTS', 'Productos'], ['SERVICES', 'Servicios']] as const).map(([val, label]) => (
+                                        <button
+                                            key={val}
+                                            type="button"
+                                            onClick={() => { setFilterServices(val); setControlPage(1); }}
+                                            className={`w-[88px] text-center py-2.5 transition-colors ${filterServices === val ? 'bg-[#366480] text-white' : 'bg-[#f8faf9] text-[#2c3434] hover:bg-[#e8eded]'}`}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                             {/* Table */}
                             <div className="px-8 pb-4">
@@ -2569,9 +3010,9 @@ export default function AdministradorPage() {
                             <div className="flex items-start justify-between">
                                 <div>
                                     <h2 className="text-[18px] font-black text-[#2c3434] tracking-tight leading-snug">
-                            {addProdMode === 'edit' ? 'Editar Producto' : 'Nuevo Producto en Catálogo'}
+                            {addProdForm.is_service && addProdMode === 'edit' ? 'Editar Servicio' : addProdMode === 'edit' ? 'Editar Producto' : 'Nuevo Producto en Catálogo'}
                         </h2>
-                                    <p className="text-[11px] font-bold text-slate-400 mt-1 tracking-wide">Completa la clasificación y los datos del producto.</p>
+                                    <p className="text-[11px] font-bold text-slate-400 mt-1 tracking-wide">{addProdForm.is_service && addProdMode === 'edit' ? 'Solo el precio mínimo es editable en un servicio.' : 'Completa la clasificación y los datos del producto.'}</p>
                                 </div>
                                 <button onClick={closeAddProd} className="w-8 h-8 rounded-full text-[#8b9ba5] hover:text-[#366480] hover:bg-[#f0f5f4] flex items-center justify-center transition-all flex-shrink-0 ml-4 mt-0.5">
                                     <X className="w-4 h-4" />
@@ -2581,7 +3022,7 @@ export default function AdministradorPage() {
                         {/* Form */}
                         <div className="px-8 py-6 flex flex-col gap-5 overflow-y-auto max-h-[70vh]">
                             {/* Clasificación */}
-                            <div className="bg-[#f8faf9] rounded-2xl border border-[#e8eded] p-5 space-y-4">
+                            <div className={`bg-[#f8faf9] rounded-2xl border border-[#e8eded] p-5 space-y-4 ${addProdForm.is_service && addProdMode === 'edit' ? 'opacity-50 pointer-events-none' : ''}`}>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">1. Clasificación</p>
                                 <div className="grid grid-cols-3 gap-3">
                                     {/* Categoría */}
@@ -2632,14 +3073,16 @@ export default function AdministradorPage() {
                             </div>
                             {/* Datos del producto */}
                             <div className={`bg-[#f8faf9] rounded-2xl border border-[#e8eded] p-5 space-y-4 transition-all duration-300 ${addProdSelSub ? '' : 'opacity-40 pointer-events-none'}`}>
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">2. Datos del Producto</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{addProdForm.is_service && addProdMode === 'edit' ? '2. Datos del Servicio' : '2. Datos del Producto'}</p>
                                 <div className="flex flex-col gap-1.5">
                                     <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Nombre Base *</label>
                                     <input type="text" value={addProdForm.base_name}
+                                        disabled={addProdForm.is_service && addProdMode === 'edit'}
                                         onChange={e => setAddProdForm(f => ({ ...f, base_name: e.target.value }))}
                                         placeholder="Ej. Bisagra Cazoleta"
-                                        className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40" />
+                                        className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40 disabled:opacity-50 disabled:cursor-not-allowed" />
                                 </div>
+                                {!(addProdForm.is_service && addProdMode === 'edit') ? (
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Presentación *</label>
@@ -2665,22 +3108,148 @@ export default function AdministradorPage() {
                                         </div>
                                     </div>
                                 </div>
+                                ) : (
+                                <div className="flex flex-col gap-1.5 opacity-50 pointer-events-none">
+                                    <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Unidad</label>
+                                    <div className="relative">
+                                        <select disabled value={addProdForm.unit}
+                                            className="appearance-none w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none pr-8">
+                                            <option value={addProdForm.unit}>{addProdForm.unit}</option>
+                                        </select>
+                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                    </div>
+                                </div>
+                                )}
                                 <div className="grid grid-cols-2 gap-3">
+                                    {!(addProdForm.is_service && addProdMode === 'edit') && (
                                     <div className="flex flex-col gap-1.5">
                                         <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Costo de Referencia (S/)</label>
                                         <input type="number" min="0" step="0.01" value={addProdForm.reference_cost}
                                             onChange={e => setAddProdForm(f => ({ ...f, reference_cost: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                            onKeyDown={e => { if (['e','E','+','-','*','/','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault(); }}
+                                            onWheel={e => e.currentTarget.blur()}
                                             placeholder="0.00"
                                             className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40 tabular-nums" />
                                     </div>
-                                    <div className="flex flex-col gap-1.5">
+                                    )}
+                                    <div className={`flex flex-col gap-1.5 ${addProdForm.is_service && addProdMode === 'edit' ? 'col-span-2' : ''}`}>
                                         <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Precio Mínimo (S/)</label>
                                         <input type="number" min="0" step="0.01" value={addProdForm.min_price}
                                             onChange={e => setAddProdForm(f => ({ ...f, min_price: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                            onKeyDown={e => { if (['e','E','+','-','*','/','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault(); }}
+                                            onWheel={e => e.currentTarget.blur()}
                                             placeholder="0.00"
                                             className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40 tabular-nums" />
                                     </div>
                                 </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {!(addProdForm.is_service && addProdMode === 'edit') && (
+                                    <div className="flex flex-col gap-1.5">
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">SKU Corto (3-4 Caracteres Alfanuméricos)</label>
+                                        <input type="text" maxLength={4} value={addProdForm.sku_corto}
+                                            onChange={e => setAddProdForm(f => ({ ...f, sku_corto: e.target.value.toUpperCase().slice(0, 4) }))}
+                                            placeholder="Ej. PM01 (Opcional)"
+                                            className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40 font-mono" />
+                                    </div>
+                                    )}
+                                    <div className={`flex flex-col gap-1.5 ${addProdForm.is_service && addProdMode === 'edit' ? 'col-span-2' : ''}`}>
+                                        <label className="text-[10px] font-black text-[#2c3434] uppercase tracking-widest">Marca</label>
+                                        <input type="text" value={addProdForm.brand}
+                                            disabled={addProdForm.is_service && addProdMode === 'edit'}
+                                            onChange={e => setAddProdForm(f => ({ ...f, brand: e.target.value }))}
+                                            placeholder="Ej. Blum, FGV (Opcional)"
+                                            className="w-full px-4 py-3 bg-white border border-[#e8eded] rounded-xl text-[13px] font-bold text-[#2c3434] outline-none placeholder:text-slate-300 focus:border-[#4A90E2]/40 disabled:opacity-50 disabled:cursor-not-allowed" />
+                                    </div>
+                                </div>
+                                {!(addProdForm.is_service && addProdMode === 'edit') && (
+                                <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border border-[#e8eded]">
+                                    <input
+                                        type="checkbox"
+                                        id="admin_is_service"
+                                        checked={addProdForm.is_service}
+                                        onChange={e => setAddProdForm(f => ({
+                                            ...f,
+                                            is_service: e.target.checked,
+                                            has_associated_service: e.target.checked ? false : f.has_associated_service
+                                        }))}
+                                        className="w-4 h-4 text-[#366480] bg-slate-50 border-[#e8eded] rounded focus:ring-[#366480]/20 cursor-pointer"
+                                    />
+                                    <label htmlFor="admin_is_service" className="text-xs font-semibold text-slate-700 cursor-pointer">
+                                        ¿Es un servicio no inventariado?
+                                    </label>
+                                </div>
+                                )}
+
+                                {/* Configuración de Servicio Asociado (Solo si no es servicio) */}
+                                {!addProdForm.is_service && (
+                                    <div className="bg-[#f0f4f3]/40 p-4 rounded-xl border border-[#e8eded] space-y-3">
+                                        <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border border-[#e8eded]">
+                                            <input
+                                                type="checkbox"
+                                                id="admin_has_associated_service"
+                                                checked={addProdForm.has_associated_service}
+                                                onChange={e => setAddProdForm(f => ({ ...f, has_associated_service: e.target.checked }))}
+                                                className="w-4 h-4 text-[#366480] bg-slate-50 border-[#e8eded] rounded focus:ring-[#366480]/20 cursor-pointer"
+                                            />
+                                            <label htmlFor="admin_has_associated_service" className="text-xs font-semibold text-slate-700 cursor-pointer">
+                                                ¿Tiene un servicio asociado en catálogo? (Ej: Canto/Tapacanto)
+                                            </label>
+                                        </div>
+
+                                        {addProdForm.has_associated_service && (
+                                            <div className="space-y-3 pt-1">
+                                                <div className="flex items-start gap-2 px-3 py-2.5 bg-sky-50 border border-sky-100 rounded-xl text-[11px] font-semibold text-sky-700">
+                                                    <span className="material-icons-round text-[14px] mt-0.5 flex-shrink-0">auto_awesome</span>
+                                                    {(() => {
+                                                        const existingSvc = addProdMode === 'edit' && addProdForm.associated_service_id
+                                                            ? (controlProducts as any[]).find(p => p.id === addProdForm.associated_service_id)
+                                                            : null;
+                                                        if (existingSvc) {
+                                                            return <span>Servicio vinculado: <span className="font-mono font-black">{existingSvc.sku}</span> — {existingSvc.base_name}</span>;
+                                                        }
+                                                        return <span>Se creará automáticamente al guardar con SKU <span className="font-mono font-black">[SKU_PADRE]-S</span></span>;
+                                                    })()}
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <label className="text-[9px] font-black text-[#2c3434] uppercase tracking-widest">Tipo de Precio *</label>
+                                                        <div className="relative">
+                                                            <select
+                                                                value={addProdForm.service_pricing_type}
+                                                                onChange={e => setAddProdForm(f => ({ ...f, service_pricing_type: e.target.value as 'MONEDA' | 'PORCENTAJE' }))}
+                                                                className="appearance-none w-full px-3 py-2 bg-white border border-[#e8eded] rounded-lg text-[11px] font-bold text-[#2c3434] outline-none cursor-pointer pr-8 focus:border-[#4A90E2]/40"
+                                                            >
+                                                                <option value="MONEDA">Nominal (S/)</option>
+                                                                <option value="PORCENTAJE">Porcentaje (%)</option>
+                                                            </select>
+                                                            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <label className="text-[9px] font-black text-[#2c3434] uppercase tracking-widest">
+                                                            Valor ({addProdForm.service_pricing_type === 'MONEDA' ? 'S/' : '%'}) *
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            step="any"
+                                                            required
+                                                            min="0"
+                                                            value={addProdForm.service_pricing_value}
+                                                            onChange={e => {
+                                                                const val = e.target.value;
+                                                                setAddProdForm(f => ({ ...f, service_pricing_value: val === '' ? '' : parseFloat(val) }));
+                                                            }}
+                                                            onKeyDown={e => { if (['e','E','+','-','*','/','ArrowUp','ArrowDown'].includes(e.key)) e.preventDefault(); }}
+                                                            onWheel={e => e.currentTarget.blur()}
+                                                            className="w-full px-3 py-2 bg-white border border-[#e8eded] rounded-lg text-[11px] font-bold text-[#2c3434] outline-none focus:border-[#4A90E2]/40"
+                                                            placeholder="0.00"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             {/* Error */}
                             {addProdError && (
@@ -2695,6 +3264,138 @@ export default function AdministradorPage() {
                                     className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all disabled:opacity-60">
                                     <Check className="w-3.5 h-3.5" />
                                     {addProdSaving ? 'Guardando...' : addProdMode === 'edit' ? 'Guardar Cambios' : 'Guardar Producto'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {skuWarningModal && skuWarningModal.isOpen && createPortal(
+                <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-[#2c3434]/45 backdrop-blur-md animate-backdrop">
+                    <div className="bg-white/97 rounded-[2rem] shadow-[0_30px_60px_rgba(0,0,0,0.2)] w-full max-w-md border border-white/60 relative overflow-hidden animate-modal-panel animate-premium-fade" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                        <div className="absolute top-0 left-0 right-0 h-[3px] bg-amber-500" />
+                        <div className="px-8 pt-8 pb-6">
+                            <div className="flex items-start gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center shrink-0 border border-amber-200">
+                                    <span className="material-icons-round text-amber-600 text-[26px]">warning</span>
+                                </div>
+                                <div>
+                                    <h2 className="text-[19px] font-black text-[#2c3434] tracking-tight">ADVERTENCIA: SKU Corto</h2>
+                                    <p className="text-[12px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Registro de Seguridad</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="px-8 pb-8 flex flex-col gap-4">
+                            <div className="bg-[#f8faf9] border border-[#e8eded] p-4 rounded-2xl text-[13px] text-slate-600 leading-relaxed font-bold">
+                                Estás {skuWarningModal.isEdit ? 'modificando' : 'registrando'} el SKU Corto de{' '}
+                                <span className="font-mono font-black text-rose-600">"{skuWarningModal.oldValue || 'Ninguno'}"</span> a{' '}
+                                <span className="font-mono font-black text-emerald-600">"{skuWarningModal.newValue}"</span>.
+                                <p className="mt-2 text-[11px] font-bold text-slate-400">Este cambio quedará registrado en una auditoría a nivel de usuario.</p>
+                            </div>
+                            
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[11px] font-black text-[#2c3434] uppercase tracking-widest">
+                                    Motivo o Justificación <span className="text-rose-500">*</span>
+                                </label>
+                                <textarea
+                                    required
+                                    rows={3}
+                                    placeholder="Ej: Asignación inicial de código de catálogo, Corrección por error de digitación..."
+                                    className="w-full px-4 py-3 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-amber-500 focus:bg-white resize-none"
+                                    id="sku_motive_textarea"
+                                />
+                            </div>
+                            
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    onClick={() => {
+                                        skuWarningModal.onCancel();
+                                        setSkuWarningModal(null);
+                                    }}
+                                    className="px-5 py-3 text-[12px] font-black text-slate-500 hover:text-slate-700 uppercase tracking-widest transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const motiveText = (document.getElementById('sku_motive_textarea') as HTMLTextAreaElement)?.value || '';
+                                        if (!motiveText.trim()) {
+                                            alert('Debes ingresar un motivo para poder continuar.');
+                                            return;
+                                        }
+                                        skuWarningModal.onConfirm(motiveText.trim());
+                                        setSkuWarningModal(null);
+                                    }}
+                                    className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest shadow-sm transition-all"
+                                >
+                                    Confirmar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {confirmAction && createPortal(
+                <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-[#2c3434]/45 backdrop-blur-md animate-backdrop">
+                    <div className="bg-white/97 rounded-[2rem] shadow-[0_30px_60px_rgba(0,0,0,0.2)] w-full max-w-md border border-white/60 relative overflow-hidden animate-modal-panel animate-premium-fade" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                        <div className={`absolute top-0 left-0 right-0 h-[3px] ${confirmAction.type === 'APPROVE' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                        <div className="px-8 pt-8 pb-6">
+                            <div className="flex items-start gap-4">
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${confirmAction.type === 'APPROVE' ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
+                                    <span className="material-icons-round text-[26px]">
+                                        {confirmAction.type === 'APPROVE' ? 'check_circle' : 'cancel'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <h2 className="text-[19px] font-black text-[#2c3434] tracking-tight">
+                                        {confirmAction.type === 'APPROVE' ? 'Confirmar Aprobación' : 'Confirmar Rechazo'}
+                                    </h2>
+                                    <p className="text-[12px] font-bold text-slate-400 mt-1 uppercase tracking-wider">¿Está seguro?</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="px-8 pb-8 flex flex-col gap-4">
+                            <div className="bg-[#f8faf9] border border-[#e8eded] p-4 rounded-2xl text-[13px] text-slate-600 leading-relaxed font-bold">
+                                {confirmAction.type === 'APPROVE' 
+                                    ? `Aprobará el descuento de S/ ${Number(confirmAction.cot.descuento_sugerido || 0).toFixed(2)} (${Number(confirmAction.cot.descuento_sugerido_porcentaje || 0).toFixed(1)}%) para la cotización ${confirmAction.cot.codigo} de ${confirmAction.cot.cliente_nombre}.`
+                                    : `Rechazará la solicitud de descuento para la cotización ${confirmAction.cot.codigo} de ${confirmAction.cot.cliente_nombre}.`
+                                }
+                                {confirmAction.type === 'APPROVE' && discountComment.trim() && (
+                                    <p className="mt-2 text-[12px] font-bold text-slate-500 italic">Comentario: "{discountComment.trim()}"</p>
+                                )}
+                                {confirmAction.type === 'REJECT' && discountComment.trim() && (
+                                    <p className="mt-2 text-[12px] font-bold text-slate-500 italic">Motivo: "{discountComment.trim()}"</p>
+                                )}
+                            </div>
+                            
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    onClick={() => setConfirmAction(null)}
+                                    className="px-5 py-3 text-[12px] font-black text-slate-500 hover:text-slate-700 uppercase tracking-widest transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        const { type, cot } = confirmAction;
+                                        setConfirmAction(null);
+                                        if (type === 'APPROVE') {
+                                            await handleDiscountApprove(cot);
+                                        } else {
+                                            await handleDiscountReject(cot);
+                                        }
+                                    }}
+                                    className={`px-6 py-3 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest shadow-sm transition-all ${
+                                        confirmAction.type === 'APPROVE' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                                    }`}
+                                >
+                                    Sí, {confirmAction.type === 'APPROVE' ? 'Aprobar' : 'Rechazar'}
                                 </button>
                             </div>
                         </div>

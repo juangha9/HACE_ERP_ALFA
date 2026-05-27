@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { catalogService } from '../../../services/catalogService';
-import type { ProductCategory, ProductFamily, ProductSubfamily } from '../../../services/catalogService';
+import type { CatalogProduct, ProductCategory, ProductFamily, ProductSubfamily } from '../../../services/catalogService';
 
 interface AddProductModalProps {
     onClose: () => void;
@@ -11,6 +11,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
     // All raw data
     const [allFamilies, setAllFamilies] = useState<ProductFamily[]>([]);
     const [allSubfamilies, setAllSubfamilies] = useState<ProductSubfamily[]>([]);
+    const [availableServices, setAvailableServices] = useState<CatalogProduct[]>([]);
 
     // Filtered data for dropdowns
     const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -28,7 +29,13 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
         features: '',
         min_stock: '' as number | '',
         stock_alerts: false,
-        unit: ''
+        unit: '',
+        sku_corto: '',
+        is_service: false,
+        has_associated_service: false,
+        associated_service_id: '',
+        service_pricing_type: 'MONEDA' as 'MONEDA' | 'PORCENTAJE',
+        service_pricing_value: '' as number | ''
     });
 
     const [loading, setLoading] = useState(false);
@@ -38,10 +45,12 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
         Promise.all([
             catalogService.getCategories(),
             catalogService.getFamilies(),
-            catalogService.getSubfamilies()
-        ]).then(([cats, fams, subfams]) => {
+            catalogService.getSubfamilies(),
+            catalogService.getProducts()
+        ]).then(([cats, fams, subfams, prods]) => {
             setAllFamilies(fams);
             setAllSubfamilies(subfams);
+            setAvailableServices(prods.filter(p => p.is_service));
 
             // Filtrar familias que tienen al menos una subfamilia
             const validFamilies = fams.filter(f => subfams.some(s => s.family_id === f.id));
@@ -90,6 +99,9 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
             if (formData.stock_alerts && (!formData.min_stock || formData.min_stock <= 0)) {
                 throw new Error("Debes ingresar un stock mínimo mayor a 0 si las alertas están activadas.");
             }
+            if (formData.sku_corto.trim() && !/^[a-zA-Z0-9]{3,4}$/.test(formData.sku_corto.trim())) {
+                throw new Error("El SKU Corto debe constar de 3 a 4 caracteres alfanuméricos.");
+            }
 
             await catalogService.createProduct({
                 subfamily_id: selectedSubfamily,
@@ -100,7 +112,15 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
                 min_stock: formData.min_stock === '' ? 0 : formData.min_stock,
                 stock_alerts: formData.stock_alerts,
                 status: 'Activo',
-                unit: formData.unit
+                unit: formData.unit,
+                min_price: 0,
+                reference_cost: 0,
+                sku_corto: formData.sku_corto.trim() ? formData.sku_corto.trim().toUpperCase() : undefined,
+                is_service: formData.is_service,
+                has_associated_service: !formData.is_service && formData.has_associated_service,
+                associated_service_id: !formData.is_service && formData.has_associated_service && formData.associated_service_id ? formData.associated_service_id : undefined,
+                service_pricing_type: !formData.is_service && formData.has_associated_service ? formData.service_pricing_type : undefined,
+                service_pricing_value: !formData.is_service && formData.has_associated_service ? (formData.service_pricing_value === '' ? 0 : formData.service_pricing_value) : undefined
             });
 
             onSuccess();
@@ -270,8 +290,115 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
                                             placeholder="Ej. Niquelado, Cierre Suave"
                                         />
                                     </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">SKU Corto (3-4 Caracteres Alfanuméricos)</label>
+                                        <input
+                                            type="text"
+                                            disabled={!isSection2Complete}
+                                            maxLength={4}
+                                            value={formData.sku_corto}
+                                            onChange={e => setFormData({ ...formData, sku_corto: e.target.value.toUpperCase().slice(0, 4) })}
+                                            className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white disabled:opacity-50 font-bold"
+                                            placeholder="Ej. PM01 (Opcional)"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center space-x-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                                        <input
+                                            type="checkbox"
+                                            id="is_service"
+                                            disabled={!isSection2Complete}
+                                            checked={formData.is_service}
+                                            onChange={e => setFormData({ 
+                                                ...formData, 
+                                                is_service: e.target.checked,
+                                                has_associated_service: e.target.checked ? false : formData.has_associated_service 
+                                            })}
+                                            className="w-5 h-5 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer disabled:opacity-50"
+                                        />
+                                        <label htmlFor="is_service" className="text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                                            ¿Es un servicio no inventariado?
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* Configuración de Servicio Asociado (Solo si no es servicio) */}
+                            {!formData.is_service && (
+                                <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-4 mb-6">
+                                    <div className="flex items-center space-x-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                                        <input
+                                            type="checkbox"
+                                            id="has_associated_service"
+                                            disabled={!isSection2Complete}
+                                            checked={formData.has_associated_service}
+                                            onChange={e => setFormData({ ...formData, has_associated_service: e.target.checked })}
+                                            className="w-5 h-5 text-blue-600 bg-slate-100 border-slate-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer disabled:opacity-50"
+                                        />
+                                        <label htmlFor="has_associated_service" className="text-sm font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                                            ¿Tiene un servicio asociado en catálogo? (Ej: Canto/Tapacanto)
+                                        </label>
+                                    </div>
+
+                                    {formData.has_associated_service && (
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Servicio Asociado *</label>
+                                                <select
+                                                    required
+                                                    value={formData.associated_service_id}
+                                                    onChange={e => setFormData({ ...formData, associated_service_id: e.target.value })}
+                                                    className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                                                >
+                                                    <option value="" disabled hidden>Selecciona un servicio...</option>
+                                                    {availableServices.map(s => (
+                                                        <option key={s.id} value={s.id}>
+                                                            {s.sku_corto ? `[${s.sku_corto}] ` : ''}{s.base_name} ({s.unit || 'SERV'})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {formData.associated_service_id && (
+                                                    <p className="text-[10px] text-blue-600 mt-1 font-bold">
+                                                        Unidad: {availableServices.find(s => s.id === formData.associated_service_id)?.unit || 'SERV'}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Tipo de Precio de Servicio *</label>
+                                                <select
+                                                    value={formData.service_pricing_type}
+                                                    onChange={e => setFormData({ ...formData, service_pricing_type: e.target.value as 'MONEDA' | 'PORCENTAJE' })}
+                                                    className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white"
+                                                >
+                                                    <option value="MONEDA">Monto Nominal (S/)</option>
+                                                    <option value="PORCENTAJE">Porcentaje del Costo (%)</option>
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                                                    Valor del Servicio ({formData.service_pricing_type === 'MONEDA' ? 'S/' : '%'}) *
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    step="any"
+                                                    required
+                                                    min="0"
+                                                    value={formData.service_pricing_value}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setFormData({ ...formData, service_pricing_value: val === '' ? '' : parseFloat(val) });
+                                                    }}
+                                                    className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 font-bold text-slate-900 dark:text-white"
+                                                    placeholder="0.00"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="p-5 border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/10 rounded-2xl flex flex-col md:flex-row gap-4 items-center justify-between">
                                 <div>
@@ -282,8 +409,8 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
                                         type="number"
                                         min={formData.stock_alerts ? "1" : "0"}
                                         required={formData.stock_alerts}
-                                        disabled={!isSection2Complete}
-                                        value={formData.min_stock}
+                                        disabled={!isSection2Complete || formData.is_service}
+                                        value={formData.is_service ? 0 : formData.min_stock}
                                         onKeyDown={(e) => {
                                             if (['e', 'E', '+', '-', '.'].includes(e.key)) {
                                                 e.preventDefault();
@@ -301,10 +428,10 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
                                     <input
                                         type="checkbox"
                                         id="stock_alerts"
-                                        disabled={!isSection2Complete}
-                                        checked={formData.stock_alerts}
+                                        disabled={!isSection2Complete || formData.is_service}
+                                        checked={!formData.is_service && formData.stock_alerts}
                                         onChange={e => setFormData({ ...formData, stock_alerts: e.target.checked })}
-                                        className="w-5 h-5 text-amber-600 bg-slate-100 border-slate-300 rounded focus:ring-amber-500 dark:focus:ring-amber-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="w-5 h-5 text-amber-600 bg-slate-100 border-slate-300 rounded focus:ring-amber-500 dark:focus:ring-amber-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer disabled:opacity-50"
                                     />
                                     <label htmlFor="stock_alerts" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
                                         Activar alertas de stock bajo

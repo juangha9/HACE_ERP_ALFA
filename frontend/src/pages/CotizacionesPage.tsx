@@ -12,7 +12,7 @@ import {
     Copy, X, Hash,
 } from 'lucide-react';
 import { generateQuotePDF, printQuotePDF } from '../services/pdfExport';
-import { findMatches, findMatchesPartial, sharedWordCount } from '../lib/fuzzyMatch';
+
 import { appSettingsService, SETTING_KEYS } from '../services/appSettingsService';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,11 +25,13 @@ interface LineItem {
     descripcion: string;
     precio_unitario: number;
     total: number;
+    sku_corto?: string;
 }
 
 interface TablerosProduct {
     id: string;
     sku: string;
+    sku_corto?: string;
     base_name: string;
     presentation: string | null;
     min_price: number;
@@ -38,6 +40,7 @@ interface TablerosProduct {
 interface BoundProduct {
     catalog_product_id: string;
     sku: string;
+    sku_corto?: string;
     base_name: string;
     presentation: string | null;
     min_price: number;
@@ -70,6 +73,12 @@ interface Cotizacion {
     sustento_comprobante_url?: string;
     created_at: string;
     user_id?: string;
+    descuento_sugerido?: number;
+    descuento_sugerido_porcentaje?: number;
+    descuento_solicitado?: boolean;
+    descuento_estado_aprobacion?: string;
+    descuento_motivo_solicitud?: string;
+    descuento_comentarios_admin?: string;
 }
 
 type TipoDoc = 'BOLETA' | 'FACTURA' | 'TICKET';
@@ -96,11 +105,40 @@ interface FormState {
     descripcion: string;
     numero_comprobante: string;
     comprobante_locked: boolean;
+    descuento_sugerido?: number;
+    descuento_sugerido_porcentaje?: number;
+    descuento_solicitado?: boolean;
+    descuento_estado_aprobacion?: 'NINGUNO' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO';
+    descuento_motivo_solicitud?: string;
+    descuento_comentarios_admin?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const UNIDADES = ['PLS', 'MTS', 'SERV', 'UND', 'PLN', 'JGO', 'SET', 'PZA', 'M2', 'ML', 'KG', 'GLN', 'HRS'];
+
+const mapCatalogUnitToQuoteUnit = (unit: string | null | undefined): string => {
+    if (!unit) return 'PLS';
+    const u = unit.trim().toUpperCase();
+    if (u === 'PLANCHA' || u === 'PLS' || u === 'PLANCHAS') return 'PLS';
+    if (u === 'METRO' || u === 'MTS' || u === 'METROS' || u === 'ML') return 'MTS';
+    if (u === 'SERVICIO' || u === 'SERV' || u === 'SERVICIOS') return 'SERV';
+    if (u === 'UNIDAD' || u === 'UND' || u === 'UNIDADES' || u === 'PZA' || u === 'PIEZA') return 'UND';
+    if (u === 'JUEGO' || u === 'JGO' || u === 'JUEGOS') return 'JGO';
+    if (u === 'SET' || u === 'SETS') return 'SET';
+    if (u === 'PIEZA' || u === 'PZA') return 'PZA';
+    if (u === 'M2' || u === 'METRO CUADRADO') return 'M2';
+    if (u === 'ML' || u === 'METRO LINEAL') return 'ML';
+    if (u === 'KG' || u === 'KILOGRAMO' || u === 'KILOGRAMOS') return 'KG';
+    if (u === 'GLN' || u === 'GALON' || u === 'GALONES') return 'GLN';
+    if (u === 'HRS' || u === 'HORA' || u === 'HORAS') return 'HRS';
+
+    const found = UNIDADES.find(x => u.includes(x));
+    if (found) return found;
+
+    return 'PLS';
+};
+
 const IGV_RATE = 0.18;
 
 const fmtLimaTime = (iso: string) =>
@@ -128,6 +166,12 @@ const emptyForm = (): FormState => ({
     descripcion: '',
     numero_comprobante: '',
     comprobante_locked: false,
+    descuento_sugerido: 0,
+    descuento_sugerido_porcentaje: 0,
+    descuento_solicitado: false,
+    descuento_estado_aprobacion: 'NINGUNO',
+    descuento_motivo_solicitud: '',
+    descuento_comentarios_admin: '',
 });
 
 // ─── Search Input (isolated to avoid re-render on parent state) ───────────────
@@ -360,7 +404,7 @@ interface EditorModalProps {
     isDirty: boolean;
     contacts: Contact[];
     onClose: () => void;
-    onSaveBorrador: () => void;
+    onSaveBorrador: (isDiscount?: boolean) => void;
     onSaveListo: () => void;
     onFormChange: (f: FormState) => void;
     onClientSelect: (fromList: boolean) => void;
@@ -390,6 +434,12 @@ interface EditorModalProps {
     onBindProduct: (lineId: string, product: TablerosProduct) => void;
     onUnbindProduct: (lineId: string) => void;
     clientError: boolean;
+    allCatalogProducts: any[];
+    isVentas: boolean;
+    handleCodeSubmit: (lineId: string, code: string) => boolean;
+    getBrandWarning: (itemId: string) => string | null;
+    isSavingDiscount?: boolean;
+    isSavingDraft?: boolean;
 }
 
 const EditorModal: React.FC<EditorModalProps> = ({
@@ -403,9 +453,81 @@ const EditorModal: React.FC<EditorModalProps> = ({
     tablerosCatalog, similarityThreshold, boundProducts, lineErrors,
     saveErrorKind, touchedDescriptionsRef, onBindProduct, onUnbindProduct,
     clientError,
+    allCatalogProducts,
+    isVentas,
+    handleCodeSubmit,
+    getBrandWarning,
+    isSavingDiscount = false,
+    isSavingDraft = false,
 }) => {
     const [showClientDrop, setShowClientDrop] = useState(false);
     const clientDropRef = useRef<HTMLDivElement>(null);
+    const [showLegend, setShowLegend] = useState(false);
+
+    const isDependentService = (itemId: string) => {
+        const bound = boundProducts.get(itemId);
+        if (!bound) return false;
+        const catalogProd = allCatalogProducts.find(p => p.id === bound.catalog_product_id);
+        if (!catalogProd || !catalogProd.is_service) return false;
+
+        return form.items.some(it => {
+            if (it.id === itemId) return false;
+            const itBound = boundProducts.get(it.id);
+            if (!itBound) return false;
+            const parentProd = allCatalogProducts.find(p => p.id === itBound.catalog_product_id);
+            return parentProd?.has_associated_service && parentProd?.associated_service_id === catalogProd.id;
+        });
+    };
+
+
+    // States for discount requests
+    const [showRequestDiscountModal, setShowRequestDiscountModal] = useState(false);
+    const [reqDiscountType, setReqDiscountType] = useState<'MONEDA' | 'PORCENTAJE'>('MONEDA');
+    const [reqDiscountVal, setReqDiscountVal] = useState<string>('');
+    const [reqDiscountReason, setReqDiscountReason] = useState<string>('');
+    const [reqDiscountError, setReqDiscountError] = useState<string | null>(null);
+
+    const handleSendDiscountRequest = () => {
+        if (!reqDiscountVal || Number(reqDiscountVal) <= 0) {
+            setReqDiscountError('Ingresa un valor válido de descuento');
+            return;
+        }
+        if (!reqDiscountReason.trim()) {
+            setReqDiscountError('Ingresa el motivo o justificación');
+            return;
+        }
+
+        const val = Number(reqDiscountVal);
+        let amount = 0;
+        let pct = 0;
+
+        if (reqDiscountType === 'MONEDA') {
+            amount = val;
+            pct = form.subtotal > 0 ? parseFloat(((val / form.subtotal) * 100).toFixed(2)) : 0;
+        } else {
+            pct = val;
+            amount = parseFloat(((val * form.subtotal) / 100).toFixed(2));
+        }
+
+        onFormChange({
+            ...form,
+            descuento_solicitado: true,
+            descuento_estado_aprobacion: 'PENDIENTE',
+            descuento_sugerido: amount,
+            descuento_sugerido_porcentaje: pct,
+            descuento_motivo_solicitud: reqDiscountReason.trim(),
+        });
+
+        setShowRequestDiscountModal(false);
+        setReqDiscountVal('');
+        setReqDiscountReason('');
+        setReqDiscountError(null);
+
+        // Auto-save the Borrador to notify the admin
+        setTimeout(() => {
+            onSaveBorrador(true);
+        }, 100);
+    };
 
     useEffect(() => {
         const fn = (e: MouseEvent) => {
@@ -517,32 +639,6 @@ const EditorModal: React.FC<EditorModalProps> = ({
         }
     };
 
-    // Pre-compute fuzzy matches for all items once — avoids running findMatchesPartial
-    // on every render for every row. Only recomputes when items, catalog, or bound state changes.
-    const itemMatchesMap = useMemo(() => {
-        const map = new Map<string, Array<{ item: TablerosProduct; score: number }>>();
-        if (isReadOnly || !tablerosCatalog.length) return map;
-        form.items.forEach(item => {
-            if (boundProducts.get(item.id)) return;
-            if (item.unidad === 'MTS' || item.unidad === 'SERV') return;
-            if (item.descripcion.trim().split(/\s+/).filter(Boolean).length < 2) return;
-            if (!touchedDescriptionsRef.current.has(item.id)) return;
-            const matches = findMatchesPartial(
-                item.descripcion,
-                tablerosCatalog,
-                p => p.presentation ? `${p.base_name} ${p.presentation}` : p.base_name,
-                0.6,
-                3,
-            ).filter(m => {
-                const productText = m.item.presentation
-                    ? `${m.item.base_name} ${m.item.presentation}`
-                    : m.item.base_name;
-                return sharedWordCount(item.descripcion, productText) >= 2;
-            });
-            if (matches.length > 0) map.set(item.id, matches);
-        });
-        return map;
-    }, [form.items, boundProducts, tablerosCatalog, isReadOnly]);
 
     if (!mounted) return null;
 
@@ -552,10 +648,11 @@ const EditorModal: React.FC<EditorModalProps> = ({
                 className={`${isClosing ? 'animate-backdrop-out' : 'animate-backdrop'} fixed inset-0 z-[2000] flex items-center justify-center p-4 overflow-hidden`}
                 style={{ backdropFilter: 'blur(6px)', background: 'rgba(15, 23, 30, 0.35)' }}
             >
-                <div
-                    className={`${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'} bg-white rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] w-full max-w-5xl flex flex-col max-h-[92vh] relative overflow-hidden border border-slate-100${(isAnimating || isClosing) ? ' pointer-events-none' : ''}`}
-                    onAnimationEnd={handlePanelAnimEnd}
-                >
+                <div className="flex gap-4 max-w-7xl w-full max-h-[92vh] items-stretch justify-center">
+                    <div
+                        className={`${isClosing ? 'animate-modal-panel-out' : 'animate-modal-panel'} bg-white rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.18),0_0_0_1px_rgba(255,255,255,0.6)_inset] flex-1 flex flex-col max-h-[92vh] relative overflow-hidden border border-slate-100${(isAnimating || isClosing) ? ' pointer-events-none' : ''}`}
+                        onAnimationEnd={handlePanelAnimEnd}
+                    >
 
                     {/* Top highlight edge */}
                     <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent z-10 pointer-events-none" />
@@ -567,7 +664,11 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                 {saveStatus === 'saving' && (
                                     <>
                                         <div className="w-12 h-12 border-4 border-[#d1dfe3] border-t-[#366480] rounded-full animate-spin" />
-                                        <p className="text-sm font-bold text-slate-600">Procesando cotización...</p>
+                                        <p className="text-sm font-bold text-slate-600">
+                                            {isSavingDiscount ? 'Enviando solicitud de descuento...' :
+                                             isSavingDraft ? 'Guardando borrador...' :
+                                             'Procesando cotización...'}
+                                        </p>
                                     </>
                                 )}
                                 {saveStatus === 'success' && (
@@ -575,8 +676,18 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
                                             <span className="material-icons-round text-4xl">check</span>
                                         </div>
-                                        <h3 className="text-xl font-black tracking-tight text-slate-800">¡Cotización Procesada!</h3>
-                                        <p className="text-sm text-slate-500 font-medium">La venta se registró en Gestión de Ventas y Tesorería.</p>
+                                        <h3 className="text-xl font-black tracking-tight text-slate-800">
+                                            {isSavingDiscount ? '¡Solicitud Enviada!' :
+                                             isSavingDraft ? '¡Borrador Guardado!' :
+                                             '¡Cotización Procesada!'}
+                                        </h3>
+                                        <p className="text-sm text-slate-500 font-medium">
+                                            {isSavingDiscount
+                                                ? 'La solicitud de descuento fue enviada al administrador para su aprobación.'
+                                                : isSavingDraft
+                                                ? 'La cotización se guardó como borrador correctamente.'
+                                                : 'La venta se registró en Gestión de Ventas y Tesorería.'}
+                                        </p>
                                     </>
                                 )}
                                 {saveStatus === 'error' && (
@@ -644,6 +755,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     </>
                                 )}
                             </div>
+
                             <button
                                 onClick={handleClose}
                                 className="w-10 h-10 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/60 flex items-center justify-center transition-all"
@@ -660,48 +772,15 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         {isReadOnly && (
                             <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-700">
                                 <span className="material-icons-round text-sm">lock</span>
-                                <p className="text-xs font-bold">Esta cotización está procesada y solo puede visualizarse.</p>
+                                <p className="text-xs font-bold">
+                                    {form.descuento_estado_aprobacion === 'PENDIENTE'
+                                        ? 'Esta cotización se encuentra en espera de la respuesta del administrador y no puede editarse.'
+                                        : 'Esta cotización está procesada y solo puede visualizarse.'}
+                                </p>
                             </div>
                         )}
 
-                        {/* N° Comprobante — siempre editable, incluso en LISTO */}
-                        <div className="flex flex-col gap-2 w-full">
-                            <div className="flex items-center gap-3 bg-white border-2 border-slate-400 focus-within:border-[#366480] focus-within:ring-2 focus-within:ring-[#366480]/15 rounded-2xl px-4 py-3 shadow-sm transition-all">
-                                <div className="w-8 h-8 rounded-xl bg-[#366480]/10 flex items-center justify-center shrink-0">
-                                    <Hash className="w-4 h-4 text-[#366480]" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <label className="flex items-center gap-2 text-[10px] font-black text-[#366480]/60 uppercase tracking-widest mb-0.5">
-                                        N° Comprobante
-                                        {isReadOnly && !form.comprobante_locked && (
-                                            <span className="text-emerald-500 font-black normal-case tracking-normal">· editable</span>
-                                        )}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={isReadOnly ? localComprobante : (form.numero_comprobante || '')}
-                                        onChange={e => handleComprobanteChange(e.target.value)}
-                                        disabled={form.comprobante_locked}
-                                        className="w-full bg-transparent border-none outline-none text-sm font-bold text-slate-700 placeholder:text-slate-300 placeholder:font-normal disabled:opacity-60 disabled:cursor-not-allowed"
-                                        placeholder="Ej: F001-0000123 / B001-0000001"
-                                    />
-                                </div>
-                                {isReadOnly && comprobanteChanged && !form.comprobante_locked && (
-                                    <button
-                                        onClick={handleSaveComprobante}
-                                        disabled={savingComprobante}
-                                        className="shrink-0 px-4 py-2 rounded-xl bg-[#366480] text-white text-[11px] font-black hover:bg-[#2c5268] transition-all disabled:opacity-50 whitespace-nowrap"
-                                    >
-                                        {savingComprobante ? 'Guardando...' : 'Guardar'}
-                                    </button>
-                                )}
-                            </div>
-                            {form.comprobante_locked && (
-                                <div className="px-4 py-2 bg-slate-100 border border-slate-300 rounded-xl flex items-center gap-2 text-[10px] text-slate-500 font-black uppercase tracking-tight shadow-sm w-full">
-                                    <span>🔐 Bloqueado por la Gestión de Ventas y Tesorería</span>
-                                </div>
-                            )}
-                        </div>
+
 
                         {/* 1. Business info + Client form */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-3xl border-2 border-slate-400 shadow-sm">
@@ -871,6 +950,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     <tr className="bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-widest border-b-2 border-slate-400">
                                         <th className="px-4 py-4 text-left border-r border-slate-300 w-20">Cant.</th>
                                         <th className="px-4 py-4 text-left border-r border-slate-300 w-24">Unidad</th>
+                                        <th className="px-4 py-4 text-left border-r border-slate-300 w-28">Código</th>
                                         <th className="px-4 py-4 text-left border-r border-slate-300 min-w-[220px]">Descripción</th>
                                         <th className="px-4 py-4 text-center border-r border-slate-300 w-32">P. Unit</th>
                                         <th className="px-4 py-4 text-center w-32">Total</th>
@@ -880,9 +960,9 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                 <tbody className="divide-y-2 divide-slate-300">
                                     {form.items.map((item, idx) => {
                                         const bound = boundProducts.get(item.id);
-                                        const matches = itemMatchesMap.get(item.id) ?? [];
                                         const showCatalog = openCatalogRowId === item.id && !bound && !isReadOnly;
                                         const error = lineErrors.get(item.id);
+                                        const brandWarning = getBrandWarning(item.id);
                                         return (
                                         <tr key={item.id} className={`group transition-colors ${error ? 'bg-rose-50/40' : 'hover:bg-slate-50/50'}`}>
                                             <td className="px-4 py-3 border-r border-slate-300 align-top">
@@ -891,143 +971,118 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                                     value={item.cantidad || ''}
                                                     onChange={v => onUpdateItem(item.id, 'cantidad', v)}
                                                     onKeyDown={blockNumericKeys}
-                                                    readOnly={isReadOnly}
+                                                    readOnly={isReadOnly || isDependentService(item.id)}
                                                     inputRef={el => {
                                                         if (el) quantityRefs.current.set(item.id, el);
                                                         else quantityRefs.current.delete(item.id);
                                                     }}
-                                                    className="w-full bg-transparent border-none font-bold text-slate-700 outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1"
+                                                    className={`w-full bg-transparent border-none font-bold outline-none text-sm focus:bg-white/60 transition-colors rounded-lg px-1 ${(isReadOnly || isDependentService(item.id)) ? 'text-slate-400 cursor-not-allowed' : 'text-slate-700'}`}
                                                     placeholder="0"
                                                 />
                                             </td>
                                             <td className="px-4 py-3 border-r border-slate-300 align-top">
-                                                {isReadOnly ? (
-                                                    <span className="font-bold text-slate-500 text-[11px] uppercase">{item.unidad}</span>
-                                                ) : (
-                                                    <UnitSelect
-                                                        value={item.unidad}
-                                                        onChange={v => onUpdateItem(item.id, 'unidad', v)}
-                                                        className="w-full bg-transparent border-none font-bold text-slate-500 outline-none text-[11px] uppercase cursor-pointer"
-                                                    />
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-3 border-r border-slate-300 min-w-[260px] align-top">
-                                                <div className="flex flex-col gap-1.5">
-                                                    <div className="flex items-center gap-1">
-                                                        {bound && (
-                                                            <span className="material-icons-round text-[15px] text-emerald-600 shrink-0">lock</span>
-                                                        )}
-                                                        <CellInput
-                                                            type="text"
-                                                            value={item.descripcion}
-                                                            onChange={v => onUpdateItem(item.id, 'descripcion', v)}
-                                                            onKeyDown={e => { if (e.key === 'Enter' && idx === form.items.length - 1) onAddRow(); }}
-                                                            readOnly={isReadOnly || !!bound}
-                                                            className={`w-full bg-transparent border-none font-bold outline-none text-sm rounded-lg px-1 transition-colors ${bound ? 'text-emerald-700 cursor-default' : 'text-slate-700 focus:bg-white/60'}`}
-                                                            placeholder="Descripción del producto o servicio..."
-                                                            title={item.descripcion}
-                                                        />
-                                                        {bound && !isReadOnly && (
-                                                            <button
-                                                                onClick={() => onUnbindProduct(item.id)}
-                                                                className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-500 hover:bg-[#eef4f7] transition-all font-black text-xs"
-                                                                title="Desvincular del catálogo"
-                                                            >
-                                                                ✕
-                                                            </button>
-                                                        )}
-                                                        {item.unidad === 'PLS' && !bound && !isReadOnly && tablerosCatalog.length > 0 && (
-                                                            <button
-                                                                onClick={() => setOpenCatalogRowId(showCatalog ? null : item.id)}
-                                                                className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md transition-colors ${showCatalog ? 'bg-[#366480] text-white' : 'text-slate-400 hover:text-[#366480] hover:bg-[#eef4f7]'}`}
-                                                                title="Ver catálogo de tableros"
-                                                            >
-                                                                <span className="material-icons-round text-[14px]">table_chart</span>
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                    {/* Catálogo TAB desplegable para filas PLS */}
-                                                    {showCatalog && (
-                                                        <div className="flex flex-col bg-white border border-[#d3dcdb] rounded-xl shadow-lg max-h-52 overflow-y-auto py-1">
-                                                            {tablerosCatalog.map(product => (
-                                                                <button
-                                                                    key={product.id}
-                                                                    onClick={() => { onBindProduct(item.id, product); setOpenCatalogRowId(null); }}
-                                                                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#eef4f7] text-left transition-colors group/cat"
-                                                                >
-                                                                    <span className="text-[10px] font-black text-[#366480] tracking-wider shrink-0 w-20 truncate">{product.sku}</span>
-                                                                    <span className="text-[11px] font-bold text-slate-600 flex-1 truncate">
-                                                                        {product.base_name}{product.presentation ? ` ${product.presentation}` : ''}
-                                                                    </span>
-                                                                    <span className="text-[10px] font-black text-emerald-600 shrink-0">S/ {product.min_price.toFixed(2)}</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    {!bound && matches.length > 0 && (
-                                                        <div className="flex flex-col gap-1 bg-amber-50/60 border border-amber-200 rounded-lg px-2 py-1.5">
-                                                            <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest flex items-center gap-1">
-                                                                <span className="material-icons-round text-[11px]">warning</span>
-                                                                Material controlado — seleccione del catálogo
-                                                            </span>
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {matches.map(m => (
-                                                                    <button
-                                                                        key={m.item.id}
-                                                                        onClick={() => onBindProduct(item.id, m.item)}
-                                                                        className="px-2 py-0.5 bg-white border border-amber-300 rounded-md text-[10px] font-bold text-amber-800 hover:bg-amber-100 transition-colors text-left"
-                                                                        title={`${Math.round(m.score * 100)}% similitud · Mín S/ ${m.item.min_price.toFixed(2)}`}
-                                                                    >
-                                                                        <span className="font-black tracking-wider">{m.item.sku}</span>
-                                                                        <span className="text-amber-700"> · {m.item.base_name}</span>
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {error && (
-                                                        <p className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-200 rounded-md px-2 py-1 flex items-center gap-1">
-                                                            <span className="material-icons-round text-[11px]">error</span>
-                                                            {error}
-                                                        </p>
-                                                    )}
-                                                </div>
+                                                <span className="font-bold text-slate-400 text-[11px] uppercase tracking-widest">{item.unidad}</span>
                                             </td>
                                             <td className="px-4 py-3 border-r border-slate-300 align-top">
-                                                <div className="flex flex-col items-end gap-1">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <span className="text-slate-400 text-xs font-bold">S/</span>
-                                                        <CellInput
-                                                            type="number"
-                                                            value={item.precio_unitario || ''}
-                                                            onChange={v => onUpdateItem(item.id, 'precio_unitario', v)}
-                                                            onKeyDown={e => {
-                                                                blockNumericKeys(e);
-                                                                if (e.key === 'Tab' && idx === form.items.length - 1) {
-                                                                    e.preventDefault();
-                                                                    onAddRow();
-                                                                }
-                                                            }}
-                                                            readOnly={isReadOnly}
-                                                            className={`w-20 border-none font-black text-right outline-none text-base focus:bg-[#f0f5f4]/60 transition-colors rounded-lg ${bound ? 'bg-emerald-50/40' : 'bg-transparent'} ${bound && item.precio_unitario > 0 && item.precio_unitario < bound.min_price ? 'text-rose-600' : 'text-[#366480]'}`}
-                                                            placeholder={bound ? `Mín: ${bound.min_price.toFixed(2)}` : '0.00'}
-                                                        />
-                                                    </div>
-                                                </div>
+                                                {isReadOnly ? (
+                                                     <span className="font-sans font-bold text-sm text-blue-700 px-1 py-0.5">
+                                                         {bound?.sku_corto || '—'}
+                                                     </span>
+                                                                                                   ) : (
+                                                      <input
+                                                          type="text"
+                                                          value={item.sku_corto || bound?.sku_corto || ''}
+                                                          onChange={e => {
+                                                              const val = e.target.value.toUpperCase();
+                                                              onUpdateItem(item.id, 'sku_corto', val);
+                                                          }}
+                                                          onKeyDown={e => {
+                                                              if (e.key === 'Enter') {
+                                                                  e.preventDefault();
+                                                                  const codeVal = e.currentTarget.value;
+                                                                  if (codeVal.trim()) {
+                                                                      const success = handleCodeSubmit(item.id, codeVal);
+                                                                      if (success && idx === form.items.length - 1) {
+                                                                          onAddRow();
+                                                                      }
+                                                                  }
+                                                              } else if (e.key === 'Tab') {
+                                                                  if (idx === form.items.length - 1) {
+                                                                      const codeVal = e.currentTarget.value;
+                                                                      if (codeVal.trim()) {
+                                                                          const success = handleCodeSubmit(item.id, codeVal);
+                                                                          if (success) {
+                                                                              e.preventDefault();
+                                                                              onAddRow();
+                                                                          }
+                                                                      }
+                                                                  }
+                                                              }
+                                                          }}
+                                                          onBlur={e => {
+                                                              handleCodeSubmit(item.id, e.target.value);
+                                                          }}
+                                                          className="w-full bg-transparent border-none font-sans font-bold text-sm text-blue-700 outline-none uppercase placeholder:text-slate-300 focus:bg-white/60 transition-colors rounded-lg px-1.5 py-1"
+                                                          placeholder="Código"
+                                                      />
+                                                  )}
+                                            </td>
+                                            <td className="px-4 py-3 border-r border-slate-300 min-w-[260px] align-top">
+                                                 <div className="flex flex-col gap-1.5">
+                                                     <div className="flex items-center gap-1">
+                                                         <CellInput
+                                                             type="text"
+                                                             value={item.descripcion}
+                                                             onChange={v => onUpdateItem(item.id, 'descripcion', v)}
+                                                             readOnly={true}
+                                                             className={`w-full bg-transparent border-none font-bold outline-none text-sm rounded-lg px-1 transition-colors cursor-default ${bound ? 'text-emerald-700' : 'text-slate-700'}`}
+                                                             placeholder="Descripción del producto o servicio..."
+                                                             title={item.descripcion}
+                                                         />
+                                                     </div>
+                                                     {brandWarning && (
+                                                         <p className="text-[10px] font-black text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 flex items-center gap-1">
+                                                             <span className="material-icons-round text-[11px]">warning</span>
+                                                             {brandWarning}
+                                                         </p>
+                                                     )}
+                                                     {error && (
+                                                         <p className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-200 rounded-md px-2 py-1 flex items-center gap-1">
+                                                             <span className="material-icons-round text-[11px]">error</span>
+                                                             {error}
+                                                         </p>
+                                                     )}
+                                                 </div>
+                                            </td>
+                                            <td className="px-4 py-3 border-r border-slate-300 align-top">
+                                                 <div className="flex flex-col items-end gap-1">
+                                                     <div className="flex items-center justify-end gap-1">
+                                                         <span className="text-slate-400 text-xs font-bold">S/</span>
+                                                         <CellInput
+                                                             type="number"
+                                                             value={item.precio_unitario || ''}
+                                                             onChange={v => onUpdateItem(item.id, 'precio_unitario', v)}
+                                                             onKeyDown={blockNumericKeys}
+                                                             readOnly={true}
+                                                             className={`w-20 border-none font-black text-right outline-none text-base transition-colors rounded-lg cursor-default ${bound ? 'bg-emerald-50/40' : 'bg-transparent'} ${bound && item.precio_unitario > 0 && item.precio_unitario < bound.min_price ? 'text-rose-600' : 'text-[#366480]'} disabled:opacity-85`}
+                                                             placeholder={bound ? `Mín: ${bound.min_price.toFixed(2)}` : '0.00'}
+                                                         />
+                                                     </div>
+                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-right font-black text-base text-slate-800 align-top">
-                                                S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                                                 S/ {item.total.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                             </td>
                                             <td className="px-4 py-3 text-center align-top">
-                                                {!isReadOnly && (
-                                                    <button
-                                                        onClick={() => onRemoveRow(item.id)}
-                                                        disabled={form.items.length === 1}
-                                                        className="w-8 h-8 rounded-full flex items-center justify-center text-rose-300 hover:text-rose-600 hover:bg-rose-50/60 transition-all disabled:opacity-0 disabled:pointer-events-none"
-                                                    >
-                                                        <span className="material-icons-round text-sm">delete</span>
-                                                    </button>
-                                                )}
+                                                 {!isReadOnly && !isDependentService(item.id) && (
+                                                     <button
+                                                         onClick={() => onRemoveRow(item.id)}
+                                                         disabled={form.items.length === 1}
+                                                         className="w-8 h-8 rounded-full flex items-center justify-center text-rose-300 hover:text-rose-600 hover:bg-rose-50/60 transition-all disabled:opacity-0 disabled:pointer-events-none"
+                                                     >
+                                                         <span className="material-icons-round text-sm">delete</span>
+                                                     </button>
+                                                 )}
                                             </td>
                                         </tr>
                                         );
@@ -1035,13 +1090,16 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                 </tbody>
                             </table>
                             {!isReadOnly && (
-                                <button
-                                    onClick={onAddRow}
-                                    className="w-full py-4 border-t-2 border-slate-300 text-xs font-black text-slate-400 hover:text-[#366480] hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
-                                >
-                                    <span className="material-icons-round text-sm">add</span>
-                                    AGREGAR FILA
-                                </button>
+                                <div className="p-3 border-t border-slate-300 flex justify-start">
+                                    <button
+                                        onClick={onAddRow}
+                                        type="button"
+                                        className="px-3 py-1.5 border border-slate-300 rounded-xl text-xs font-bold text-slate-500 hover:text-[#366480] hover:bg-slate-50 transition-all flex items-center gap-1 shadow-sm"
+                                    >
+                                        <span className="material-icons-round text-sm">add</span>
+                                        AGREGAR FILA
+                                    </button>
+                                </div>
                             )}
                         </div>
 
@@ -1054,18 +1112,60 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     <span className="text-right text-xs text-slate-700 font-bold tabular-nums">S/ {form.subtotal.toFixed(2)}</span>
 
                                     <span className="text-right text-xs text-rose-500 font-bold uppercase tracking-wider">Descuento</span>
-                                    <div className="flex items-center justify-end gap-1 border-b border-rose-200">
-                                        <span className="text-[10px] text-rose-500 font-bold">- S/</span>
-                                        <CellInput
-                                            type="number"
-                                            value={form.descuento || ''}
-                                            onChange={onDescuentoChange}
-                                            onKeyDown={blockNumericKeys}
-                                            readOnly={isReadOnly}
-                                            className="w-16 bg-transparent border-none text-right font-black outline-none text-rose-500"
-                                            placeholder="0.00"
-                                        />
+                                    <div className="flex items-center justify-end gap-2">
+                                        <div className="flex items-center justify-end gap-1 border-b border-rose-200">
+                                            <span className="text-[10px] text-rose-500 font-bold">- S/</span>
+                                            <span className="w-16 text-right font-black text-base text-rose-500 tabular-nums">
+                                                {form.descuento ? form.descuento.toFixed(2) : '0.00'}
+                                            </span>
+                                        </div>
+                                        {!isReadOnly && form.descuento_estado_aprobacion !== 'PENDIENTE' && (
+                                            <button
+                                                onClick={() => setShowRequestDiscountModal(true)}
+                                                type="button"
+                                                className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-rose-600 bg-rose-50 border border-rose-100 rounded-lg hover:bg-rose-100 transition-colors"
+                                            >
+                                                Solicitar
+                                            </button>
+                                        )}
                                     </div>
+
+                                    {form.descuento_solicitado && (
+                                        <div className="col-span-2 mt-1 p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col gap-1.5 text-left text-xs font-semibold shadow-sm tracking-wide">
+                                            {form.descuento_estado_aprobacion === 'PENDIENTE' && (
+                                                <div className="text-amber-800 flex items-start gap-2">
+                                                    <span className="material-icons-round text-sm mt-0.5 animate-pulse text-amber-500">pending</span>
+                                                    <div>
+                                                        <p className="font-black uppercase tracking-wider text-[9px]">Solicitud Pendiente de Aprobación</p>
+                                                        <p className="text-[10px] font-bold text-slate-600 mt-0.5">Sugerido: S/ {form.descuento_sugerido?.toFixed(2)} ({form.descuento_sugerido_porcentaje}%)</p>
+                                                        <p className="text-[10px] font-bold text-slate-400 italic mt-0.5">Motivo: "{form.descuento_motivo_solicitud}"</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {form.descuento_estado_aprobacion === 'APROBADO' && (
+                                                <div className="text-emerald-800 flex items-start gap-2">
+                                                    <span className="material-icons-round text-sm mt-0.5 text-emerald-600">check_circle</span>
+                                                    <div>
+                                                        <p className="font-black uppercase tracking-wider text-[9px] text-emerald-600">Descuento Aprobado por Admin</p>
+                                                        {form.descuento_comentarios_admin && (
+                                                            <p className="text-[10px] font-bold text-slate-500 mt-0.5">Comentario: "{form.descuento_comentarios_admin}"</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {form.descuento_estado_aprobacion === 'RECHAZADO' && (
+                                                <div className="text-rose-800 flex items-start gap-2">
+                                                    <span className="material-icons-round text-sm mt-0.5 text-rose-500">cancel</span>
+                                                    <div>
+                                                        <p className="font-black uppercase tracking-wider text-[9px] text-rose-600">Descuento Rechazado por Admin</p>
+                                                        {form.descuento_comentarios_admin && (
+                                                            <p className="text-[10px] font-bold text-slate-500 mt-0.5">Motivo: "{form.descuento_comentarios_admin}"</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {(form.tipo_documento === 'FACTURA' || form.tipo_documento === 'BOLETA' || form.tipo_documento === 'TICKET') && (
                                         <>
@@ -1117,7 +1217,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                             {!isReadOnly && (
                                 <>
                                     <button
-                                        onClick={onSaveBorrador}
+                                        onClick={() => onSaveBorrador()}
                                         disabled={saveStatus !== 'idle'}
                                         className="px-6 py-3 rounded-2xl border border-slate-200/60 bg-white/50 text-sm font-black text-slate-600 hover:bg-white/80 uppercase tracking-widest transition-all disabled:opacity-50"
                                     >
@@ -1132,7 +1232,99 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                     </button>
                                 </>
                             )}
+                    </div>
+                </div>
+
+            {/* Solicitar Descuento Modal */}
+            {showRequestDiscountModal && (
+                <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/20 backdrop-blur-[4px]">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 flex flex-col relative animate-premium-fade" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                        <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-3">
+                            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                <span className="material-icons-round text-rose-500 text-lg">loyalty</span>
+                                Solicitar Descuento
+                            </h3>
+                            <button
+                                onClick={() => { setShowRequestDiscountModal(false); setReqDiscountError(null); }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors font-bold text-xs p-1"
+                            >
+                                ✕
+                            </button>
                         </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Tipo de Descuento</label>
+                                <div className="flex bg-slate-100 p-1 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => setReqDiscountType('MONEDA')}
+                                        className={`flex-1 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${reqDiscountType === 'MONEDA' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        Monto (S/)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setReqDiscountType('PORCENTAJE')}
+                                        className={`flex-1 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${reqDiscountType === 'PORCENTAJE' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        Porcentaje (%)
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                    Valor del Descuento ({reqDiscountType === 'MONEDA' ? 'S/' : '%'})
+                                </label>
+                                <input
+                                    type="number"
+                                    min="0.01"
+                                    step="any"
+                                    value={reqDiscountVal}
+                                    onChange={e => setReqDiscountVal(e.target.value)}
+                                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold outline-none focus:border-rose-500 focus:bg-white transition-all text-slate-700"
+                                    placeholder="0.00"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                    Motivo / Justificación *
+                                </label>
+                                <textarea
+                                    value={reqDiscountReason}
+                                    onChange={e => setReqDiscountReason(e.target.value)}
+                                    rows={3}
+                                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-2.5 text-xs font-bold outline-none focus:border-rose-500 focus:bg-white transition-all text-slate-700 placeholder:font-normal"
+                                    placeholder="Explica detalladamente por qué solicitas este descuento..."
+                                />
+                            </div>
+
+                            {reqDiscountError && (
+                                <p className="text-[10px] font-black text-rose-500 bg-rose-50 border border-rose-100 rounded-lg p-2 text-center">{reqDiscountError}</p>
+                            )}
+
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowRequestDiscountModal(false); setReqDiscountError(null); }}
+                                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 font-bold text-sm text-slate-600 hover:bg-slate-50 transition-all uppercase tracking-wider text-[11px]"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSendDiscountRequest}
+                                    className="flex-1 px-4 py-2.5 rounded-xl bg-rose-500 text-white font-black text-sm hover:bg-rose-600 transition-all uppercase tracking-wider text-[11px] shadow-lg shadow-rose-500/25"
+                                >
+                                    Enviar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
                     </div>
                 </div>
             </div>
@@ -1195,12 +1387,14 @@ const EditorModal: React.FC<EditorModalProps> = ({
 
 export function CotizacionesPage() {
     const { user, profile } = useAuth();
+    const isVentas = !profile || (profile.role !== 'admin' && profile.role !== 'administrador');
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const prevEditingIdRef = useRef<string | null>(null);
     const [editingCode, setEditingCode] = useState('');
 
     // List state
+    const [showDashboardLegend, setShowDashboardLegend] = useState(false);
     const [loading, setLoading] = useState(true);
     const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -1221,6 +1415,9 @@ export function CotizacionesPage() {
     const [doiLocked, setDoiLocked] = useState(false);
     const [nameLocked, setNameLocked] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+    const [isSavingDiscount, setIsSavingDiscount] = useState(false);
+    const [isSavingDraft, setIsSavingDraft] = useState(false);
+    const [pendingInvalidationAction, setPendingInvalidationAction] = useState<(() => void) | null>(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
     const [voucherEditTarget, setVoucherEditTarget] = useState<Cotizacion | null>(null);
     const [fetchError, setFetchError] = useState<string | null>(null);
@@ -1235,6 +1432,22 @@ export function CotizacionesPage() {
     const [saveErrors, setSaveErrors] = useState<Map<string, string>>(new Map());
     const [saveErrorKind, setSaveErrorKind] = useState<'material' | 'price' | 'client' | 'other'>('other');
     const [clientError, setClientError] = useState(false);
+
+    // -- SKU Corto & Services State --
+    const [allCatalogProducts, setAllCatalogProducts] = useState<any[]>([]);
+
+    const fetchAllCatalogProducts = async (): Promise<any[]> => {
+        const { data, error } = await supabase
+            .from('catalog_products')
+            .select('id, sku, sku_corto, base_name, presentation, brand, min_price, reference_cost, is_service, has_associated_service, associated_service_id, service_pricing_type, service_pricing_value, unit')
+            .eq('status', 'Activo');
+        if (!error && data) {
+            setAllCatalogProducts(data);
+            return data;
+        }
+        return [];
+    };
+
     // Tracks which row IDs had their description edited in the current editor session.
     // Suggestions only show for touched rows — prevents auto-showing on reopen of borradores.
     const touchedDescriptionsRef = useRef<Set<string>>(new Set());
@@ -1244,18 +1457,58 @@ export function CotizacionesPage() {
     // Stable refs for values used inside useCallback closures (avoids deps on frequently-changing state)
     const boundProductsRef = useRef(boundProducts);
     boundProductsRef.current = boundProducts;
+    const allCatalogProductsRef = useRef(allCatalogProducts);
+    allCatalogProductsRef.current = allCatalogProducts;
     const saveRef = useRef<((estadoOverride?: 'BORRADOR' | 'LISTO') => Promise<void>) | null>(null);
     const editingIdRef = useRef(editingId);
     editingIdRef.current = editingId;
     const saveComprobanteRef = useRef<typeof saveComprobante | null>(null);
     const cotizacionesRef = useRef(cotizaciones);
     cotizacionesRef.current = cotizaciones;
-    const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
+        const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
+
+    const confirmDiscountInvalidation = useCallback((onConfirm: () => void) => {
+        if (formRef.current.descuento_solicitado && formRef.current.descuento_estado_aprobacion === 'APROBADO') {
+            setPendingInvalidationAction(() => () => {
+                setForm(prev => {
+                    const next = {
+                        ...prev,
+                        descuento_solicitado: false,
+                        descuento_estado_aprobacion: null,
+                        descuento_sugerido: 0,
+                        descuento_sugerido_porcentaje: 0,
+                        descuento_motivo_solicitud: '',
+                        descuento_motivo_aprobacion: '',
+                        descuento: 0
+                    };
+                    return {
+                        ...next,
+                        ...recalc(next.items, 0, next.tipo_documento, next.adelanto)
+                    };
+                });
+                onConfirm();
+                setPendingInvalidationAction(null);
+            });
+            return true;
+        }
+        return false;
+    }, []);
 
     const handleFormChange = useCallback((f: FormState) => {
-        setForm(f);
-        setIsDirty(true);
-    }, []);
+        const proceed = () => {
+            setForm(f);
+            setIsDirty(true);
+        };
+        const isClientNameChanged = f.cliente_nombre !== formRef.current.cliente_nombre;
+        if (isClientNameChanged) {
+            const intercepted = confirmDiscountInvalidation(proceed);
+            if (!intercepted) {
+                proceed();
+            }
+        } else {
+            proceed();
+        }
+    }, [confirmDiscountInvalidation]);
 
     const bindProduct = useCallback((lineId: string, product: TablerosProduct) => {
         setBoundProducts(prev => {
@@ -1293,6 +1546,151 @@ export function CotizacionesPage() {
             return next;
         });
     }, []);
+
+    const handleCodeSubmit = useCallback((lineId: string, code: string): boolean => {
+        const proceed = () => {
+            if (!code.trim()) {
+                unbindProduct(lineId);
+                return false;
+            }
+
+            const upperCode = code.trim().toUpperCase();
+            const matchedProduct = allCatalogProducts.find(
+                p => (p.sku_corto && p.sku_corto.toUpperCase() === upperCode) || p.sku.toUpperCase() === upperCode
+            );
+
+            if (matchedProduct) {
+                // Check before binding — if same product already bound, skip service insertion
+                const alreadyBound = boundProductsRef.current.get(lineId)?.catalog_product_id === matchedProduct.id;
+
+                // Bind the product
+                bindProduct(lineId, matchedProduct as any);
+
+                // Clear any code-not-found error for this row
+                setSaveErrors(prev => {
+                    if (!prev.has(lineId)) return prev;
+                    const next = new Map(prev);
+                    next.delete(lineId);
+                    return next;
+                });
+
+                // Set unit price automatically
+                setForm(prev => {
+                    const items = prev.items.map(it => {
+                        if (it.id !== lineId) return it;
+
+                        const unitPrice = matchedProduct.min_price || 0;
+                        return {
+                            ...it,
+                            unidad: mapCatalogUnitToQuoteUnit(matchedProduct.unit),
+                            precio_unitario: unitPrice,
+                            total: parseFloat((it.cantidad * unitPrice).toFixed(2)),
+                            sku_corto: matchedProduct.sku_corto || ''
+                        };
+                    });
+
+                    let updatedForm = { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
+
+                    // AUTOMATIC SERVICE ROW INSERTION:
+                    // Only insert if not already bound to this product (prevents duplication on repeated Enter)
+                    if (!alreadyBound && matchedProduct.has_associated_service && matchedProduct.associated_service_id) {
+                        const serviceProd = allCatalogProducts.find(p => p.id === matchedProduct.associated_service_id);
+                        if (serviceProd) {
+                            const serviceRowId = crypto.randomUUID();
+
+                            // Calculate service price
+                            let servicePrice = serviceProd.min_price || 0;
+                            if (matchedProduct.service_pricing_type === 'MONEDA') {
+                                servicePrice = Number(matchedProduct.service_pricing_value) || 0;
+                            } else if (matchedProduct.service_pricing_type === 'PORCENTAJE') {
+                                const pct = Number(matchedProduct.service_pricing_value) || 0;
+                                const parentItem = items.find(x => x.id === lineId);
+                                const boardPrice = parentItem?.precio_unitario || Number(matchedProduct.min_price) || 0;
+                                servicePrice = parseFloat(((pct * boardPrice) / 100).toFixed(2));
+                            }
+
+                            // Add service row
+                            const parentItem = items.find(x => x.id === lineId);
+                            const parentQty = parentItem ? parentItem.cantidad : 1;
+
+                            const serviceRow: LineItem = {
+                                id: serviceRowId,
+                                cantidad: parentQty, // inherit parent quantity
+                                unidad: mapCatalogUnitToQuoteUnit(serviceProd.unit),
+                                descripcion: `${serviceProd.base_name} - Servicio para ${matchedProduct.base_name}`,
+                                precio_unitario: servicePrice,
+                                total: parseFloat((parentQty * servicePrice).toFixed(2)),
+                                sku_corto: serviceProd.sku_corto || ''
+                            };
+
+                            // Bind the service product to the service row
+                            setTimeout(() => {
+                                setBoundProducts(prevBounds => {
+                                    const next = new Map(prevBounds);
+                                    next.set(serviceRowId, {
+                                        catalog_product_id: serviceProd.id,
+                                        sku: serviceProd.sku,
+                                        sku_corto: serviceProd.sku_corto || undefined,
+                                        base_name: serviceProd.base_name,
+                                        presentation: serviceProd.presentation || null,
+                                        min_price: servicePrice // lock it at calculated price
+                                    });
+                                    return next;
+                                });
+                            }, 0);
+
+                            updatedForm.items = [...updatedForm.items, serviceRow];
+                            updatedForm = {
+                                ...updatedForm,
+                                ...recalc(updatedForm.items, updatedForm.descuento, updatedForm.tipo_documento, updatedForm.adelanto)
+                            };
+                        }
+                    }
+
+                    return updatedForm;
+                });
+                return true;
+            } else {
+                // Set code-not-found error
+                setSaveErrors(prev => {
+                    const next = new Map(prev);
+                    next.set(lineId, `El código "${code}" no existe en el catálogo.`);
+                    return next;
+                });
+                return false;
+            }
+        };
+        const intercepted = confirmDiscountInvalidation(proceed);
+        if (intercepted) {
+            return false;
+        }
+        return proceed();
+    }, [allCatalogProducts, bindProduct, unbindProduct, confirmDiscountInvalidation]);
+
+    const getBrandWarning = (itemId: string) => {
+        const bound = boundProducts.get(itemId);
+        if (!bound) return null;
+
+        const catalogProd = allCatalogProducts.find(p => p.id === bound.catalog_product_id);
+        if (!catalogProd || !catalogProd.is_service) return null;
+
+        // Find the parent board product in the current items
+        const parentItem = form.items.find(it => {
+            const itBound = boundProducts.get(it.id);
+            if (!itBound) return false;
+            const parentProd = allCatalogProducts.find(p => p.id === itBound.catalog_product_id);
+            return parentProd?.has_associated_service && parentProd?.associated_service_id === catalogProd.id;
+        });
+
+        if (parentItem) {
+            const parentBound = boundProducts.get(parentItem.id);
+            const parentProd = allCatalogProducts.find(p => p.id === parentBound?.catalog_product_id);
+            if (parentProd && parentProd.brand && catalogProd.brand && parentProd.brand.toLowerCase() !== catalogProd.brand.toLowerCase()) {
+                return `Advertencia: La marca del canto (${catalogProd.brand}) difiere de la del tablero (${parentProd.brand}).`;
+            }
+        }
+        return null;
+    };
 
     // Derived inline errors (price < min_price on bound lines)
     const priceErrors = useMemo(() => {
@@ -1366,27 +1764,41 @@ export function CotizacionesPage() {
 
     useEffect(() => {
         if (!editorOpen) return;
-        fetchCatalogAndThreshold().then(({ catalog }) => {
+        fetchCatalogAndThreshold();
+        fetchAllCatalogProducts().then(catalog => {
             if (!catalog.length) return;
-            // Auto-rebind rows whose description exactly matches a catalog product's canonical name.
-            // bindProduct() always sets the description to the canonical name, so this restores
-            // the bound state when reopening a saved cotización without a DB schema change.
             setBoundProducts(prev => {
                 const items = formRef.current.items;
                 const toAdd: Array<[string, BoundProduct]> = [];
                 items.forEach(item => {
-                    if (prev.has(item.id) || !item.descripcion.trim()) return;
-                    const match = catalog.find(p => {
+                    if (prev.has(item.id)) return;
+
+                    // Match catalog product by exact canonical name, sku_corto/sku, or service description inclusion
+                    const match = catalog.find((p: any) => {
+                        // 1. Check SKU match
+                        if (item.sku_corto) {
+                            const upperSkuCorto = item.sku_corto.trim().toUpperCase();
+                            if ((p.sku_corto && p.sku_corto.toUpperCase() === upperSkuCorto) || p.sku.toUpperCase() === upperSkuCorto) {
+                                return true;
+                            }
+                        }
+                        // 2. Check service description inclusion
+                        if (p.is_service) {
+                            return item.descripcion.trim().toLowerCase().includes(p.base_name.trim().toLowerCase());
+                        }
+                        // 3. Check canonical description match for products
                         const fullName = p.presentation ? `${p.base_name} ${p.presentation}` : p.base_name;
                         return item.descripcion.trim().toLowerCase() === fullName.trim().toLowerCase();
                     });
+
                     if (match) {
                         toAdd.push([item.id, {
                             catalog_product_id: match.id,
                             sku: match.sku,
+                            sku_corto: match.sku_corto || undefined,
                             base_name: match.base_name,
-                            presentation: match.presentation,
-                            min_price: match.min_price,
+                            presentation: match.presentation || null,
+                            min_price: match.is_service ? item.precio_unitario : (match.min_price || 0),
                         }]);
                     }
                 });
@@ -1470,7 +1882,7 @@ export function CotizacionesPage() {
                 .lte('fecha_emision', endDate)
                 .order('created_at', { ascending: false });
             // Vendedores solo ven sus propias cotizaciones
-            if (profile?.role === 'ventas' && user?.id) {
+            if (isVentas && user?.id) {
                 q = q.eq('user_id', user.id);
             }
             if (filterEstado === 'ELIMINADO') {
@@ -1489,10 +1901,13 @@ export function CotizacionesPage() {
         } finally {
             setLoading(false);
         }
-    }, [startDate, endDate, filterEstado, profile?.role, user?.id]);
+    }, [startDate, endDate, filterEstado, isVentas, user?.id]);
     fetchDataRef.current = fetchData;
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => {
+        fetchData();
+        fetchAllCatalogProducts();
+    }, [fetchData]);
 
     useEffect(() => {
         const channel = supabase
@@ -1510,10 +1925,28 @@ export function CotizacionesPage() {
                                 comprobante_locked: updated.comprobante_locked,
                                 tipo_documento: updated.tipo_documento,
                                 sustento_comprobante_url: updated.sustento_comprobante_url,
+                                descuento: updated.descuento,
+                                descuento_estado_aprobacion: updated.descuento_estado_aprobacion as any,
+                                descuento_comentarios_admin: updated.descuento_comentarios_admin,
+                                igv: updated.igv,
+                                total: updated.total,
+                                saldo_pendiente: updated.saldo_pendiente,
                               }
                             : c
                         )
                     );
+                    // Update open modal form if it's this cotización
+                    if (editingIdRef.current === updated.id) {
+                        setForm(prev => ({
+                            ...prev,
+                            descuento: updated.descuento ?? prev.descuento,
+                            descuento_estado_aprobacion: (updated.descuento_estado_aprobacion as any) || prev.descuento_estado_aprobacion,
+                            descuento_comentarios_admin: updated.descuento_comentarios_admin ?? prev.descuento_comentarios_admin,
+                            igv: updated.igv ?? prev.igv,
+                            total: updated.total ?? prev.total,
+                            saldo_pendiente: updated.saldo_pendiente ?? prev.saldo_pendiente,
+                        }));
+                    }
                 }
             )
             .subscribe();
@@ -1599,6 +2032,12 @@ export function CotizacionesPage() {
             descripcion: c.descripcion || '',
             numero_comprobante: c.numero_comprobante || '',
             comprobante_locked: c.comprobante_locked || false,
+            descuento_sugerido: c.descuento_sugerido || 0,
+            descuento_sugerido_porcentaje: c.descuento_sugerido_porcentaje || 0,
+            descuento_solicitado: c.descuento_solicitado || false,
+            descuento_estado_aprobacion: (c.descuento_estado_aprobacion as any) || 'NINGUNO',
+            descuento_motivo_solicitud: c.descuento_motivo_solicitud || '',
+            descuento_comentarios_admin: c.descuento_comentarios_admin || '',
         });
         setEditingId(c.id);
         setEditingCode(c.codigo || '');
@@ -1614,63 +2053,203 @@ export function CotizacionesPage() {
     const closeEditor = useCallback(() => setEditorOpen(false), []);
 
     const updateItem = useCallback((id: string, field: keyof LineItem, raw: string) => {
-        setIsDirty(true);
-        if (field === 'unidad') manualUnitsRef.current.add(id);
-        if (field === 'descripcion') touchedDescriptionsRef.current.add(id);
-        // Editing description unbinds the line — text no longer represents the bound product
-        if (field === 'descripcion' && boundProductsRef.current.has(id)) {
-            setBoundProducts(prev => {
+        // Prevent manual edits to quantity of a dependent service row
+        if (field === 'cantidad') {
+            const bound = boundProductsRef.current.get(id);
+            if (bound) {
+                const catalogProd = allCatalogProductsRef.current.find(p => p.id === bound.catalog_product_id);
+                if (catalogProd && catalogProd.is_service) {
+                    const isDependent = formRef.current.items.some(it => {
+                        if (it.id === id) return false;
+                        const itBound = boundProductsRef.current.get(it.id);
+                        if (!itBound) return false;
+                        const parentProd = allCatalogProductsRef.current.find(p => p.id === itBound.catalog_product_id);
+                        return parentProd?.has_associated_service && parentProd?.associated_service_id === catalogProd.id;
+                    });
+                    if (isDependent) return; // ignore manual updates to service quantity
+                }
+            }
+        }
+
+        const proceed = () => {
+            setIsDirty(true);
+            if (field === 'unidad') manualUnitsRef.current.add(id);
+            if (field === 'descripcion') touchedDescriptionsRef.current.add(id);
+            // Editing description unbinds the line — text no longer represents the bound product
+            if (field === 'descripcion' && boundProductsRef.current.has(id)) {
+                setBoundProducts(prev => {
+                    const next = new Map(prev);
+                    next.delete(id);
+                    return next;
+                });
+            }
+            // Clear save-time error for this line on any edit
+            setSaveErrors(prev => {
+                if (!prev.has(id)) return prev;
                 const next = new Map(prev);
                 next.delete(id);
                 return next;
             });
-        }
-        // Clear save-time error for this line on any edit
-        setSaveErrors(prev => {
-            if (!prev.has(id)) return prev;
-            const next = new Map(prev);
-            next.delete(id);
-            return next;
-        });
-        setForm(prev => {
-            const items = prev.items.map(it => {
-                if (it.id !== id) return it;
-                const val = (field === 'cantidad' || field === 'precio_unitario') ? parseFloat(raw) || 0 : raw;
-                const updated = { ...it, [field]: val } as LineItem;
-                if (field === 'cantidad' || field === 'precio_unitario') {
-                    updated.total = parseFloat((updated.cantidad * updated.precio_unitario).toFixed(2));
+            setForm(prev => {
+                const items = prev.items.map(it => {
+                    if (it.id !== id) return it;
+                    const val = (field === 'cantidad' || field === 'precio_unitario') ? parseFloat(raw) || 0 : raw;
+                    const updated = { ...it, [field]: val } as LineItem;
+                    if (field === 'cantidad' || field === 'precio_unitario') {
+                        updated.total = parseFloat((updated.cantidad * updated.precio_unitario).toFixed(2));
+                    }
+                    // Auto-pick unit from description keywords if user hasn't chosen one.
+                    // SERVICIO has higher priority than CANTO so "servicio de canto" → SERV.
+                    const bound = boundProductsRef.current.get(id);
+                    if (field === 'descripcion' && !manualUnitsRef.current.has(id) && !bound) {
+                        const upper = String(val).toUpperCase();
+                        if (upper.includes('SERVICIO')) updated.unidad = 'SERV';
+                        else if (upper.includes('CANTO')) updated.unidad = 'MTS';
+                        else updated.unidad = 'PLS';
+                    }
+                    return updated;
+                });
+
+                if (field === 'cantidad') {
+                    const bound = boundProductsRef.current.get(id);
+                    const catalogProd = bound
+                        ? allCatalogProductsRef.current.find(p => p.id === bound.catalog_product_id)
+                        : null;
+
+                    if (catalogProd && catalogProd.has_associated_service && catalogProd.associated_service_id) {
+                        const val = parseFloat(raw) || 0;
+
+                        // Find all parents of this product type in the list of items
+                        const parentItems = items.filter(it => {
+                            const itBound = boundProductsRef.current.get(it.id);
+                            return itBound && itBound.catalog_product_id === catalogProd.id;
+                        });
+
+                        // Find our parent's relative index
+                        const parentIdx = parentItems.findIndex(it => it.id === id);
+
+                        // Find all service rows of this associated service product type
+                        const serviceItems = items.filter(it => {
+                            const itBound = boundProductsRef.current.get(it.id);
+                            return itBound && itBound.catalog_product_id === catalogProd.associated_service_id;
+                        });
+
+                        // Pair them: only update the service row at the same relative index
+                        if (parentIdx >= 0 && parentIdx < serviceItems.length) {
+                            const targetServiceId = serviceItems[parentIdx].id;
+                            const updatedItems = items.map(it => {
+                                if (it.id === targetServiceId) {
+                                    const updatedService = { ...it, cantidad: val };
+                                    updatedService.total = parseFloat((val * updatedService.precio_unitario).toFixed(2));
+                                    return updatedService;
+                                }
+                                return it;
+                            });
+                            return { ...prev, items: updatedItems, ...recalc(updatedItems, prev.descuento, prev.tipo_documento, prev.adelanto) };
+                        }
+                    }
                 }
-                // Auto-pick unit from description keywords if user hasn't chosen one.
-                // SERVICIO has higher priority than CANTO so "servicio de canto" → SERV.
-                if (field === 'descripcion' && !manualUnitsRef.current.has(id)) {
-                    const upper = String(val).toUpperCase();
-                    if (upper.includes('SERVICIO')) updated.unidad = 'SERV';
-                    else if (upper.includes('CANTO')) updated.unidad = 'MTS';
-                    else updated.unidad = 'PLS';
-                }
-                return updated;
+
+                return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
             });
-            return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
-        });
-    }, []);
+        };
+
+        const intercepted = confirmDiscountInvalidation(proceed);
+        if (!intercepted) {
+            proceed();
+        }
+    }, [confirmDiscountInvalidation]);
 
     const addRow = useCallback(() => {
-        setIsDirty(true);
-        const newId = crypto.randomUUID();
-        setForm(prev => ({
-            ...prev,
-            items: [...prev.items, { id: newId, cantidad: 1, unidad: 'PLS', descripcion: '', precio_unitario: 0, total: 0 }],
-        }));
-        setPendingFocusRowId(newId);
-    }, []);
+        const proceed = () => {
+            setIsDirty(true);
+            const newId = crypto.randomUUID();
+            setForm(prev => ({
+                ...prev,
+                items: [...prev.items, { id: newId, cantidad: 1, unidad: 'PLS', descripcion: '', precio_unitario: 0, total: 0 }],
+            }));
+            setPendingFocusRowId(newId);
+        };
+        const intercepted = confirmDiscountInvalidation(proceed);
+        if (!intercepted) {
+            proceed();
+        }
+    }, [confirmDiscountInvalidation]);
 
     const removeRow = useCallback((id: string) => {
-        setIsDirty(true);
-        setForm(prev => {
-            const items = prev.items.filter(it => it.id !== id);
-            return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
-        });
-    }, []);
+        const proceed = () => {
+            setIsDirty(true);
+            const bound = boundProductsRef.current.get(id);
+            const catalogProd = bound
+                ? allCatalogProductsRef.current.find(p => p.id === bound.catalog_product_id)
+                : null;
+
+            // Product→Service: get the associated service product ID
+            let serviceProductId: string | null = catalogProd?.associated_service_id ?? null;
+
+            // Fallback: if the row is unbound but has sku_corto, look up catalog to find service
+            if (!serviceProductId && !catalogProd?.is_service) {
+                const item = formRef.current.items.find(it => it.id === id);
+                if (item?.sku_corto) {
+                    const fallbackProd = allCatalogProductsRef.current.find(
+                        p => p.sku_corto === item.sku_corto && !p.is_service
+                    );
+                    serviceProductId = fallbackProd?.associated_service_id ?? null;
+                }
+            }
+
+            setForm(prev => {
+                const idsToRemove = new Set<string>([id]);
+
+                // Cascade: remove the associated service row when removing a product
+                if (serviceProductId) {
+                    prev.items.forEach(it => {
+                        if (it.id === id) return;
+                        const itBound = boundProductsRef.current.get(it.id);
+                        if (itBound?.catalog_product_id === serviceProductId) idsToRemove.add(it.id);
+                    });
+                }
+
+                // Cascade: remove the parent product row when removing a service
+                if (catalogProd?.is_service && bound) {
+                    prev.items.forEach(it => {
+                        if (it.id === id) return;
+                        const itBound = boundProductsRef.current.get(it.id);
+                        if (!itBound) return;
+                        const itProd = allCatalogProductsRef.current.find(p => p.id === itBound.catalog_product_id);
+                        if (itProd?.associated_service_id === bound.catalog_product_id) idsToRemove.add(it.id);
+                    });
+                }
+
+                const items = prev.items.filter(it => !idsToRemove.has(it.id));
+                return { ...prev, items, ...recalc(items, prev.descuento, prev.tipo_documento, prev.adelanto) };
+            });
+
+            setBoundProducts(prev => {
+                const next = new Map(prev);
+                next.delete(id);
+                // Remove bound entries for cascade-deleted service rows
+                if (serviceProductId) {
+                    prev.forEach((bp, rowId) => {
+                        if (bp.catalog_product_id === serviceProductId) next.delete(rowId);
+                    });
+                }
+                // Remove bound entries for cascade-deleted parent product rows
+                if (catalogProd?.is_service && bound) {
+                    prev.forEach((bp, rowId) => {
+                        if (rowId === id) return;
+                        const bpProd = allCatalogProductsRef.current.find(p => p.id === bp.catalog_product_id);
+                        if (bpProd?.associated_service_id === bound.catalog_product_id) next.delete(rowId);
+                    });
+                }
+                return next;
+            });
+        };
+        const intercepted = confirmDiscountInvalidation(proceed);
+        if (!intercepted) {
+            proceed();
+        }
+    }, [confirmDiscountInvalidation]);
 
     const handleDescuentoChange = useCallback((val: string) => {
         setIsDirty(true);
@@ -1722,6 +2301,8 @@ export function CotizacionesPage() {
             doi: form.cliente_doi,
             address: form.cliente_direccion,
             deliveryDate: form.fecha_entrega,
+            descripcion: form.descripcion,
+            notas: form.notas,
         },
         businessInfo,
     });
@@ -1759,7 +2340,7 @@ export function CotizacionesPage() {
         }
     };
 
-    const save = async (estadoOverride?: 'BORRADOR' | 'LISTO') => {
+    const save = async (estadoOverride?: 'BORRADOR' | 'LISTO', isDiscount?: boolean) => {
         // ── Validate required fields ──────────────────────────────────────────
         if (!form.cliente_nombre.trim()) {
             setClientError(true);
@@ -1770,50 +2351,27 @@ export function CotizacionesPage() {
         }
         setClientError(false);
 
-        // Refresh catalog + threshold — gets fresh values to use directly below
-        // (React state closures would have stale values if admin changed prices during this session)
-        const { catalog: freshCatalog, threshold: freshThreshold } = await fetchCatalogAndThreshold();
-
-        // ── Validate controlled materials (TABLEROS) before saving ───────────
+        // ── Validate minimum prices on bound products ─────────────────────────
         const errors = new Map<string, string>();
         form.items.forEach(item => {
-            if (!item.descripcion.trim()) return;
             const bound = boundProducts.get(item.id);
-            if (bound) {
-                if (item.precio_unitario < bound.min_price) {
-                    errors.set(item.id, `Precio mínimo de catálogo: S/ ${bound.min_price.toFixed(2)}`);
-                }
-                return;
-            }
-            // Not bound: check fuzzy match against TABLEROS catalog.
-            // Skip for MTS (canto) and SERV (servicio) — these are never TABLEROS.
-            // Gate 1: need >= 2 words typed to avoid single-word false positives.
-            // Gate 2: Dice coefficient >= threshold (handles typos and variants).
-            if (item.unidad === 'MTS' || item.unidad === 'SERV') return;
-            const descWords = item.descripcion.trim().split(/\s+/).filter(Boolean);
-            if (descWords.length < 2) return;
-            const matches = findMatches(
-                item.descripcion,
-                freshCatalog,
-                p => p.presentation ? `${p.base_name} ${p.presentation}` : p.base_name,
-                freshThreshold,
-                1,
-            );
-            if (matches.length > 0) {
-                const m = matches[0].item;
-                errors.set(item.id, `Material controlado: "${m.base_name}". Seleccione del catálogo.`);
+            if (bound && item.precio_unitario > 0 && item.precio_unitario < bound.min_price) {
+                errors.set(item.id, `Precio mínimo de catálogo: S/ ${bound.min_price.toFixed(2)}`);
             }
         });
         if (errors.size > 0) {
-            let hasMaterialDetection = false;
-            errors.forEach(msg => { if (msg.startsWith('Material controlado:')) hasMaterialDetection = true; });
-            setSaveErrorKind(hasMaterialDetection ? 'material' : 'price');
+            setSaveErrorKind('price');
             setSaveErrors(errors);
             setSaveStatus('error');
             window.setTimeout(() => setSaveStatus('idle'), 3500);
             return;
         }
 
+        if (isDiscount) {
+            setIsSavingDiscount(true);
+        } else if (estadoOverride === 'BORRADOR') {
+            setIsSavingDraft(true);
+        }
         setSaveStatus('saving');
         try {
             const clienteNombreFinal = (!clientFromList && form.cliente_nombre.trim())
@@ -1879,22 +2437,22 @@ export function CotizacionesPage() {
             await fetchData();
             if (estadoOverride === 'LISTO') {
                 setFilterEstado('TODOS');
-                setTimeout(() => { setSaveStatus('idle'); closeEditor(); }, 1500);
+                setTimeout(() => { setSaveStatus('idle'); setIsSavingDiscount(false); setIsSavingDraft(false); closeEditor(); }, 1500);
             } else {
                 setIsDirty(false);
-                setTimeout(() => setSaveStatus('idle'), 1500);
+                setTimeout(() => { setSaveStatus('idle'); setIsSavingDiscount(false); setIsSavingDraft(false); }, 1500);
             }
         } catch (e) {
             console.error(e);
             setSaveErrorKind('other');
             setSaveStatus('error');
-            setTimeout(() => setSaveStatus('idle'), 3000);
+            setTimeout(() => { setSaveStatus('idle'); setIsSavingDiscount(false); setIsSavingDraft(false); }, 3000);
         }
     };
 
     // Keep saveRef always pointing to the latest save closure (enables stable callbacks below)
     saveRef.current = save;
-    const handleSaveBorrador = useCallback(() => { saveRef.current?.('BORRADOR'); }, []);
+    const handleSaveBorrador = useCallback((isDiscount?: boolean) => { saveRef.current?.('BORRADOR', isDiscount); }, []);
     const handleSaveListo    = useCallback(() => { saveRef.current?.('LISTO'); }, []);
 
     const deleteCot = async (id: string) => {
@@ -1971,7 +2529,9 @@ export function CotizacionesPage() {
                 onExportPDF={handleExportPDF}
                 onPrint={handlePrintPDF}
                 onDuplicate={editingId ? duplicateFromModal : undefined}
-                isReadOnly={form.estado === 'LISTO'}
+                isReadOnly={form.estado === 'LISTO' || form.descuento_estado_aprobacion === 'PENDIENTE'}
+                isSavingDiscount={isSavingDiscount}
+                isSavingDraft={isSavingDraft}
                 pendingFocusRowId={pendingFocusRowId}
                 doiLocked={doiLocked}
                 nameLocked={nameLocked}
@@ -1988,7 +2548,56 @@ export function CotizacionesPage() {
                 onBindProduct={bindProduct}
                 onUnbindProduct={unbindProduct}
                 clientError={clientError}
+                allCatalogProducts={allCatalogProducts}
+                isVentas={isVentas}
+                handleCodeSubmit={handleCodeSubmit}
+                getBrandWarning={getBrandWarning}
             />
+
+            {/* Discount Invalidation Warning Modal */}
+            {pendingInvalidationAction && (
+                <div
+                    className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fade-in"
+                >
+                    <div
+                        className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-100 flex flex-col items-center gap-6 animate-scale-in"
+                    >
+                        <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center animate-bounce">
+                            <span className="material-icons-round text-4xl">warning</span>
+                        </div>
+
+                        <div className="text-center space-y-2">
+                            <h3 className="text-xl font-black text-slate-800 tracking-tight">
+                                ¿Deseas invalidar el descuento?
+                            </h3>
+                            <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                                Modificar los valores de la tabla o el cliente invalidará el descuento de
+                                <span className="font-extrabold text-slate-700"> S/ {form.descuento_sugerido?.toFixed(2)} </span>
+                                que fue aprobado previamente por el administrador.
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3 w-full">
+                            <button
+                                onClick={() => setPendingInvalidationAction(null)}
+                                className="flex-1 py-3 border-2 border-slate-200 hover:border-slate-300 rounded-2xl text-sm font-bold text-slate-500 hover:text-slate-700 transition-all"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (pendingInvalidationAction) {
+                                        pendingInvalidationAction();
+                                    }
+                                }}
+                                className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 rounded-2xl text-sm font-bold text-white shadow-lg shadow-amber-500/25 transition-all"
+                            >
+                                Sí, continuar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="min-h-screen flex flex-col animate-premium-fade">
                 {/* Header */}
@@ -2004,12 +2613,21 @@ export function CotizacionesPage() {
                             </p>
                         </div>
                     </div>
-                    <button
-                        onClick={openNew}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#366480] text-white text-[11px] font-black uppercase tracking-widest hover:bg-[#2c5268] transition-all shadow-md"
-                    >
-                        <Plus className="w-4 h-4" /> Nueva Cotización
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setShowDashboardLegend(v => !v)}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-full transition-all text-[11px] font-black uppercase tracking-widest ${showDashboardLegend ? 'bg-[#366480] text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                        >
+                            <span className="material-icons-round text-sm">list_alt</span>
+                            Leyenda de SKU
+                        </button>
+                        <button
+                            onClick={openNew}
+                            className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#366480] text-white text-[11px] font-black uppercase tracking-widest hover:bg-[#2c5268] transition-all shadow-md"
+                        >
+                            <Plus className="w-4 h-4" /> Nueva Cotización
+                        </button>
+                    </div>
                 </div>
 
                 {/* Filter bar */}
@@ -2122,7 +2740,6 @@ export function CotizacionesPage() {
                                             <th className="px-5 py-4">Cliente / Título</th>
                                             <th className="px-5 py-4">Fecha</th>
                                             <th className="px-5 py-4">Estado</th>
-                                            <th className="px-5 py-4">N° Comprobante</th>
                                             <th className="px-5 py-4 text-right">Total</th>
                                             <th className="px-4 py-4 w-12"></th>
                                         </tr>
@@ -2159,52 +2776,11 @@ export function CotizacionesPage() {
                                                 <td className="px-5 py-4">
                                                     <StatusBadge estado={c.estado} />
                                                 </td>
-                                                <td className="px-5 py-4">
-                                                    <button
-                                                        onClick={() => setVoucherEditTarget(c)}
-                                                        className="flex items-center gap-1.5 group"
-                                                        title="Editar N° Comprobante"
-                                                    >
-                                                        {(() => {
-                                                            const numComp = c.numero_comprobante;
-                                                            const docTypeString = c.tipo_documento || 'COTIZACION';
-                                                            if (numComp) {
-                                                                const letter = docTypeString.charAt(0);
-                                                                return (
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="text-[13px] font-medium text-[#2c3434]/80 bg-[#f0f5f4] border border-[#d3dcdb]/40 px-2 py-0.5 rounded-md tracking-wide shadow-sm">
-                                                                            {numComp}
-                                                                        </span>
-                                                                        {docTypeString !== 'COTIZACION' && (
-                                                                            <span className="text-[11px] font-medium bg-[#4A90E2]/10 text-[#4A90E2] border border-[#4A90E2]/20 px-1.5 py-0.5 rounded-md shadow-sm" title={docTypeString}>
-                                                                                {letter}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            } else {
-                                                                if (docTypeString === 'COTIZACION') {
-                                                                    return (
-                                                                        <span className="text-[11px] font-bold text-slate-300 group-hover:text-[#366480] transition-colors">
-                                                                            — Agregar
-                                                                        </span>
-                                                                    );
-                                                                }
-                                                                return (
-                                                                    <span className="text-[11px] font-extrabold text-[#366480]/60 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-md tracking-wide shadow-sm uppercase">
-                                                                        {docTypeString} - Asignar
-                                                                    </span>
-                                                                );
-                                                            }
-                                                        })()}
-                                                        <Hash className="w-3 h-3 text-slate-300 group-hover:text-[#366480] transition-colors opacity-0 group-hover:opacity-100" />
-                                                    </button>
-                                                </td>
                                                 <td className="px-5 py-4 text-right text-[16px] font-[900] text-[#2c3434] tabular-nums">
                                                     {fmtSol(c.total)}
                                                 </td>
                                                 <td className="px-4 py-4 text-center">
-                                                    {c.estado === 'BORRADOR' && (
+                                                    {c.estado === 'BORRADOR' && c.descuento_estado_aprobacion !== 'PENDIENTE' && (
                                                         <button
                                                             onClick={() => setDeleteConfirmId(c.id)}
                                                             className="w-7 h-7 flex items-center justify-center rounded-xl bg-slate-50 text-slate-300 hover:text-rose-400 hover:bg-rose-50 transition-all"
@@ -2297,6 +2873,52 @@ export function CotizacionesPage() {
                                 >
                                     Eliminar
                                 </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
+                {/* Dashboard-level SKU Legend Slide-over drawer */}
+                {showDashboardLegend && createPortal(
+                    <div className="fixed inset-0 z-[1500] flex justify-end bg-black/20 backdrop-blur-[3px] animate-backdrop">
+                        <div className="w-96 bg-white shadow-2xl flex flex-col h-full animate-premium-slide-in p-6 relative border-l border-slate-100" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                            <div className="flex justify-between items-center mb-6 shrink-0 border-b border-slate-100 pb-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-xl bg-[#366480]/10 flex items-center justify-center">
+                                        <span className="material-icons-round text-lg text-[#366480]">list_alt</span>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">
+                                            Leyenda de SKU Cortos
+                                        </h4>
+                                        <p className="text-[10px] font-bold text-[#8b9ba5] uppercase tracking-widest">Catálogo de Productos</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setShowDashboardLegend(false)}
+                                    className="w-8 h-8 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-50 flex items-center justify-center transition-all font-bold text-xs"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                            <div className="overflow-y-auto space-y-3.5 flex-1 pr-1 custom-scrollbar">
+                                {allCatalogProducts.filter(p => p.sku_corto).map(p => (
+                                    <div key={p.id} className="bg-slate-50 border border-slate-200/60 p-4 rounded-2xl hover:border-[#366480] hover:bg-[#eef4f7]/40 transition-all flex flex-col gap-2 shadow-sm">
+                                        <div className="flex justify-between items-center">
+                                            <span className="px-2.5 py-0.5 bg-[#366480]/10 border border-[#366480]/20 rounded-md text-[10px] font-black text-[#366480] font-mono tracking-wider">
+                                                {p.sku_corto}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs font-black text-[#2c3434] leading-snug">
+                                            {p.base_name}{p.presentation ? ` ${p.presentation}` : ''}
+                                        </p>
+                                        <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase pt-0.5 border-t border-slate-200/40">
+                                            <span>Marca: {p.brand || '—'}</span>
+                                            <span>{p.unit || 'UND'}</span>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>,
