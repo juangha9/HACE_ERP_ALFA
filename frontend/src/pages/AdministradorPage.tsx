@@ -367,16 +367,23 @@ export default function AdministradorPage() {
     const handleDiscountApprove = async (cot: any) => {
         setDiscountActionLoading(true);
         try {
+            // Nueva semántica: los precios de los ítems incluyen IGV. El total guardado
+            // representa el monto con IGV antes del descuento, y el descuento se aplica
+            // sobre ese total. La base imponible se recalcula al extraer 18% del total final.
             const discountAmount = Number(cot.descuento_sugerido) || 0;
-            const subtotal = Number(cot.subtotal) || 0;
+            const savedSubtotal = Number(cot.subtotal) || 0;
+            const savedTotal = Number(cot.total) || 0;
             const adelanto = Number(cot.adelanto) || 0;
-            const base = Math.max(0, subtotal - discountAmount);
             const needsIgv = cot.tipo_documento === 'FACTURA' || cot.tipo_documento === 'BOLETA' || cot.tipo_documento === 'TICKET';
-            const igv = needsIgv ? parseFloat((base * 0.18).toFixed(2)) : 0;
-            const total = parseFloat((base + igv).toFixed(2));
+            const total = parseFloat(Math.max(0, savedTotal - discountAmount).toFixed(2));
+            const subtotal = needsIgv
+                ? parseFloat((total / 1.18).toFixed(2))
+                : savedSubtotal;
+            const igv = needsIgv ? parseFloat((total - subtotal).toFixed(2)) : 0;
             const saldo = parseFloat(Math.max(0, total - adelanto).toFixed(2));
             await supabase.from('cotizaciones').update({
                 descuento: discountAmount,
+                subtotal,
                 igv,
                 total,
                 saldo_pendiente: saldo,
@@ -1615,15 +1622,21 @@ export default function AdministradorPage() {
                                             </p>
                                         )}
                                         {discountActionId === cot.id && (() => {
+                                            // Nueva semántica: los precios unitarios incluyen IGV; cot.total = suma con IGV
+                                            // antes del descuento. El factor escala proporcionalmente los precios para que
+                                            // la suma de filas dé el total con descuento aplicado.
                                             const items: any[] = Array.isArray(cot.items) ? cot.items : [];
                                             const discount = Number(cot.descuento_sugerido) || 0;
-                                            const subtotal = Number(cot.subtotal) || 0;
-                                            const factor = subtotal > 0 ? (subtotal - discount) / subtotal : 1;
                                             const needsIgv = cot.tipo_documento === 'FACTURA' || cot.tipo_documento === 'BOLETA' || cot.tipo_documento === 'TICKET';
                                             const totalAntes = Number(cot.total) || 0;
-                                            const baseAfter = Math.max(0, subtotal - discount);
-                                            const igvAfter = needsIgv ? parseFloat((baseAfter * 0.18).toFixed(2)) : 0;
-                                            const totalDespues = parseFloat((baseAfter + igvAfter).toFixed(2));
+                                            const subtotalAntes = Number(cot.subtotal) || 0;
+                                            const igvAntes = Number(cot.igv) || (needsIgv ? parseFloat((totalAntes - subtotalAntes).toFixed(2)) : 0);
+                                            const factor = totalAntes > 0 ? (totalAntes - discount) / totalAntes : 1;
+                                            const totalDespues = parseFloat(Math.max(0, totalAntes - discount).toFixed(2));
+                                            const subtotalDespues = needsIgv
+                                                ? parseFloat((totalDespues / 1.18).toFixed(2))
+                                                : subtotalAntes;
+                                            const igvAfter = needsIgv ? parseFloat((totalDespues - subtotalDespues).toFixed(2)) : 0;
                                             return (
                                                 <div className="mt-4 space-y-4">
                                                     {/* Comparison table */}
@@ -1667,7 +1680,7 @@ export default function AdministradorPage() {
                                                                     {needsIgv && (
                                                                         <tr className="bg-amber-50">
                                                                             <td colSpan={4} className="px-3 py-2 text-right text-[11px] font-black text-amber-800 uppercase">IGV (18%)</td>
-                                                                            <td className="px-3 py-2 text-right text-[11px] font-mono text-slate-500">S/ {(needsIgv ? parseFloat((subtotal * 0.18).toFixed(2)) : 0).toFixed(2)}</td>
+                                                                            <td className="px-3 py-2 text-right text-[11px] font-mono text-slate-500">S/ {igvAntes.toFixed(2)}</td>
                                                                             <td className="px-3 py-2 text-right text-[11px] font-mono text-emerald-700 font-bold">S/ {igvAfter.toFixed(2)}</td>
                                                                         </tr>
                                                                     )}
@@ -2191,11 +2204,14 @@ export default function AdministradorPage() {
                                                                     </tr>
                                                                 ))}
                                                                 {(() => {
-                                                                    const subtotal = rows.reduce((s, r) => s + (Number(r.total) || 0), 0);
+                                                                    // Nueva semántica: la suma de totales por fila es el total CON IGV
+                                                                    // (antes del descuento). El subtotal = base imponible = total/1.18.
+                                                                    const sumaItems = rows.reduce((s, r) => s + (Number(r.total) || 0), 0);
                                                                     const descuento = Number(cot.descuento) || 0;
-                                                                    const base = Math.max(0, subtotal - descuento);
-                                                                    const igv = base * 0.18;
-                                                                    const grandTotal = base + igv;
+                                                                    const needsIgv = cot.tipo_documento === 'FACTURA' || cot.tipo_documento === 'BOLETA' || cot.tipo_documento === 'TICKET';
+                                                                    const grandTotal = Math.max(0, sumaItems - descuento);
+                                                                    const subtotal = needsIgv ? grandTotal / 1.18 : sumaItems;
+                                                                    const igv = needsIgv ? grandTotal - subtotal : 0;
                                                                     return (
                                                                         <>
                                                                             <tr className="border-t-2 border-[#d3dcdb]/20">
@@ -2208,10 +2224,12 @@ export default function AdministradorPage() {
                                                                                     <td className="py-1 text-right text-rose-600 font-bold tabular-nums">- S/ {formatNumber(descuento, 2)}</td>
                                                                                 </tr>
                                                                             )}
-                                                                            <tr>
-                                                                                <td colSpan={3} className="py-1 text-right text-[13px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">IGV (18%)</td>
-                                                                                <td className="py-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(igv, 2)}</td>
-                                                                            </tr>
+                                                                            {needsIgv && (
+                                                                                <tr>
+                                                                                    <td colSpan={3} className="py-1 text-right text-[13px] font-semibold text-[#366480]/50 uppercase tracking-widest pr-3">IGV (18%)</td>
+                                                                                    <td className="py-1 text-right text-[#2c3434] font-bold tabular-nums">S/ {formatNumber(igv, 2)}</td>
+                                                                                </tr>
+                                                                            )}
                                                                             <tr className="border-t border-[#d3dcdb]/20">
                                                                                 <td colSpan={3} className="pt-3 text-right text-[14px] font-bold text-[#2c3434] uppercase tracking-widest pr-3">Total</td>
                                                                                 <td className="pt-3 text-right text-[18px] font-extrabold text-[#2c3434] tabular-nums">S/ {formatNumber(grandTotal, 2)}</td>

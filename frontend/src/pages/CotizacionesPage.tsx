@@ -269,10 +269,18 @@ const fmtSol = (n: number) =>
     `S/ ${(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function recalc(items: LineItem[], descuento: number, tipo: TipoDoc, adelanto: number) {
-    const subtotal = items.reduce((s, it) => s + it.total, 0);
-    const base = Math.max(0, subtotal - descuento);
-    const igv = (tipo === 'FACTURA' || tipo === 'BOLETA' || tipo === 'TICKET') ? parseFloat((base * IGV_RATE).toFixed(2)) : 0;
-    const total = parseFloat((base + igv).toFixed(2));
+    // Los precios ingresados en la tabla ya incluyen IGV. La suma de totales por fila
+    // representa el TOTAL con IGV (antes del descuento). El subtotal (base imponible)
+    // se calcula extrayendo el 18% del total final; el IGV es la diferencia.
+    const aplicaIgv = tipo === 'FACTURA' || tipo === 'BOLETA' || tipo === 'TICKET';
+    const sumaItems = items.reduce((s, it) => s + it.total, 0);
+    const total = parseFloat(Math.max(0, sumaItems - descuento).toFixed(2));
+    // Para documentos sin IGV (COTIZACIÓN/RECIBO) mantenemos el subtotal como suma
+    // antes del descuento para que la fila "Sub Total" del UI siga teniendo sentido.
+    const subtotal = aplicaIgv
+        ? parseFloat((total / (1 + IGV_RATE)).toFixed(2))
+        : sumaItems;
+    const igv = aplicaIgv ? parseFloat((total - subtotal).toFixed(2)) : 0;
     const saldo_pendiente = parseFloat((total - adelanto).toFixed(2));
     return { subtotal, igv, total, saldo_pendiente };
 }
@@ -499,17 +507,25 @@ const EditorModal: React.FC<EditorModalProps> = ({
             setReqDiscountError('Ingresa el motivo o justificación');
             return;
         }
+        // Validar campos obligatorios ANTES de marcar PENDIENTE: si falta el cliente,
+        // el save() abortaría pero el form ya quedaría en estado PENDIENTE (read-only),
+        // bloqueando al usuario sin que la solicitud llegue al administrador.
+        if (!form.cliente_nombre.trim()) {
+            setReqDiscountError('Selecciona un Cliente / Razón Social antes de enviar la solicitud');
+            return;
+        }
 
         const val = Number(reqDiscountVal);
+        const basis = form.total;
         let amount = 0;
         let pct = 0;
 
         if (reqDiscountType === 'MONEDA') {
             amount = val;
-            pct = form.subtotal > 0 ? parseFloat(((val / form.subtotal) * 100).toFixed(2)) : 0;
+            pct = basis > 0 ? parseFloat(((val / basis) * 100).toFixed(2)) : 0;
         } else {
             pct = val;
-            amount = parseFloat(((val * form.subtotal) / 100).toFixed(2));
+            amount = parseFloat(((val * basis) / 100).toFixed(2));
         }
 
         onFormChange({
@@ -1955,6 +1971,7 @@ export function CotizacionesPage() {
                                 descuento: updated.descuento,
                                 descuento_estado_aprobacion: updated.descuento_estado_aprobacion as any,
                                 descuento_comentarios_admin: updated.descuento_comentarios_admin,
+                                subtotal: updated.subtotal,
                                 igv: updated.igv,
                                 total: updated.total,
                                 saldo_pendiente: updated.saldo_pendiente,
@@ -1969,6 +1986,7 @@ export function CotizacionesPage() {
                             descuento: updated.descuento ?? prev.descuento,
                             descuento_estado_aprobacion: (updated.descuento_estado_aprobacion as any) || prev.descuento_estado_aprobacion,
                             descuento_comentarios_admin: updated.descuento_comentarios_admin ?? prev.descuento_comentarios_admin,
+                            subtotal: updated.subtotal ?? prev.subtotal,
                             igv: updated.igv ?? prev.igv,
                             total: updated.total ?? prev.total,
                             saldo_pendiente: updated.saldo_pendiente ?? prev.saldo_pendiente,
