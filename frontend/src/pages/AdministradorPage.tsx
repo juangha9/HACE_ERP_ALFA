@@ -197,14 +197,14 @@ export default function AdministradorPage() {
     // New client sub-modal state
     const [newClientOpen, setNewClientOpen] = useState(false);
     const [newClientClosing, setNewClientClosing] = useState(false);
-    const [newClientData, setNewClientData] = useState<{ name: string; type: 'CLIENT' | 'SUPPLIER' | 'BOTH'; tax_id: string; phone: string }>({ name: '', type: 'CLIENT', tax_id: '', phone: '' });
+    const [newClientData, setNewClientData] = useState<{ name: string; type: 'CLIENT' | 'SUPPLIER' | 'BOTH'; tax_id: string; phone: string; billing_data: string }>({ name: '', type: 'CLIENT', tax_id: '', phone: '', billing_data: '' });
     const [newClientSaving, setNewClientSaving] = useState(false);
     const [newClientError, setNewClientError] = useState<string | null>(null);
     const [newClientSuccess, setNewClientSuccess] = useState(false);
     const [newClientIsEdit, setNewClientIsEdit] = useState(false);
     const [newClientEditId, setNewClientEditId] = useState<string | null>(null);
     // Contacts cache for edit-in-place (type = CLIENT)
-    const [clientContacts, setClientContacts] = useState<{ id: string; name: string; type: string; tax_id: string | null; phone: string | null }[]>([]);
+    const [clientContacts, setClientContacts] = useState<{ id: string; name: string; type: string; tax_id: string | null; phone: string | null; billing_data: string | null }[]>([]);
     const [editClientListOpen, setEditClientListOpen] = useState(false);
     const [editClientListClosing, setEditClientListClosing] = useState(false);
     const [editClientSearch, setEditClientSearch] = useState('');
@@ -751,7 +751,7 @@ export default function AdministradorPage() {
     };
 
     const openNewClient = (prefillName?: string) => {
-        setNewClientData({ name: prefillName || '', type: 'CLIENT', tax_id: '', phone: '' });
+        setNewClientData({ name: prefillName || '', type: 'CLIENT', tax_id: '', phone: '', billing_data: '' });
         setNewClientError(null);
         setNewClientSuccess(false);
         setNewClientIsEdit(false);
@@ -760,12 +760,13 @@ export default function AdministradorPage() {
         setNewClientClosing(false);
     };
 
-    const openEditClient = (contact: { id: string; name: string; type: string; tax_id: string | null; phone: string | null }) => {
+    const openEditClient = (contact: { id: string; name: string; type: string; tax_id: string | null; phone: string | null; billing_data?: string | null }) => {
         setNewClientData({
             name: contact.name,
             type: contact.type as 'CLIENT' | 'SUPPLIER' | 'BOTH',
             tax_id: contact.tax_id ?? '',
             phone: contact.phone ?? '',
+            billing_data: contact.billing_data ?? '',
         });
         setNewClientError(null);
         setNewClientSuccess(false);
@@ -794,6 +795,7 @@ export default function AdministradorPage() {
                 type: newClientData.type,
                 tax_id: newClientData.tax_id.trim() || null,
                 phone: newClientData.phone.trim() || null,
+                billing_data: newClientData.billing_data.trim() || null,
             };
             const { error } = newClientIsEdit && newClientEditId
                 ? await supabase.from('contacts').update(payload).eq('id', newClientEditId)
@@ -807,7 +809,7 @@ export default function AdministradorPage() {
                 return;
             }
             // Refresh contacts cache so pencil stays in sync
-            const refreshed = await supabase.from('contacts').select('id,name,type,tax_id,phone').eq('type', 'CLIENT');
+            const refreshed = await supabase.from('contacts').select('id,name,type,tax_id,phone,billing_data').eq('type', 'CLIENT');
             if (refreshed.data) setClientContacts(refreshed.data as any);
             setNewClientSuccess(true);
             window.setTimeout(() => closeNewClient(), 2000);
@@ -1254,7 +1256,7 @@ export default function AdministradorPage() {
                 // Also load contacts of type CLIENT for the edit pencil
                 const contactsRes = await supabase
                     .from('contacts')
-                    .select('id,name,type,tax_id,phone')
+                    .select('id,name,type,tax_id,phone,billing_data')
                     .eq('type', 'CLIENT');
                 if (!cancelled && contactsRes.data) {
                     setClientContacts(contactsRes.data as any);
@@ -2265,7 +2267,7 @@ export default function AdministradorPage() {
                                     <span>Editar</span>
                                 </button>
                                 <button
-                                    onClick={openNewClient}
+                                    onClick={() => openNewClient()}
                                     className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-800 transition-all"
                                 >
                                     <UserPlus className="w-3.5 h-3.5" />
@@ -2615,6 +2617,16 @@ export default function AdministradorPage() {
                                         className="w-full px-5 pr-12 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[16px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white"
                                     />
                                 </div>
+                            </div>
+                            {/* Datos de Facturación */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[13px] font-black text-[#2c3434] uppercase tracking-widest">Datos de Facturación</label>
+                                <textarea
+                                    value={newClientData.billing_data || ''}
+                                    onChange={e => setNewClientData(d => ({ ...d, billing_data: e.target.value }))}
+                                    placeholder="Ingrese los datos de facturación opcionales (Banco, N° Cuenta, Razón Social, etc.)"
+                                    className="w-full px-5 py-3.5 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[16px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2]/40 focus:bg-white h-24 resize-none"
+                                />
                             </div>
                             {/* Feedback banners */}
                             {newClientSuccess && (

@@ -57,6 +57,7 @@ export interface Contact {
     phone?: string;
     email?: string;
     address?: string;
+    billing_data?: string;
 }
 
 export interface InventoryLocation {

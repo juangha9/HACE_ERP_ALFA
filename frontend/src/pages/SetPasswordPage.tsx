@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import haceLogo from '../assets/hace_logo.png';
@@ -10,26 +10,42 @@ export function SetPasswordPage() {
     const [showPass, setShowPass] = useState(false);
     const [busy, setBusy] = useState(false);
     const [formError, setFormError] = useState('');
+    const successTimerRef = useRef<number | null>(null);
     const navigate = useNavigate();
 
     useEffect(() => {
-        // Supabase fires PASSWORD_RECOVERY when the user arrives via a recovery link.
-        // The client automatically parses the token hash from the URL.
+        // Solo aceptamos el form si el usuario llegó por un link de recovery.
+        // Detectamos el hash que Supabase agrega antes de consumirlo (type=recovery),
+        // así no aceptamos sesiones preexistentes ajenas al flujo de reset.
+        const hash = window.location.hash || '';
+        const hasRecoveryToken = /[#&]type=recovery(?:&|$)/.test(hash);
+
+        // Supabase dispara PASSWORD_RECOVERY tras parsear el token del hash.
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
             if (event === 'PASSWORD_RECOVERY') {
                 setStatus('ready');
             }
         });
 
-        // If the token was already exchanged (e.g. page reload), check the session.
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            if (session) setStatus(s => s === 'loading' ? 'ready' : s);
-        });
+        // Si el cliente ya consumió el token (p.ej. reload de la misma pestaña),
+        // el hash desaparece pero la sesión activa sigue siendo de tipo recovery.
+        // Solo en ese caso aceptamos la sesión preexistente como válida.
+        if (!hasRecoveryToken) {
+            supabase.auth.getSession().then(({ data: { session } }) => {
+                if (!session) {
+                    setStatus(s => s === 'loading' ? 'error' : s);
+                }
+                // Si hay sesión sin token de recovery en la URL, esperamos al
+                // evento PASSWORD_RECOVERY; si nunca llega, el timeout abajo
+                // se encarga de marcar el enlace como inválido.
+            });
+        }
 
-        // If nothing fires within 3 s, the link is invalid or expired.
+        // Margen tolerante para redes lentas (antes 3 s, que daba falsos
+        // "enlace inválido" en conexiones móviles o servidores fríos).
         const timeout = setTimeout(() => {
             setStatus(s => s === 'loading' ? 'error' : s);
-        }, 3000);
+        }, 7000);
 
         return () => {
             subscription.unsubscribe();
@@ -54,10 +70,25 @@ export function SetPasswordPage() {
             setFormError('No se pudo actualizar la contraseña. Intenta de nuevo.');
             setBusy(false);
         } else {
+            // Cerramos la sesión de recovery para forzar el login con la nueva
+            // contraseña y evitar que la sesión "recovery" quede activa en el
+            // navegador (caso típico: el admin abrió el link en su propio
+            // navegador y termina logueado como el usuario destinatario).
+            await supabase.auth.signOut();
             setStatus('success');
-            setTimeout(() => navigate('/login', { replace: true }), 2500);
+            successTimerRef.current = window.setTimeout(
+                () => navigate('/login', { replace: true }),
+                2500
+            );
         }
     };
+
+    // Limpiamos el timer del redirect si el componente se desmonta antes.
+    useEffect(() => () => {
+        if (successTimerRef.current !== null) {
+            window.clearTimeout(successTimerRef.current);
+        }
+    }, []);
 
     return (
         <div

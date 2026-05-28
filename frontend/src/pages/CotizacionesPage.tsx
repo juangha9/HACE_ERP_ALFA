@@ -79,6 +79,7 @@ interface Cotizacion {
     descuento_estado_aprobacion?: string;
     descuento_motivo_solicitud?: string;
     descuento_comentarios_admin?: string;
+    prioridad?: 'NORMAL' | 'ALTO' | 'MUY ALTO';
 }
 
 type TipoDoc = 'BOLETA' | 'FACTURA' | 'TICKET';
@@ -111,6 +112,7 @@ interface FormState {
     descuento_estado_aprobacion?: 'NINGUNO' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO';
     descuento_motivo_solicitud?: string;
     descuento_comentarios_admin?: string;
+    prioridad?: 'NORMAL' | 'ALTO' | 'MUY ALTO';
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -172,6 +174,7 @@ const emptyForm = (): FormState => ({
     descuento_estado_aprobacion: 'NINGUNO',
     descuento_motivo_solicitud: '',
     descuento_comentarios_admin: '',
+    prioridad: 'NORMAL',
 });
 
 // ─── Search Input (isolated to avoid re-render on parent state) ───────────────
@@ -1104,7 +1107,7 @@ const EditorModal: React.FC<EditorModalProps> = ({
                         </div>
 
                         {/* 3. Totals */}
-                        <div className="flex justify-end">
+                        <div className="flex justify-end mt-4">
                             <div className="w-full md:w-80 bg-white p-6 rounded-3xl border-2 border-slate-400 shadow-sm">
                                 {/* Two-column grid: label right-aligned | value right-aligned */}
                                 <div className="grid grid-cols-[1fr_auto] gap-x-5 gap-y-3 items-center">
@@ -1200,6 +1203,30 @@ const EditorModal: React.FC<EditorModalProps> = ({
                                         S/ {(form.saldo_pendiente || 0).toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                                     </span>
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* 4. Priority Block */}
+                        <div className="mt-4">
+                            <div className="bg-white p-6 rounded-3xl border-2 border-slate-400 shadow-sm flex items-center justify-between">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Prioridad</span>
+                                <div className="flex-1 flex justify-center gap-8">
+                                    {(['NORMAL', 'ALTO', 'MUY ALTO'] as const).map((level) => (
+                                        <label key={level} className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                checked={(form.prioridad || 'NORMAL') === level}
+                                                onChange={() => onFormChange({ ...form, prioridad: level })}
+                                                disabled={isReadOnly}
+                                                className="accent-[#366480] disabled:cursor-not-allowed w-4 h-4"
+                                            />
+                                            <span className={`text-xs font-bold ${isReadOnly ? 'text-slate-400' : 'text-slate-600'} uppercase tracking-wide`}>
+                                                {level === 'MUY ALTO' ? 'Muy Alto' : level === 'ALTO' ? 'Alto' : 'Normal'}
+                                            </span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="w-16 hidden md:block" />
                             </div>
                         </div>
                     </div>
@@ -1459,7 +1486,7 @@ export function CotizacionesPage() {
     boundProductsRef.current = boundProducts;
     const allCatalogProductsRef = useRef(allCatalogProducts);
     allCatalogProductsRef.current = allCatalogProducts;
-    const saveRef = useRef<((estadoOverride?: 'BORRADOR' | 'LISTO') => Promise<void>) | null>(null);
+    const saveRef = useRef<((estadoOverride?: 'BORRADOR' | 'LISTO', isDiscount?: boolean) => Promise<void>) | null>(null);
     const editingIdRef = useRef(editingId);
     editingIdRef.current = editingId;
     const saveComprobanteRef = useRef<typeof saveComprobante | null>(null);
@@ -1471,14 +1498,14 @@ export function CotizacionesPage() {
         if (formRef.current.descuento_solicitado && formRef.current.descuento_estado_aprobacion === 'APROBADO') {
             setPendingInvalidationAction(() => () => {
                 setForm(prev => {
-                    const next = {
+                    const next: FormState = {
                         ...prev,
                         descuento_solicitado: false,
-                        descuento_estado_aprobacion: null,
+                        descuento_estado_aprobacion: 'NINGUNO',
                         descuento_sugerido: 0,
                         descuento_sugerido_porcentaje: 0,
                         descuento_motivo_solicitud: '',
-                        descuento_motivo_aprobacion: '',
+                        descuento_comentarios_admin: '',
                         descuento: 0
                     };
                     return {
@@ -1533,7 +1560,7 @@ export function CotizacionesPage() {
             ...prev,
             items: prev.items.map(it => it.id !== lineId
                 ? it
-                : { ...it, descripcion: product.presentation ? `${product.base_name} ${product.presentation}` : product.base_name }),
+                : { ...it, descripcion: product.base_name }),
         }));
         setIsDirty(true);
     }, []);
@@ -2038,6 +2065,7 @@ export function CotizacionesPage() {
             descuento_estado_aprobacion: (c.descuento_estado_aprobacion as any) || 'NINGUNO',
             descuento_motivo_solicitud: c.descuento_motivo_solicitud || '',
             descuento_comentarios_admin: c.descuento_comentarios_admin || '',
+            prioridad: c.prioridad || 'NORMAL',
         });
         setEditingId(c.id);
         setEditingCode(c.codigo || '');
@@ -2305,6 +2333,7 @@ export function CotizacionesPage() {
             notas: form.notas,
         },
         businessInfo,
+        prioridad: form.prioridad || 'NORMAL',
     });
 
     const handleExportPDF = async () => {
@@ -2374,8 +2403,18 @@ export function CotizacionesPage() {
         }
         setSaveStatus('saving');
         try {
-            const clienteNombreFinal = (!clientFromList && form.cliente_nombre.trim())
-                ? `PÚBLICO GENERAL (${form.cliente_nombre.trim()})`
+            // Recalcular si el nombre coincide con un contacto registrado: el flag
+            // clientFromList puede quedar desincronizado (p.ej. el onChange del input
+            // lo pone en false antes de que el usuario decida cancelar el diálogo de
+            // invalidación de descuento), causando que un cliente real se grabe como
+            // "PÚBLICO GENERAL (...)".
+            const trimmedClientName = form.cliente_nombre.trim();
+            const alreadyPublicoGeneral = /^PÚBLICO GENERAL \(.+\)$/.test(trimmedClientName);
+            const isRegisteredContact = trimmedClientName.length > 0 && contacts.some(
+                c => c.name.toLowerCase().trim() === trimmedClientName.toLowerCase()
+            );
+            const clienteNombreFinal = (!isRegisteredContact && !alreadyPublicoGeneral && trimmedClientName)
+                ? `PÚBLICO GENERAL (${trimmedClientName})`
                 : form.cliente_nombre;
             // Al procesar (LISTO) persistimos los datos SIN cambiar aún el estado. Solo
             // marcamos LISTO después de crear la venta con éxito, para no dejar una
@@ -2739,6 +2778,7 @@ export function CotizacionesPage() {
                                             <th className="px-5 py-4">ID De Cotización</th>
                                             <th className="px-5 py-4">Cliente / Título</th>
                                             <th className="px-5 py-4">Fecha</th>
+                                            <th className="px-5 py-4">Prioridad</th>
                                             <th className="px-5 py-4">Estado</th>
                                             <th className="px-5 py-4 text-right">Total</th>
                                             <th className="px-4 py-4 w-12"></th>
@@ -2772,6 +2812,15 @@ export function CotizacionesPage() {
                                                     <p className="text-[11px] font-medium text-slate-400 mt-0.5 tabular-nums">
                                                         {fmtLimaTime(c.created_at)}
                                                     </p>
+                                                </td>
+                                                <td className="px-5 py-4">
+                                                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                        c.prioridad === 'MUY ALTO' ? 'bg-rose-50 text-rose-600 border border-rose-100' :
+                                                        c.prioridad === 'ALTO' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                                        'bg-slate-50 text-slate-500 border border-slate-100'
+                                                    }`}>
+                                                        {c.prioridad || 'NORMAL'}
+                                                    </span>
                                                 </td>
                                                 <td className="px-5 py-4">
                                                     <StatusBadge estado={c.estado} />

@@ -176,6 +176,12 @@ export default function ContactDirectory() {
                                 <input className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-200"
                                     value={formData.address || ''} onChange={e => setFormData({ ...formData, address: e.target.value })} />
                             </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Datos de Facturación</label>
+                                <textarea className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-200 h-20 resize-none"
+                                    value={formData.billing_data || ''} onChange={e => setFormData({ ...formData, billing_data: e.target.value })}
+                                    placeholder="Ingrese los datos de facturación opcionales (Banco, N° Cuenta, Razón Social, etc.)" />
+                            </div>
 
                             <div className="pt-4 flex gap-3">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Cancelar</button>

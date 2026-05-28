@@ -28,7 +28,7 @@ const fetchFontBase64 = async (url: string): Promise<string> => {
 };
 
 const buildQuotePDF = async (exportData: any): Promise<jsPDF> => {
-    const { items, totals, code, clientData, businessInfo } = exportData;
+    const { items, totals, code, clientData, businessInfo, prioridad } = exportData;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -117,6 +117,20 @@ const buildQuotePDF = async (exportData: any): Promise<jsPDF> => {
     doc.setFontSize(11);
     doc.setFont(fontName, 'bold');
     doc.text(`COTIZACIÓN ${quoteNumber}`, pageWidth / 2, 44, { align: 'center' });
+
+    // Renderizar prioridad de forma limpia centrada debajo del número de cotización, sin el prefijo "PRIORIDAD:"
+    if (prioridad) {
+        doc.setFontSize(9.5);
+        doc.setFont(fontName, 'bold');
+        if (prioridad === 'MUY ALTO') {
+            doc.setTextColor(220, 38, 38); // Rojo brillante
+        } else if (prioridad === 'ALTO') {
+            doc.setTextColor(217, 119, 6); // Ámbar/Naranja
+        } else {
+            doc.setTextColor(71, 85, 105); // Slate-600 (Gris oscuro suave altamente legible)
+        }
+        doc.text(prioridad, pageWidth / 2, 50, { align: 'center' });
+    }
 
     // 2. Bloque DATOS DEL CLIENTE — fondo pastel gris.
     // Left column: client fields. Right column: DESCRIPCIÓN / OBSERVACIONES.
