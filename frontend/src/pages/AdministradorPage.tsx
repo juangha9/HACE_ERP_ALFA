@@ -282,13 +282,25 @@ export default function AdministradorPage() {
     const [historyOpen, setHistoryOpen] = useState(false);
     const [historyClosing, setHistoryClosing] = useState(false);
     const [historySearch, setHistorySearch] = useState('');
-    const [historyEstado, setHistoryEstado] = useState<'TODOS' | 'PENDIENTE' | 'PARCIAL' | 'CANCELADO'>('TODOS');
+    const [historyEstado, setHistoryEstado] = useState<'TODOS' | 'PENDIENTE' | 'PARCIAL' | 'CANCELADO' | 'ANULADO'>('TODOS');
     const [historyQuickFilter, setHistoryQuickFilter] = useState<'ULTIMOS_7' | 'ULTIMOS_30' | 'MES_ACTUAL' | 'PERSONALIZADO'>('ULTIMOS_30');
     const [historyStart, setHistoryStart] = useState(format(subDays(today, 30), 'yyyy-MM-dd'));
     const [historyEnd, setHistoryEnd] = useState(format(today, 'yyyy-MM-dd'));
     const [historyDatePickerOpen, setHistoryDatePickerOpen] = useState(false);
     const historyDatePickerWrapRef = useRef<HTMLDivElement>(null);
     const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+    // Edición del nombre (cliente_nombre) de una venta en estado LISTO. Exige un
+    // motivo y se registra en cotizaciones_audit_log (campo = 'cliente_nombre').
+    const [renameModal, setRenameModal] = useState<{ cotId: string; codigo: string; current: string } | null>(null);
+    const [renameValue, setRenameValue] = useState('');
+    const [renameMotivo, setRenameMotivo] = useState('');
+    const [renameSaving, setRenameSaving] = useState(false);
+    // Bitácora de cambios de nombre (cotizaciones_audit_log, campo = 'cliente_nombre').
+    const [renameHistory, setRenameHistory] = useState<{ valor_anterior: string | null; valor_nuevo: string | null; motivo: string | null; created_at: string }[]>([]);
+    // Lista de clientes (contacts.type = 'CLIENT') para el combo box del nuevo nombre.
+    const [renameClients, setRenameClients] = useState<string[]>([]);
+    const [renameDropOpen, setRenameDropOpen] = useState(false);
+    const renameDropRef = useRef<HTMLDivElement>(null);
 
     // ── Pending Discount Requests ────────────────────────────────────────────
     const [pendingDiscounts, setPendingDiscounts] = useState<any[]>([]);
@@ -364,9 +376,25 @@ export default function AdministradorPage() {
         }
     }, []);
 
+    // Snapshot del administrador que toma la decisión sobre el descuento.
+    // Se guarda el display_name (de profiles) en el momento exacto para que
+    // cambios futuros no alteren el registro histórico mostrado en Ventas.
+    const getCurrentAdminSnapshot = async (): Promise<{ id: string | null; nombre: string | null }> => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user?.id) return { id: null, nombre: null };
+        const { data: prof } = await supabase
+            .from('profiles')
+            .select('display_name')
+            .eq('id', user.id)
+            .maybeSingle();
+        const nombre = prof?.display_name || user.user_metadata?.nombre || user.email || 'Administrador';
+        return { id: user.id, nombre };
+    };
+
     const handleDiscountApprove = async (cot: any) => {
         setDiscountActionLoading(true);
         try {
+            const admin = await getCurrentAdminSnapshot();
             // Nueva semántica: los precios de los ítems incluyen IGV. El total guardado
             // representa el monto con IGV antes del descuento, y el descuento se aplica
             // sobre ese total. La base imponible se recalcula al extraer 18% del total final.
@@ -389,6 +417,9 @@ export default function AdministradorPage() {
                 saldo_pendiente: saldo,
                 descuento_estado_aprobacion: 'APROBADO',
                 descuento_comentarios_admin: discountComment.trim() || null,
+                descuento_aprobado_por: admin.id,
+                descuento_aprobado_nombre: admin.nombre,
+                descuento_aprobado_at: new Date().toISOString(),
             }).eq('id', cot.id);
             setDiscountActionId(null);
             setDiscountComment('');
@@ -401,9 +432,13 @@ export default function AdministradorPage() {
     const handleDiscountReject = async (cot: any) => {
         setDiscountActionLoading(true);
         try {
+            const admin = await getCurrentAdminSnapshot();
             await supabase.from('cotizaciones').update({
                 descuento_estado_aprobacion: 'RECHAZADO',
                 descuento_comentarios_admin: discountComment.trim() || null,
+                descuento_aprobado_por: admin.id,
+                descuento_aprobado_nombre: admin.nombre,
+                descuento_aprobado_at: new Date().toISOString(),
             }).eq('id', cot.id);
             setDiscountActionId(null);
             setDiscountComment('');
@@ -742,6 +777,118 @@ export default function AdministradorPage() {
             setHistoryOpen(false);
             setHistoryClosing(false);
         }, 220);
+    };
+
+    // Abre el modal para editar el nombre de la venta (solo estado LISTO).
+    const openRename = (cot: { id: string; codigo: string; cliente_nombre: string }) => {
+        setRenameModal({ cotId: cot.id, codigo: cot.codigo, current: cot.cliente_nombre || '' });
+        setRenameValue(cot.cliente_nombre || '');
+        setRenameMotivo('');
+        setRenameDropOpen(false);
+        setRenameHistory([]);
+        // Bitácora: cambios previos del nombre de esta cotización.
+        (async () => {
+            const { data } = await supabase
+                .from('cotizaciones_audit_log')
+                .select('valor_anterior, valor_nuevo, motivo, created_at')
+                .eq('cotizacion_id', cot.id)
+                .eq('campo', 'cliente_nombre')
+                .order('created_at', { ascending: false });
+            setRenameHistory(data || []);
+        })();
+        // Lista de clientes registrados (contacts.type = 'CLIENT') para el combo box.
+        if (renameClients.length === 0) {
+            (async () => {
+                const { data } = await supabase
+                    .from('contacts')
+                    .select('name')
+                    .eq('type', 'CLIENT')
+                    .order('name', { ascending: true });
+                if (data) {
+                    setRenameClients(Array.from(new Set((data as any[]).map(c => c.name).filter(Boolean))));
+                }
+            })();
+        }
+    };
+
+    // Clientes sugeridos según lo que el usuario va escribiendo (no restrictivo).
+    const renameFilteredClients = useMemo(() => {
+        const q = renameValue.trim().toLowerCase();
+        const list = q ? renameClients.filter(n => n.toLowerCase().includes(q)) : renameClients;
+        return list.slice(0, 50);
+    }, [renameClients, renameValue]);
+
+    // Cierra el dropdown del combo box al hacer clic fuera.
+    useEffect(() => {
+        if (!renameDropOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (renameDropRef.current && !renameDropRef.current.contains(e.target as Node)) {
+                setRenameDropOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [renameDropOpen]);
+
+    // Guarda el nuevo nombre: exige motivo, actualiza la cotización y registra
+    // el cambio (con su motivo) en cotizaciones_audit_log.
+    const saveRename = async () => {
+        if (!renameModal || renameSaving) return;
+        const newName = renameValue.trim();
+        const motivo = renameMotivo.trim();
+        if (!newName) {
+            alert('El nombre no puede estar vacío.');
+            return;
+        }
+        if (!motivo) {
+            alert('Debes ingresar un motivo para poder continuar.');
+            return;
+        }
+        if (newName === renameModal.current.trim()) {
+            setRenameModal(null);
+            return;
+        }
+        setRenameSaving(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+
+            const { error: updErr } = await supabase
+                .from('cotizaciones')
+                .update({ cliente_nombre: newName })
+                .eq('id', renameModal.cotId);
+            if (updErr) throw updErr;
+
+            // Si la cotización ya está registrada como venta, mantener el nombre
+            // sincronizado en Gestión de Ventas / Tesorería (best-effort).
+            const { error: ventaErr } = await supabase
+                .from('ventas_cabecera')
+                .update({ cliente_nombre: newName })
+                .eq('codigo_cotizacion', renameModal.codigo);
+            if (ventaErr) console.error('No se pudo sincronizar ventas_cabecera.cliente_nombre:', ventaErr);
+
+            const { error: auditErr } = await supabase.from('cotizaciones_audit_log').insert({
+                cotizacion_id: renameModal.cotId,
+                cotizacion_codigo: renameModal.codigo,
+                campo: 'cliente_nombre',
+                valor_anterior: renameModal.current || null,
+                valor_nuevo: newName,
+                motivo,
+                user_id: user?.id || null,
+            });
+            if (auditErr) console.error('Error writing to audit log:', auditErr);
+
+            // Refleja el cambio en el listado del modal sin recargar.
+            setHistoryItems(prev => prev.map(it =>
+                it.cotizaciones && it.cotizaciones.id === renameModal.cotId
+                    ? { ...it, cotizaciones: { ...it.cotizaciones, cliente_nombre: newName } }
+                    : it
+            ));
+            setRenameModal(null);
+        } catch (e: any) {
+            alert(e?.message || 'No se pudo actualizar el nombre.');
+        } finally {
+            setRenameSaving(false);
+        }
     };
 
     // ── Clients modal helpers ───────────────────────────────────────────────
@@ -1401,8 +1548,14 @@ export default function AdministradorPage() {
         for (const it of inRange) {
             const c = it.cotizaciones;
             if (!c) continue;
-            if (historyEstado !== 'TODOS') {
-                const ventaEntry = ventasParaDashboard.find(v => v.codigo_cotizacion === c.codigo);
+            // El historial solo muestra cotizaciones que ya pasaron por Gestión de
+            // Ventas/Tesorería: su estado es LISTO. Los BORRADOR (y ELIMINADO) se omiten.
+            if (c.estado !== 'LISTO') continue;
+            const ventaEntry = ventasParaDashboard.find(v => v.codigo_cotizacion === c.codigo);
+            if (historyEstado === 'TODOS') {
+                // Las ventas ANULADAS no aparecen por defecto; se ven con el filtro "Anulado".
+                if (ventaEntry?.estado_pago === 'ANULADO') continue;
+            } else {
                 if (!ventaEntry || ventaEntry.estado_pago !== historyEstado) continue;
             }
             if (historySearch.trim()) {
@@ -1445,7 +1598,7 @@ export default function AdministradorPage() {
                         'cantidad,unidad,descripcion,total,created_at,cotizacion_id,' +
                             'cotizaciones!inner(id,codigo,cliente_nombre,fecha_emision,estado,total,descripcion,descuento)'
                     )
-                    .neq('cotizaciones.estado', 'ELIMINADO')
+                    .eq('cotizaciones.estado', 'LISTO')
                     .gte('cotizaciones.fecha_emision', historyStart)
                     .lte('cotizaciones.fecha_emision', historyEnd)
                     .order('created_at', { ascending: false });
@@ -2069,6 +2222,7 @@ export default function AdministradorPage() {
                                     <option value="PENDIENTE">Pendiente</option>
                                     <option value="PARCIAL">Parcial</option>
                                     <option value="CANCELADO">Cancelado</option>
+                                    <option value="ANULADO">Anulado</option>
                                 </select>
                                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-3 h-3 text-[#366480] pointer-events-none" />
                             </div>
@@ -2123,6 +2277,11 @@ export default function AdministradorPage() {
                             ) : (
                                 historyItemsByCotizacion.map(({ cot, items: rows }) => {
                                     const isExpanded = expandedHistoryId === cot.id;
+                                    const ventaEntry = ventasParaDashboard.find(v => v.codigo_cotizacion === cot.codigo);
+                                    const ds = ventaEntry?.estado_pago || (cot.estado === 'BORRADOR' ? 'BORRADOR' : 'LISTO');
+                                    // El lápiz se basa en el estado real de la cotización (LISTO),
+                                    // no en el badge mostrado (que para ventas refleja el estado de pago).
+                                    const isListo = cot.estado === 'LISTO';
                                     return (
                                         <div
                                             key={cot.id}
@@ -2130,9 +2289,8 @@ export default function AdministradorPage() {
                                                 isExpanded ? 'border-[#4A90E2]/40 shadow-md' : 'border-[#d3dcdb]/30'
                                             }`}
                                         >
-                                            <button
-                                                onClick={() => setExpandedHistoryId(isExpanded ? null : cot.id)}
-                                                className="w-full flex items-center justify-between gap-6 px-7 py-5 hover:bg-slate-50/50 transition-colors text-left"
+                                            <div
+                                                className="w-full flex items-center justify-between gap-6 px-7 py-5"
                                             >
                                                 <div className="flex items-center gap-6 min-w-0">
                                                     <div className="flex flex-col">
@@ -2145,9 +2303,23 @@ export default function AdministradorPage() {
                                                     </div>
                                                     <div className="w-px h-10 bg-[#d3dcdb]/30 hidden sm:block" />
                                                     <div className="flex flex-col min-w-0">
-                                                        <p className="text-[16px] font-semibold text-[#366480] uppercase tracking-tight truncate">
-                                                            {highlight(cot.cliente_nombre || '—', historySearch)}
-                                                        </p>
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <p className="text-[16px] font-semibold text-[#366480] uppercase tracking-tight truncate">
+                                                                {highlight(cot.cliente_nombre || '—', historySearch)}
+                                                            </p>
+                                                            {isListo && (
+                                                                <span
+                                                                    role="button"
+                                                                    tabIndex={0}
+                                                                    title="Editar nombre"
+                                                                    onClick={(e) => { e.stopPropagation(); openRename(cot); }}
+                                                                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openRename(cot); } }}
+                                                                    className="shrink-0 text-slate-300 hover:text-[#4A90E2] cursor-pointer transition-colors"
+                                                                >
+                                                                    <Pencil className="w-3.5 h-3.5" />
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         {cot.descripcion && (
                                                             <span className="text-[13px] font-medium text-slate-400 truncate max-w-[200px]" title={cot.descripcion}>
                                                                 {cot.descripcion}
@@ -2156,21 +2328,21 @@ export default function AdministradorPage() {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-4 flex-shrink-0">
-                                                    {(() => {
-                                                        const ve = ventasParaDashboard.find(v => v.codigo_cotizacion === cot.codigo);
-                                                        const ds = ve?.estado_pago || (cot.estado === 'BORRADOR' ? 'BORRADOR' : 'LISTO');
-                                                        return (
-                                                            <span className={`px-4 py-1.5 text-[13px] font-bold rounded-full border tracking-widest uppercase ${ESTADO_BADGE[ds] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                                                                {ds}
-                                                            </span>
-                                                        );
-                                                    })()}
+                                                    <span className={`px-4 py-1.5 text-[13px] font-bold rounded-full border tracking-widest uppercase ${ESTADO_BADGE[ds] || 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                                        {ds}
+                                                    </span>
                                                     <span className="text-[18px] font-bold text-[#2c3434] tabular-nums">
                                                         S/ {formatNumber(Number(cot.total) || 0, 2)}
                                                     </span>
-                                                    {isExpanded ? <ChevronUp className="w-4 h-4 text-[#4A90E2]" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                                                    <button
+                                                        onClick={() => setExpandedHistoryId(isExpanded ? null : cot.id)}
+                                                        title={isExpanded ? 'Ocultar desglose técnico' : 'Ver desglose técnico'}
+                                                        className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-100 transition-colors"
+                                                    >
+                                                        {isExpanded ? <ChevronUp className="w-4 h-4 text-[#4A90E2]" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                                                    </button>
                                                 </div>
-                                            </button>
+                                            </div>
                                             {isExpanded && (
                                                 <div className="px-7 pb-6 animate-desglose">
                                                     <div className="bg-[#f7faf9]/40 border border-[#d3dcdb]/20 rounded-[20px] p-6">
@@ -2246,6 +2418,123 @@ export default function AdministradorPage() {
                                     );
                                 })
                             )}
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* RENAME (cliente_nombre) MODAL — solo ventas en estado LISTO */}
+            {renameModal && createPortal(
+                <div className="fixed inset-0 z-[4000] flex items-center justify-center p-4 bg-[#2c3434]/45 backdrop-blur-md animate-backdrop">
+                    <div className="bg-white/97 rounded-[2rem] shadow-[0_30px_60px_rgba(0,0,0,0.2)] w-full max-w-md border border-white/60 relative overflow-hidden animate-modal-panel animate-premium-fade" style={{ fontFamily: "'Manrope', sans-serif" }}>
+                        <div className="absolute top-0 left-0 right-0 h-[3px] bg-[#4A90E2]" />
+                        <div className="px-8 pt-8 pb-6">
+                            <div className="flex items-start gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-[#eaf3fc] flex items-center justify-center shrink-0 border border-[#cfe3f7]">
+                                    <Pencil className="w-6 h-6 text-[#4A90E2]" />
+                                </div>
+                                <div>
+                                    <h2 className="text-[19px] font-black text-[#2c3434] tracking-tight">Editar Nombre</h2>
+                                    <p className="text-[12px] font-bold text-slate-400 mt-1 uppercase tracking-wider">Venta {renameModal.codigo} · Estado LISTO</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="px-8 pb-8 flex flex-col gap-4">
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[11px] font-black text-[#2c3434] uppercase tracking-widest">
+                                    Nuevo nombre <span className="text-rose-500">*</span>
+                                </label>
+                                <div className="relative" ref={renameDropRef}>
+                                    <input
+                                        type="text"
+                                        value={renameValue}
+                                        onChange={e => { setRenameValue(e.target.value); setRenameDropOpen(true); }}
+                                        onFocus={() => setRenameDropOpen(true)}
+                                        placeholder="Nombre del cliente / venta"
+                                        className="w-full px-4 py-3 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[14px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2] focus:bg-white"
+                                        autoFocus
+                                        autoComplete="off"
+                                    />
+                                    {renameDropOpen && renameFilteredClients.length > 0 && (
+                                        <div className="absolute top-full mt-1 left-0 right-0 bg-white rounded-2xl shadow-xl border border-slate-100 z-50 max-h-48 overflow-y-auto custom-scrollbar">
+                                            {renameFilteredClients.map((name, i) => (
+                                                <button
+                                                    key={`${name}-${i}`}
+                                                    type="button"
+                                                    className="w-full text-left px-4 py-2.5 text-[13px] font-bold text-[#2c3434] hover:bg-[#eef4f7] transition-colors"
+                                                    onMouseDown={e => {
+                                                        e.preventDefault();
+                                                        setRenameValue(name);
+                                                        setRenameDropOpen(false);
+                                                    }}
+                                                >
+                                                    {name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <p className="text-[11px] font-bold text-slate-400">Elige un cliente registrado o escribe un nombre nuevo.</p>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[11px] font-black text-[#2c3434] uppercase tracking-widest">
+                                    Motivo o Justificación <span className="text-rose-500">*</span>
+                                </label>
+                                <textarea
+                                    required
+                                    rows={3}
+                                    value={renameMotivo}
+                                    onChange={e => setRenameMotivo(e.target.value)}
+                                    placeholder="Ej: Corrección por error de digitación, razón social actualizada..."
+                                    className="w-full px-4 py-3 bg-[#f8faf9] border border-[#e8eded] rounded-2xl text-[13px] font-bold text-[#2c3434] outline-none transition-all placeholder:text-[#b0bec5] focus:border-[#4A90E2] focus:bg-white resize-none"
+                                />
+                                <p className="text-[11px] font-bold text-slate-400">Este cambio quedará registrado en la auditoría de la venta.</p>
+                            </div>
+
+                            {renameHistory.length > 0 && (
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[11px] font-black text-[#2c3434] uppercase tracking-widest">
+                                        Historial de cambios
+                                    </label>
+                                    <div className="bg-[#f8faf9] border border-[#e8eded] rounded-2xl p-3 max-h-40 overflow-y-auto custom-scrollbar flex flex-col gap-2.5">
+                                        {renameHistory.map((h, i) => (
+                                            <div key={i} className="flex flex-col gap-0.5 border-b border-[#e8eded] last:border-b-0 pb-2 last:pb-0">
+                                                <div className="flex items-center gap-1.5 text-[12px] font-bold min-w-0">
+                                                    <span className="text-rose-500 line-through truncate">{h.valor_anterior || '—'}</span>
+                                                    <span className="text-slate-400 shrink-0">→</span>
+                                                    <span className="text-emerald-600 truncate">{h.valor_nuevo || '—'}</span>
+                                                </div>
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                    {format(parseISO(h.created_at), "dd MMM yyyy, HH:mm", { locale: es })}
+                                                </span>
+                                                {h.motivo && (
+                                                    <span className="text-[11px] font-medium text-slate-500 italic">"{h.motivo}"</span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    onClick={() => setRenameModal(null)}
+                                    disabled={renameSaving}
+                                    className="px-5 py-3 text-[12px] font-black text-slate-500 hover:text-slate-700 uppercase tracking-widest transition-colors disabled:opacity-50"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={saveRename}
+                                    disabled={renameSaving}
+                                    className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest shadow-sm transition-all disabled:opacity-50"
+                                >
+                                    {renameSaving ? 'Guardando...' : 'Guardar'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>,

@@ -559,10 +559,77 @@ body {
   animation: desgloseCollapse 0.32s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-/* DESGLOSE inner table: header matches data row size (15px), all columns left */
+/* DESGLOSE inner table: compact, professional sizing; header matches data rows, all columns left.
+   Overrides the global .treasury-ui table padding (20px) / line-height (1.6) which is too tall here. */
 .treasury-ui .desglose-table thead th {
-  font-size: 15px;
+  font-size: 13px;
   text-align: left;
+  padding-top: 0;
+  padding-bottom: 8px;
+  padding-right: 1.75rem;   /* separación horizontal controlada entre columnas */
+  white-space: nowrap;
+}
+.treasury-ui .desglose-table tbody td {
+  font-size: 13px;
+  line-height: 1.25;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-right: 1.75rem;
+}
+/* La última columna no necesita separación a la derecha */
+.treasury-ui .desglose-table thead th:last-child,
+.treasury-ui .desglose-table tbody td:last-child {
+  padding-right: 0;
+}
+/* La primera columna (descripción) absorbe el espacio sobrante para mantener
+   las columnas numéricas juntas en lugar de repartidas por todo el ancho */
+.treasury-ui .desglose-table tbody td:first-child {
+  white-space: normal;
+}
+
+/* Layout del desglose: en pantallas grandes la tabla queda a la izquierda con
+   ancho automático (columnas juntas) y la Trazabilidad del Descuento ocupa el
+   espacio libre a la derecha. Se implementa en CSS propio para no depender del
+   orden de utilidades responsive de Tailwind (flex-col vs lg:flex-row). */
+.treasury-ui .desglose-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.treasury-ui .desglose-tablewrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.treasury-ui .desglose-tablewrap > .desglose-table {
+  width: 100%;
+}
+.treasury-ui .desglose-trace {
+  width: 100%;
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(211, 220, 219, 0.4);
+}
+@media (min-width: 1024px) {
+  .treasury-ui .desglose-layout {
+    flex-direction: row;
+    gap: 1.75rem;
+    align-items: flex-start;
+  }
+  .treasury-ui .desglose-tablewrap {
+    width: auto;
+    max-width: 62%;
+    flex: 0 1 auto;
+  }
+  .treasury-ui .desglose-tablewrap > .desglose-table {
+    width: auto;
+  }
+  .treasury-ui .desglose-trace {
+    flex: 1 1 0%;
+    min-width: 0;
+    padding-top: 0;
+    padding-left: 1.75rem;
+    border-top: 0;
+    border-left: 1px dashed rgba(211, 220, 219, 0.5);
+  }
 }
 
 /* ── Executive Ethereal Typography — Ventas & Tesorería ─────────────────── */

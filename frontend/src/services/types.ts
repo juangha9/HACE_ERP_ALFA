@@ -229,6 +229,13 @@ export interface VentaCabecera {
     cotizacion_sustento_comprobante_url?: string | null;
     tipo_proyecto?: 'OBRA' | 'TABLEROS' | null;
     cotizacion_descuento?: number | null;
+    // Trazabilidad de la aprobación de descuento (origen: tabla cotizaciones)
+    cotizacion_descuento_estado?: 'NINGUNO' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | null;
+    cotizacion_descuento_motivo?: string | null;          // motivo enviado desde COTIZACIONES (solicitante)
+    cotizacion_descuento_comentario_admin?: string | null; // comentario dado desde ADMINISTRADOR
+    cotizacion_descuento_solicitante?: string | null;     // display_name de quien solicitó el descuento
+    cotizacion_descuento_aprobado_por?: string | null;    // display_name de quien autorizó/rechazó
+    cotizacion_descuento_aprobado_at?: string | null;     // fecha/hora ISO de la autorización
 }
 
 

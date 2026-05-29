@@ -1002,13 +1002,15 @@ export const api = {
         try {
             cotizacionesResult = await supabase
                 .from('cotizaciones')
-                .select('codigo, descripcion, numero_comprobante, tipo_documento, comprobante_locked, sustento_comprobante_url, descuento');
+                .select('codigo, descripcion, numero_comprobante, tipo_documento, comprobante_locked, sustento_comprobante_url, descuento, user_id, descuento_estado_aprobacion, descuento_motivo_solicitud, descuento_comentarios_admin, descuento_aprobado_por, descuento_aprobado_nombre, descuento_aprobado_at');
             if (cotizacionesResult.error) throw cotizacionesResult.error;
         } catch (err) {
-            console.warn("Retrying cotizaciones fetch without comprobante_locked...", err);
+            // Fallback degradado: omite columnas que pueden no existir aún (comprobante_locked
+            // y las de autorización de descuento) para no romper la carga de ventas.
+            console.warn("Retrying cotizaciones fetch without optional columns...", err);
             cotizacionesResult = await supabase
                 .from('cotizaciones')
-                .select('codigo, descripcion, numero_comprobante, tipo_documento, sustento_comprobante_url, descuento');
+                .select('codigo, descripcion, numero_comprobante, tipo_documento, sustento_comprobante_url, descuento, user_id, descuento_estado_aprobacion, descuento_motivo_solicitud, descuento_comentarios_admin');
         }
 
         const opts = optsResult.data || [];
@@ -1026,6 +1028,13 @@ export const api = {
         const cotLockedMap = new Map<string, boolean>();
         const cotSustentoMap = new Map<string, string>();
         const cotDescuentoMap = new Map<string, number>();
+        // Trazabilidad de aprobación de descuento (para el desglose en Ventas)
+        const cotDescEstadoMap = new Map<string, string>();
+        const cotDescMotivoMap = new Map<string, string>();
+        const cotDescComentarioMap = new Map<string, string>();
+        const cotDescSolicitanteMap = new Map<string, string>();
+        const cotDescAprobadorMap = new Map<string, string>();
+        const cotDescAprobadoAtMap = new Map<string, string>();
         (cotizacionesResult.data || []).forEach((c: any) => {
             if (c.codigo && c.descripcion) cotDescMap.set(c.codigo, c.descripcion);
             if (c.codigo && c.numero_comprobante) cotComprobanteMap.set(c.codigo, c.numero_comprobante);
@@ -1033,6 +1042,26 @@ export const api = {
             cotLockedMap.set(c.codigo, !!c.comprobante_locked);
             if (c.codigo && c.sustento_comprobante_url) cotSustentoMap.set(c.codigo, c.sustento_comprobante_url);
             if (c.codigo) cotDescuentoMap.set(c.codigo, Number(c.descuento) || 0);
+            if (!c.codigo) return;
+            if (c.descuento_estado_aprobacion) cotDescEstadoMap.set(c.codigo, c.descuento_estado_aprobacion);
+            if (c.descuento_motivo_solicitud) cotDescMotivoMap.set(c.codigo, c.descuento_motivo_solicitud);
+            if (c.descuento_comentarios_admin) cotDescComentarioMap.set(c.codigo, c.descuento_comentarios_admin);
+            // Solicitante: quien creó la cotización (user_id) resuelto vía profiles
+            if (c.user_id && profileMap.get(c.user_id)) cotDescSolicitanteMap.set(c.codigo, profileMap.get(c.user_id)!);
+            // Autorizador: snapshot guardado al aprobar/rechazar, con respaldo en profiles
+            const aprobador = c.descuento_aprobado_nombre || (c.descuento_aprobado_por ? profileMap.get(c.descuento_aprobado_por) : null);
+            if (aprobador) cotDescAprobadorMap.set(c.codigo, aprobador);
+            if (c.descuento_aprobado_at) cotDescAprobadoAtMap.set(c.codigo, c.descuento_aprobado_at);
+        });
+
+        // Helper: adjunta la trazabilidad del descuento a una venta según su código de cotización
+        const attachDiscountInfo = (codigo: string | null | undefined) => ({
+            cotizacion_descuento_estado: codigo ? (cotDescEstadoMap.get(codigo) ?? null) : null,
+            cotizacion_descuento_motivo: codigo ? (cotDescMotivoMap.get(codigo) ?? null) : null,
+            cotizacion_descuento_comentario_admin: codigo ? (cotDescComentarioMap.get(codigo) ?? null) : null,
+            cotizacion_descuento_solicitante: codigo ? (cotDescSolicitanteMap.get(codigo) ?? null) : null,
+            cotizacion_descuento_aprobado_por: codigo ? (cotDescAprobadorMap.get(codigo) ?? null) : null,
+            cotizacion_descuento_aprobado_at: codigo ? (cotDescAprobadoAtMap.get(codigo) ?? null) : null,
         });
 
         // Build mappings for efficient lookup
@@ -1074,6 +1103,7 @@ export const api = {
                     cotizacion_comprobante_locked: matchedVenta.codigo_cotizacion ? (cotLockedMap.get(matchedVenta.codigo_cotizacion) ?? false) : false,
                     cotizacion_sustento_comprobante_url: matchedVenta.codigo_cotizacion ? (cotSustentoMap.get(matchedVenta.codigo_cotizacion) ?? null) : null,
                     cotizacion_descuento: matchedVenta.codigo_cotizacion ? (cotDescuentoMap.get(matchedVenta.codigo_cotizacion) ?? 0) : 0,
+                    ...attachDiscountInfo(matchedVenta.codigo_cotizacion),
                 } as VentaCabecera);
             } else {
                 // Only if no sale exists, use a stub (deduplicated by opt id)
@@ -1095,6 +1125,7 @@ export const api = {
                         cotizacion_comprobante_locked: opt.code ? (cotLockedMap.get(opt.code) ?? false) : false,
                         cotizacion_sustento_comprobante_url: opt.code ? (cotSustentoMap.get(opt.code) ?? null) : null,
                         cotizacion_descuento: opt.code ? (cotDescuentoMap.get(opt.code) ?? 0) : 0,
+                        ...attachDiscountInfo(opt.code),
                     } as VentaCabecera);
                 }
             }
@@ -1114,6 +1145,7 @@ export const api = {
                     cotizacion_comprobante_locked: v.codigo_cotizacion ? (cotLockedMap.get(v.codigo_cotizacion) ?? false) : false,
                     cotizacion_sustento_comprobante_url: v.codigo_cotizacion ? (cotSustentoMap.get(v.codigo_cotizacion) ?? null) : null,
                     cotizacion_descuento: v.codigo_cotizacion ? (cotDescuentoMap.get(v.codigo_cotizacion) ?? 0) : 0,
+                    ...attachDiscountInfo(v.codigo_cotizacion),
                 } as VentaCabecera);
             }
         });

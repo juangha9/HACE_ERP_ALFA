@@ -26,7 +26,9 @@ import {
   Edit3,
   Lock,
   CheckCircle2,
-  Printer
+  Printer,
+  Info,
+  UserCheck
 } from 'lucide-react';
 import { api } from '../services/api';
 import { supabase } from '../services/supabase';
@@ -101,7 +103,7 @@ export const SalesTreasuryPage = () => {
     const [exitingDesglose, setExitingDesglose] = useState<string | null>(null);
     const [expandedCompra, setExpandedCompra] = useState<string | null>(null);
     const [ventaDetails, setVentaDetails] = useState<Record<string, VentaDetalle[]>>({});
-    const [ventaCotizacionItems, setVentaCotizacionItems] = useState<Record<string, { descripcion: string; unidad: string; cantidad: number; total: number }[]>>({});
+    const [ventaCotizacionItems, setVentaCotizacionItems] = useState<Record<string, { descripcion: string; unidad: string; cantidad: number; precio_unitario: number; total: number }[]>>({});
     const [loadingHistory, setLoadingHistory] = useState(false);
     
     // View state
@@ -574,11 +576,16 @@ export const SalesTreasuryPage = () => {
             cantidad: d.cantidad,
             total: d.total,
         })) || [];
-        const subtotal = desgloseRows.reduce((s, d) => s + d.total, 0);
+        // El Total autoritativo es venta.monto_total (ya con IGV y descuento aplicados).
+        // La base imponible se extrae dividiendo /1.18; nunca se suma 18% encima.
+        const sumaItems = desgloseRows.reduce((s, d) => s + d.total, 0);
         const discount = Number(venta.cotizacion_descuento) || 0;
-        const base = Math.max(0, subtotal - discount);
-        const igv = parseFloat((base * 0.18).toFixed(2));
-        const grandTotal = parseFloat((base + igv).toFixed(2));
+        const aplicaIgv = venta.cotizacion_tipo_documento === 'FACTURA' || venta.cotizacion_tipo_documento === 'BOLETA' || venta.cotizacion_tipo_documento === 'TICKET';
+        const grandTotal = Number(venta.monto_total) > 0
+            ? parseFloat(Number(venta.monto_total).toFixed(2))
+            : parseFloat(Math.max(0, sumaItems - discount).toFixed(2));
+        const subtotal = aplicaIgv ? parseFloat((grandTotal / 1.18).toFixed(2)) : grandTotal;
+        const igv = aplicaIgv ? parseFloat((grandTotal - subtotal).toFixed(2)) : 0;
 
         const exportData = {
             items: desgloseRows.map(r => ({
@@ -639,7 +646,7 @@ export const SalesTreasuryPage = () => {
                     codigoCot
                         ? supabase
                             .from('cotizaciones_items')
-                            .select('descripcion,unidad,cantidad,total,cotizaciones!inner(codigo)')
+                            .select('descripcion,unidad,cantidad,precio_unitario,total,cotizaciones!inner(codigo)')
                             .eq('cotizaciones.codigo', codigoCot)
                             .order('created_at', { ascending: true })
                         : Promise.resolve({ data: null, error: null }),
@@ -652,6 +659,7 @@ export const SalesTreasuryPage = () => {
                             descripcion: d.descripcion || '',
                             unidad: d.unidad || '',
                             cantidad: Number(d.cantidad) || 0,
+                            precio_unitario: Number(d.precio_unitario) || 0,
                             total: Number(d.total) || 0,
                         })),
                     }));
@@ -932,7 +940,7 @@ export const SalesTreasuryPage = () => {
                     promises.push(
                         supabase
                             .from('cotizaciones_items')
-                            .select('descripcion, unidad, cantidad, total, cotizaciones!inner(codigo)')
+                            .select('descripcion, unidad, cantidad, precio_unitario, total, cotizaciones!inner(codigo)')
                             .in('cotizaciones.codigo', missingItemsCodes) as any
                     );
                 } else {
@@ -973,6 +981,7 @@ export const SalesTreasuryPage = () => {
                                 descripcion: d.descripcion || '',
                                 unidad: d.unidad || '',
                                 cantidad: Number(d.cantidad) || 0,
+                                precio_unitario: Number(d.precio_unitario) || 0,
                                 total: Number(d.total) || 0,
                             });
                         }
@@ -1735,9 +1744,9 @@ export const SalesTreasuryPage = () => {
                                                         {(expandedVenta === venta.id || exitingDesglose === venta.id) && (
                                                             <tr>
                                                                 <td colSpan={8} className="p-0 border-none bg-[#f7faf9]/30">
-                                                                    <div className={`px-10 py-4 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
-                                                                        <div className="bg-white border border-[#d3dcdb]/20 rounded-[24px] p-8 shadow-sm">
-                                                                            <div className="flex items-center justify-between mb-6 border-b border-[#d3dcdb]/10 pb-4">
+                                                                    <div className={`px-10 py-3 ${exitingDesglose === venta.id ? 'animate-desglose-out' : 'animate-desglose'}`}>
+                                                                        <div className="bg-white border border-[#d3dcdb]/20 rounded-[20px] p-5 shadow-sm">
+                                                                            <div className="flex items-center justify-between mb-3 border-b border-[#d3dcdb]/10 pb-2.5">
                                                                                 <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] italic">Desglose Técnico del Proyecto</p>
                                                                                 <div className="flex items-center gap-1">
                                                                                     <button
@@ -1761,58 +1770,144 @@ export const SalesTreasuryPage = () => {
                                                                             {(() => {
                                                                                 const cotItems = ventaCotizacionItems[venta.id];
                                                                                 const fallbackItems = ventaDetails[venta.id];
-                                                                                const desgloseRows = cotItems || fallbackItems?.map(d => ({ descripcion: d.material_insumo, unidad: '', cantidad: d.cantidad, total: d.total }));
-                                                                                const subtotal = desgloseRows?.reduce((s, d) => s + d.total, 0) ?? 0;
+                                                                                const desgloseRows = cotItems || fallbackItems?.map(d => ({ descripcion: d.material_insumo, unidad: '', cantidad: d.cantidad, precio_unitario: d.precio_unitario, total: d.total }));
+                                                                                // El Total autoritativo es venta.monto_total: ya tiene IGV y descuento aplicados
+                                                                                // y es idéntico al que se muestra en la fila (el usuario confirmó que es correcto).
+                                                                                // La base imponible se EXTRAE dividiendo el total entre 1.18 (igual que Cotizaciones);
+                                                                                // nunca se suma 18% encima. Anclar en monto_total evita el desajuste entre datos
+                                                                                // antiguos (IGV sumado encima) y nuevos (precios con IGV incluido).
                                                                                 const descuento = Number(venta.cotizacion_descuento) || 0;
-                                                                                const base = Math.max(0, subtotal - descuento);
-                                                                                const igv = base * 0.18;
-                                                                                const grandTotal = base + igv;
+                                                                                const aplicaIgv = venta.cotizacion_tipo_documento === 'FACTURA' || venta.cotizacion_tipo_documento === 'BOLETA' || venta.cotizacion_tipo_documento === 'TICKET';
+                                                                                const sumaItems = desgloseRows?.reduce((s, d) => s + d.total, 0) ?? 0;
+                                                                                const grandTotal = Number(venta.monto_total) > 0
+                                                                                    ? parseFloat(Number(venta.monto_total).toFixed(2))
+                                                                                    : parseFloat(Math.max(0, sumaItems - descuento).toFixed(2));
+                                                                                const subtotal = aplicaIgv ? parseFloat((grandTotal / 1.18).toFixed(2)) : grandTotal;
+                                                                                const igv = aplicaIgv ? parseFloat((grandTotal - subtotal).toFixed(2)) : 0;
+                                                                                // Trazabilidad del descuento (solicitud en Cotizaciones / autorización en Administrador)
+                                                                                const descEstado = venta.cotizacion_descuento_estado;
+                                                                                const descMotivo = venta.cotizacion_descuento_motivo;
+                                                                                const descComentario = venta.cotizacion_descuento_comentario_admin;
+                                                                                const descSolicitante = venta.cotizacion_descuento_solicitante;
+                                                                                const descAprobador = venta.cotizacion_descuento_aprobado_por;
+                                                                                const descAprobadoAt = venta.cotizacion_descuento_aprobado_at;
+                                                                                const descAprobadoAtFmt = descAprobadoAt
+                                                                                    ? new Date(descAprobadoAt).toLocaleString('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+                                                                                    : null;
+                                                                                const hayInfoDescuento = descuento > 0 || !!descMotivo || !!descComentario || (!!descEstado && descEstado !== 'NINGUNO');
                                                                                 return (
-                                                                                    <table className="desglose-table w-full">
+                                                                                    <div className="desglose-layout">
+                                                                                    <div className="desglose-tablewrap">
+                                                                                    <table className="desglose-table">
                                                                                         <thead className="text-[#366480]/40 uppercase border-b border-[#d3dcdb]/10">
                                                                                             <tr>
-                                                                                                <th className="pb-4 text-left">Componente / Recurso</th>
-                                                                                                <th className="pb-4 text-left">Cantidad</th>
-                                                                                                <th className="pb-4 text-left">Unidad</th>
-                                                                                                <th className="pb-4 text-left">Subtotal</th>
+                                                                                                <th className="pb-2 text-left">Componente / Recurso</th>
+                                                                                                <th className="pb-2 text-left">Cantidad</th>
+                                                                                                <th className="pb-2 text-left">Unidad</th>
+                                                                                                <th className="pb-2 text-left">Precio Unit.</th>
+                                                                                                <th className="pb-2 text-left">Subtotal</th>
                                                                                             </tr>
                                                                                         </thead>
                                                                                         <tbody className="divide-y divide-[#d3dcdb]/10">
-                                                                                            {desgloseRows?.map((det, idx) => (
-                                                                                                <tr key={idx} className="hover:bg-[#f7faf9] transition-all">
-                                                                                                    <td className="py-4 text-left uppercase text-[#366480]/70 tracking-tight">{det.descripcion}</td>
-                                                                                                    <td className="py-4 text-left tabular-nums">{Number(det.cantidad).toFixed(2)}</td>
-                                                                                                    <td className="py-4 text-left text-[#366480]/50 uppercase text-[11px] tracking-widest">{det.unidad}</td>
-                                                                                                    <td className="py-4 text-left text-[#2c3434]">S/ {formatCurrency(det.total)}</td>
+                                                                                            {desgloseRows?.map((det, idx) => {
+                                                                                                const pu = det.precio_unitario && det.precio_unitario > 0
+                                                                                                    ? det.precio_unitario
+                                                                                                    : (det.cantidad ? det.total / det.cantidad : det.total);
+                                                                                                return (
+                                                                                                <tr key={idx} className={`transition-all hover:bg-[#e6edeb] ${idx % 2 === 1 ? 'bg-[#f0f5f4]' : ''}`}>
+                                                                                                    <td className="py-2 text-left uppercase text-[#366480]/70 tracking-tight">{det.descripcion}</td>
+                                                                                                    <td className="py-2 text-left tabular-nums">{Number(det.cantidad).toFixed(2)}</td>
+                                                                                                    <td className="py-2 text-left text-[#366480]/50 uppercase text-[11px] tracking-widest">{det.unidad}</td>
+                                                                                                    <td className="py-2 text-left text-[#366480]/80 tabular-nums">S/ {formatCurrency(pu)}</td>
+                                                                                                    <td className="py-2 text-left text-[#2c3434]">S/ {formatCurrency(det.total)}</td>
                                                                                                 </tr>
-                                                                                            ))}
+                                                                                                );
+                                                                                            })}
                                                                                             {!ventaDetails[venta.id] && !cotItems && (
-                                                                                                <tr><td colSpan={4} className="py-10 text-center"><div className="flex flex-col items-center gap-3"><RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" /><span className="font-black text-[#366480]/20 uppercase tracking-widest text-[9px]">Consultando desglose...</span></div></td></tr>
+                                                                                                <tr><td colSpan={5} className="py-10 text-center"><div className="flex flex-col items-center gap-3"><RefreshCw className="w-5 h-5 animate-spin text-[#4A90E2]" /><span className="font-black text-[#366480]/20 uppercase tracking-widest text-[9px]">Consultando desglose...</span></div></td></tr>
                                                                                             )}
                                                                                             {desgloseRows && desgloseRows.length > 0 && (
                                                                                                 <>
                                                                                                     <tr className="border-t-2 border-[#d3dcdb]/20">
-                                                                                                        <td colSpan={3} className="pt-4 pb-1 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">Subtotal</td>
-                                                                                                        <td className="pt-4 pb-1 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(subtotal)}</td>
+                                                                                                        <td colSpan={4} className="pt-2.5 pb-0.5 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">Subtotal</td>
+                                                                                                        <td className="pt-2.5 pb-0.5 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(subtotal)}</td>
                                                                                                     </tr>
                                                                                                     {descuento > 0 && (
                                                                                                         <tr>
-                                                                                                            <td colSpan={3} className="py-1 text-right text-[10px] font-black text-rose-500/80 uppercase tracking-widest pr-4">Descuento</td>
-                                                                                                            <td className="py-1 text-left text-rose-600 font-black tabular-nums">- S/ {formatCurrency(descuento)}</td>
+                                                                                                            <td colSpan={4} className="py-0.5 text-right text-[10px] font-black text-rose-500/80 uppercase tracking-widest pr-4">Descuento</td>
+                                                                                                            <td className="py-0.5 text-left text-rose-600 font-black tabular-nums">- S/ {formatCurrency(descuento)}</td>
                                                                                                         </tr>
                                                                                                     )}
-                                                                                                    <tr>
-                                                                                                        <td colSpan={3} className="py-1 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">IGV (18%)</td>
-                                                                                                        <td className="py-1 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(igv)}</td>
-                                                                                                    </tr>
+                                                                                                    {aplicaIgv && (
+                                                                                                        <tr>
+                                                                                                            <td colSpan={4} className="py-0.5 text-right text-[10px] font-black text-[#366480]/50 uppercase tracking-widest pr-4">IGV (18%)</td>
+                                                                                                            <td className="py-0.5 text-left text-[#2c3434] font-black tabular-nums">S/ {formatCurrency(igv)}</td>
+                                                                                                        </tr>
+                                                                                                    )}
                                                                                                     <tr className="border-t border-[#d3dcdb]/20">
-                                                                                                        <td colSpan={3} className="pt-3 text-right text-[11px] font-black text-[#2c3434] uppercase tracking-widest pr-4">Total</td>
-                                                                                                        <td className="pt-3 text-left text-[15px] font-black text-[#2c3434] tabular-nums">S/ {formatCurrency(grandTotal)}</td>
+                                                                                                        <td colSpan={4} className="pt-2 text-right text-[11px] font-black text-[#2c3434] uppercase tracking-widest pr-4">Total</td>
+                                                                                                        <td className="pt-2 text-left text-[15px] font-black text-[#2c3434] tabular-nums">S/ {formatCurrency(grandTotal)}</td>
                                                                                                     </tr>
                                                                                                 </>
                                                                                             )}
                                                                                         </tbody>
                                                                                     </table>
+                                                                                    </div>
+                                                                                    {hayInfoDescuento && (
+                                                                                        <div className="desglose-trace">
+                                                                                            <div className="flex items-center gap-2 mb-2.5">
+                                                                                                <Info className="w-3.5 h-3.5 text-[#366480]/50" />
+                                                                                                <p className="text-[10px] font-black text-[#366480]/40 uppercase tracking-[0.2em] italic">Trazabilidad del Descuento</p>
+                                                                                                {descEstado && descEstado !== 'NINGUNO' && (
+                                                                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${
+                                                                                                        descEstado === 'APROBADO' ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                                                                                        : descEstado === 'RECHAZADO' ? 'bg-rose-50 text-rose-600 border-rose-200'
+                                                                                                        : 'bg-amber-50 text-amber-600 border-amber-200'
+                                                                                                    }`}>{descEstado}</span>
+                                                                                                )}
+                                                                                            </div>
+                                                                                            <div className="flex flex-col gap-2.5">
+                                                                                                {/* Solicitud (Cotizaciones) */}
+                                                                                                <div className="bg-[#f7faf9]/60 border border-[#d3dcdb]/30 rounded-xl p-3">
+                                                                                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                                                                                        <Info className="w-3 h-3 text-[#4A90E2]" />
+                                                                                                        <p className="text-[9px] font-black text-[#366480]/50 uppercase tracking-widest">Solicitud · Cotizaciones</p>
+                                                                                                    </div>
+                                                                                                    <p className="text-[11px] font-bold text-[#2c3434]">
+                                                                                                        <span className="text-[#366480]/40 uppercase text-[9px] tracking-widest">Solicitado por: </span>
+                                                                                                        {descSolicitante || venta.usuario_nombre || '—'}
+                                                                                                    </p>
+                                                                                                    <p className="text-[11px] font-medium text-[#366480]/70 italic mt-1">
+                                                                                                        <span className="text-[#366480]/40 uppercase text-[9px] tracking-widest not-italic">Motivo: </span>
+                                                                                                        {descMotivo ? `"${descMotivo}"` : 'Sin motivo registrado'}
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                                {/* Autorización (Administrador) */}
+                                                                                                <div className="bg-[#f7faf9]/60 border border-[#d3dcdb]/30 rounded-xl p-3">
+                                                                                                    <div className="flex items-center gap-1.5 mb-1.5">
+                                                                                                        <UserCheck className="w-3 h-3 text-emerald-500" />
+                                                                                                        <p className="text-[9px] font-black text-[#366480]/50 uppercase tracking-widest">Autorización · Administrador</p>
+                                                                                                    </div>
+                                                                                                    <p className="text-[11px] font-bold text-[#2c3434]">
+                                                                                                        <span className="text-[#366480]/40 uppercase text-[9px] tracking-widest">Autorizado por: </span>
+                                                                                                        {descAprobador || '—'}
+                                                                                                    </p>
+                                                                                                    {descAprobadoAtFmt && (
+                                                                                                        <p className="text-[11px] font-bold text-[#2c3434] mt-1 flex items-center gap-1">
+                                                                                                            <Clock className="w-2.5 h-2.5 text-[#366480]/40" />
+                                                                                                            <span className="text-[#366480]/40 uppercase text-[9px] tracking-widest">Fecha: </span>
+                                                                                                            <span className="tabular-nums">{descAprobadoAtFmt}</span>
+                                                                                                        </p>
+                                                                                                    )}
+                                                                                                    <p className="text-[11px] font-medium text-[#366480]/70 italic mt-1">
+                                                                                                        <span className="text-[#366480]/40 uppercase text-[9px] tracking-widest not-italic">Comentario: </span>
+                                                                                                        {descComentario ? `"${descComentario}"` : 'Sin comentario registrado'}
+                                                                                                    </p>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    )}
+                                                                                    </div>
                                                                                 );
                                                                             })()}
                                                                         </div>
