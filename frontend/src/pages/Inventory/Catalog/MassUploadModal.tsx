@@ -57,6 +57,22 @@ export const MassUploadModal: React.FC<MassUploadModalProps> = ({ onClose, onSuc
         }
     };
 
+    // Cabeceras exactas que admite la carga masiva (orden de referencia para la plantilla)
+    const TEMPLATE_HEADERS = [
+        'subfamily_name', 'base_name', 'textura_acabado', 'espesor',
+        'presentation', 'medidas_formato', 'brand', 'unit', 'features',
+        'min_stock', 'reference_cost', 'min_price', 'margen', 'sku_corto'
+    ];
+
+    const downloadTemplate = () => {
+        const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS]);
+        // Anchos de columna para que sea legible al abrirlo
+        ws['!cols'] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(h.length + 2, 14) }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Plantilla');
+        XLSX.writeFile(wb, 'Plantilla_Carga_Masiva_Catalogo.xlsx');
+    };
+
     const processAndUpload = async () => {
         if (parsedData.length === 0) return;
         setLoading(true);
@@ -73,6 +89,22 @@ export const MassUploadModal: React.FC<MassUploadModalProps> = ({ onClose, onSuc
             if (subError) throw subError;
 
             const subfamilies = subfamDB || [];
+
+            // Firmas de productos existentes para detectar duplicados.
+            // Firma = nombre base + textura/acabado + espesor + medidas/formato + marca + presentación + unidad.
+            const { data: existingDB, error: existError } = await supabase
+                .from('catalog_products')
+                .select('base_name, textura_acabado, espesor, medidas_formato, brand, presentation, unit');
+            if (existError) throw existError;
+
+            const signatureOf = (o: any) =>
+                [o.base_name, o.textura_acabado, o.espesor, o.medidas_formato, o.brand, o.presentation, o.unit]
+                    .map((v: any) => (v ?? '').toString().trim().toLowerCase())
+                    .join('||');
+
+            const existingSignatures = new Set((existingDB || []).map(signatureOf));
+            const batchSignatures = new Set<string>();
+            let duplicatesSkipped = 0;
 
             // Unidades permitidas (Deben coincidir con las del formulario manual)
             const ALLOWED_UNITS = [
@@ -98,15 +130,18 @@ export const MassUploadModal: React.FC<MassUploadModalProps> = ({ onClose, onSuc
                     if (found) subfId = found.id;
                 }
 
+                // GUARDIA DE INTEGRIDAD: si la subfamilia no existe, abortamos TODA la
+                // importación (bulkCreateProducts se ejecuta fuera del bucle). Así nunca
+                // se insertan productos huérfanos sin subfamilia en la base de datos.
                 if (!subfId) {
-                    throw new Error(`Fila ${i + 1}: No se encontró la Subfamilia "${row.subfamily_name}". Verifique que exista en el sistema.`);
+                    throw new Error(`Fila ${i + 1}: No se encontró la Subfamilia "${row.subfamily_name ?? ''}". Créela primero en el sistema; no se cargó ningún producto.`);
                 }
                 if (!row.base_name) throw new Error(`Fila ${i + 1}: Falta el campo obligatorio "base_name".`);
                 if (!row.presentation) throw new Error(`Fila ${i + 1}: Falta el campo obligatorio "presentation".`);
-                
+
                 // Validar Unidad de Medida
                 if (!row.unit) throw new Error(`Fila ${i + 1}: Falta el campo obligatorio "unit" (Unidad de Medida).`);
-                
+
                 const cleanUnit = row.unit.toString().trim();
                 const matchedUnit = ALLOWED_UNITS.find(u => u.toLowerCase() === cleanUnit.toLowerCase());
 
@@ -114,28 +149,72 @@ export const MassUploadModal: React.FC<MassUploadModalProps> = ({ onClose, onSuc
                     throw new Error(`Fila ${i + 1}: La unidad "${cleanUnit}" no es válida. Use una de las permitidas (Unidad, Plancha, Metro, etc.).`);
                 }
 
-                productsToInsert.push({
+                // SKU corto (opcional). Es VARCHAR(4) UNIQUE en la BD: validamos longitud
+                // y convertimos vacío a null para no chocar con la restricción UNIQUE.
+                const skuCorto = row.sku_corto ? row.sku_corto.toString().trim().toUpperCase() : '';
+                if (skuCorto && skuCorto.length > 4) {
+                    throw new Error(`Fila ${i + 1}: El "sku_corto" ("${skuCorto}") supera los 4 caracteres permitidos.`);
+                }
+
+                // Precio mínimo, costo de referencia y margen (opcionales).
+                // Precios: vacío -> 0 (la BD usa "0 = no provisto" para autocalcular).
+                // Margen: vacío -> null. El trigger de la BD completa el valor faltante:
+                //   - costo + precio  -> calcula margen
+                //   - costo + margen  -> calcula min_price = costo * (1 + margen/100)
+                const minPrice = row.min_price === undefined || row.min_price === null || row.min_price === '' ? 0 : Number(row.min_price);
+                if (isNaN(minPrice)) throw new Error(`Fila ${i + 1}: El campo "min_price" ("${row.min_price}") no es un número válido.`);
+                const referenceCost = row.reference_cost === undefined || row.reference_cost === null || row.reference_cost === '' ? 0 : Number(row.reference_cost);
+                if (isNaN(referenceCost)) throw new Error(`Fila ${i + 1}: El campo "reference_cost" ("${row.reference_cost}") no es un número válido.`);
+                const margen = row.margen === undefined || row.margen === null || row.margen === '' ? null : Number(row.margen);
+                if (margen !== null && isNaN(margen)) throw new Error(`Fila ${i + 1}: El campo "margen" ("${row.margen}") no es un número válido.`);
+
+                const product: Omit<CatalogProduct, 'id' | 'sku'> = {
                     subfamily_id: subfId,
                     base_name: row.base_name.toString().trim(),
                     presentation: row.presentation.toString().trim(),
+                    textura_acabado: row.textura_acabado ? row.textura_acabado.toString().trim() : null,
+                    espesor: row.espesor !== undefined && row.espesor !== null && row.espesor !== '' ? row.espesor.toString().trim() : null,
+                    medidas_formato: row.medidas_formato ? row.medidas_formato.toString().trim() : null,
                     unit: matchedUnit, // Usamos la versión canónica con mayúsculas correctas
                     brand: row.brand ? row.brand.toString().trim() : null,
                     features: row.features ? row.features.toString().trim() : null,
                     min_stock: row.min_stock ? Number(row.min_stock) : 0,
+                    min_price: minPrice,
+                    reference_cost: referenceCost,
+                    margen: margen,
+                    sku_corto: skuCorto || null,
                     stock_alerts: row.stock_alerts === 'true' || row.stock_alerts === true,
-                    min_price: 0,
-                    reference_cost: 0,
                     status: 'Activo'
-                });
+                };
+
+                // DETECCIÓN DE DUPLICADOS: si ya existe un producto (en la BD o en este
+                // mismo archivo) con el mismo nombre base, textura/acabado, espesor,
+                // medidas/formato, marca, presentación y unidad, se omite la fila (no se
+                // inserta) y se reporta al final. El resto de filas sí se cargan.
+                const productSig = signatureOf(product);
+                if (existingSignatures.has(productSig) || batchSignatures.has(productSig)) {
+                    duplicatesSkipped++;
+                    continue;
+                }
+                batchSignatures.add(productSig);
+                productsToInsert.push(product);
             }
 
-            // 2. Insertar Bulk en Supabase
+            // 2. Si todas las filas resultaron duplicadas, no hay nada que insertar.
+            if (productsToInsert.length === 0) {
+                setError(`No se cargó ningún producto: las ${parsedData.length} fila(s) ya existen en el catálogo (duplicados por nombre base, textura/acabado, espesor, medidas/formato, marca, presentación y unidad).`);
+                setLoading(false);
+                return;
+            }
+
+            // 3. Insertar Bulk en Supabase
             await catalogService.bulkCreateProducts(productsToInsert);
 
-            setSuccessMsg(`¡${productsToInsert.length} productos cargados exitosamente!`);
+            const dupMsg = duplicatesSkipped > 0 ? ` (${duplicatesSkipped} omitido(s) por estar duplicados)` : '';
+            setSuccessMsg(`¡${productsToInsert.length} producto(s) cargado(s) exitosamente!${dupMsg}`);
             setTimeout(() => {
                 onSuccess();
-            }, 2000);
+            }, 2500);
 
         } catch (err: any) {
             setError(err.message || 'Error importando productos');
@@ -194,18 +273,46 @@ export const MassUploadModal: React.FC<MassUploadModalProps> = ({ onClose, onSuc
 
                     <div className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400 p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
                         <span className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Formato Esperado:</span>
-                        El archivo Excel/CSV debe contener exactamente estas cabeceras:
+                        El archivo Excel/CSV debe contener estas cabeceras:
                         <div className="flex flex-wrap gap-2 mt-2 mb-3">
                             <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">subfamily_name</code>
                             <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">base_name</code>
-                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">unit</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">textura_acabado</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">espesor</code>
                             <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">presentation</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">medidas_formato</code>
                             <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">brand</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">unit</code>
                             <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">features</code>
                             <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">min_stock</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">reference_cost</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">min_price</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">margen</code>
+                            <code className="bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">sku_corto</code>
                         </div>
+                        <p className="opacity-80 mb-2">
+                            <span className="font-bold text-slate-700 dark:text-slate-300">Obligatorias:</span> subfamily_name, base_name, presentation, unit.
+                            El resto son opcionales. <span className="font-bold">reference_cost</span>, <span className="font-bold">min_price</span> y <span className="font-bold">margen</span> son numéricos; <span className="font-bold">sku_corto</span> admite máx. 4 caracteres.
+                        </p>
+                        <p className="opacity-80 mb-2">
+                            <span className="font-bold text-slate-700 dark:text-slate-300">Margen automático:</span> si indicas <span className="font-bold">reference_cost</span> + <span className="font-bold">min_price</span> (sin margen), el margen se calcula solo. Si indicas <span className="font-bold">reference_cost</span> + <span className="font-bold">margen</span> (sin min_price), el min_price = costo × (1 + margen/100).
+                        </p>
+                        <p className="opacity-80 mb-2">
+                            <span className="font-bold text-slate-700 dark:text-slate-300">Duplicados:</span> si una fila coincide con un producto ya registrado (mismo nombre base, textura/acabado, espesor, medidas/formato, marca, presentación y unidad), se omite automáticamente y se reporta al finalizar.
+                        </p>
                         <span className="font-bold text-slate-700 dark:text-slate-300 block mb-1">Unidades Válidas:</span>
                         <p className="opacity-80 italic">Unidad, Plancha, Caja / Bolsa / Paquete, Metro, Litro, Kilogramo.</p>
+
+                        <button
+                            type="button"
+                            onClick={downloadTemplate}
+                            className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-colors shadow-sm shadow-emerald-500/20"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                            </svg>
+                            Generar Excel Plantilla
+                        </button>
                     </div>
 
                     {parsedData.length > 0 && !successMsg && (

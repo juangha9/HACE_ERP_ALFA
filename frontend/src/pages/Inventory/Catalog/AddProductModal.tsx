@@ -27,6 +27,9 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
         presentation: '',
         brand: '',
         features: '',
+        textura_acabado: '',
+        espesor: '',
+        medidas_formato: '',
         min_stock: '' as number | '',
         stock_alerts: false,
         unit: '',
@@ -109,6 +112,9 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
                 presentation: formData.presentation,
                 brand: formData.brand,
                 features: formData.features,
+                textura_acabado: formData.textura_acabado.trim() || null,
+                espesor: formData.espesor.trim() || null,
+                medidas_formato: formData.medidas_formato.trim() || null,
                 min_stock: formData.min_stock === '' ? 0 : formData.min_stock,
                 stock_alerts: formData.stock_alerts,
                 status: 'Activo',
@@ -280,7 +286,7 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
                                     </div>
 
                                     <div>
-                                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Color / Textura / Acabado</label>
+                                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Características / Color</label>
                                         <input
                                             type="text"
                                             disabled={!isSection2Complete}
@@ -288,6 +294,42 @@ export const AddProductModal: React.FC<AddProductModalProps> = ({ onClose, onSuc
                                             onChange={e => setFormData({ ...formData, features: e.target.value })}
                                             className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white disabled:opacity-50"
                                             placeholder="Ej. Niquelado, Cierre Suave"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Textura / Acabado</label>
+                                        <input
+                                            type="text"
+                                            disabled={!isSection2Complete}
+                                            value={formData.textura_acabado}
+                                            onChange={e => setFormData({ ...formData, textura_acabado: e.target.value })}
+                                            className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white disabled:opacity-50"
+                                            placeholder="Ej. High Gloss, Mate, Texturado"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Espesor</label>
+                                        <input
+                                            type="text"
+                                            disabled={!isSection2Complete}
+                                            value={formData.espesor}
+                                            onChange={e => setFormData({ ...formData, espesor: e.target.value })}
+                                            className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white disabled:opacity-50"
+                                            placeholder="Ej. 18mm, 0.45mm"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Medidas / Formato</label>
+                                        <input
+                                            type="text"
+                                            disabled={!isSection2Complete}
+                                            value={formData.medidas_formato}
+                                            onChange={e => setFormData({ ...formData, medidas_formato: e.target.value })}
+                                            className="w-full px-4 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white disabled:opacity-50"
+                                            placeholder="Ej. 1.22 x 2.44 m, 60x60 cm"
                                         />
                                     </div>
 

@@ -26,11 +26,15 @@ export interface CatalogProduct {
     subfamily_id: string;
     base_name: string;
     presentation: string;
+    textura_acabado?: string | null;
+    espesor?: string | null;
+    medidas_formato?: string | null;
     brand?: string;
     features?: string;
     min_stock: number;
     min_price: number;
     reference_cost: number;
+    margen?: number | null;
     stock_alerts: boolean;
     status: 'Activo' | 'Descontinuado' | 'Inactivo';
     unit?: string;
@@ -229,5 +233,30 @@ export const catalogService = {
         }
 
         return data as CatalogProduct;
+    },
+
+    // Registra en catalog_products_audit_log una fila por cada campo modificado.
+    async logCatalogChanges(
+        productId: string,
+        changes: { campo: string; valor_anterior: string | null; valor_nuevo: string | null }[],
+        motivo?: string
+    ) {
+        if (!changes || changes.length === 0) return;
+
+        const { data: { user } } = await supabase.auth.getUser();
+        const usuario_nombre = user?.user_metadata?.nombre || user?.email || 'Sistema';
+
+        const rows = changes.map(c => ({
+            product_id: productId,
+            campo: c.campo,
+            valor_anterior: c.valor_anterior ?? null,
+            valor_nuevo: c.valor_nuevo ?? null,
+            motivo: motivo || null,
+            user_id: user?.id || null,
+            usuario_nombre
+        }));
+
+        const { error } = await supabase.from('catalog_products_audit_log').insert(rows);
+        if (error) console.error('Failed to write catalog audit log:', error);
     }
 };

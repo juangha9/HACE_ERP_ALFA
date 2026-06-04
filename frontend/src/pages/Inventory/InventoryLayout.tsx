@@ -26,6 +26,20 @@ export default function InventoryLayout() {
 
     const isActive = (path: string) => location.pathname.includes(path);
 
+    const tabs = [
+        { path: '/inventory', label: 'Dashboard', icon: 'dashboard', exact: true },
+        { path: '/inventory/catalog', label: 'Catálogo', icon: 'category' },
+        { path: '/inventory/list', label: 'Inventario', icon: 'dataset' },
+        { path: '/inventory/movements', label: 'Kardex', icon: 'swap_horiz' },
+        { path: '/inventory/locations', label: 'Ubicaciones', icon: 'map' },
+        { path: '/inventory/contacts', label: 'Directorio', icon: 'contacts' },
+        { path: '/inventory/reports', label: 'Reportes', icon: 'summarize' },
+        { path: '/inventory/requests', label: 'Solicitudes', icon: 'warning', danger: true },
+    ];
+
+    const tabIsActive = (tab: { path: string; exact?: boolean }) =>
+        tab.exact ? location.pathname === tab.path : isActive(tab.path);
+
     if (!fontsLoaded) {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-slate-50 dark:bg-slate-900 w-full">
@@ -37,125 +51,35 @@ export default function InventoryLayout() {
 
 
     return (
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden font-sans transition-colors duration-300">
-            {/* Sidebar */}
-            <aside className="w-64 bg-[#f8fafc] dark:bg-slate-900 text-slate-500 dark:text-slate-400 flex flex-col shadow-xl z-20 border-r border-slate-200 dark:border-slate-800 transition-colors duration-300">
-                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
-                    <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200 dark:shadow-indigo-900/20">
-                        <span className="material-symbols-outlined text-white">inventory_2</span>
-                    </div>
-                    <div>
-                        <h1 className="font-black text-lg tracking-tight leading-none text-slate-900 dark:text-white">Logística</h1>
-                        <p className="text-[10px] text-slate-400 font-medium tracking-widest uppercase mt-1">Control de Stock</p>
-                    </div>
-                </div>
-
-                <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 mt-2 px-2">Principal</div>
-
-                    <button
-                        onClick={() => navigate('/inventory')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${location.pathname === '/inventory'
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className={`material-symbols-outlined ${location.pathname === '/inventory' ? 'filled' : ''}`}>dashboard</span>
-                        <span className="text-xs">Dashboard</span>
-                    </button>
-
-                    <button
-                        onClick={() => navigate('/inventory/catalog')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive('/inventory/catalog')
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className="material-symbols-outlined">category</span>
-                        <span className="text-xs">Catálogo</span>
-                    </button>
-
-                    <button
-                        onClick={() => navigate('/inventory/list')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive('/inventory/list')
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className="material-symbols-outlined">dataset</span>
-                        <span className="text-xs">Inventario</span>
-                    </button>
-
-                    <button
-                        onClick={() => navigate('/inventory/movements')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive('/inventory/movements')
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className="material-symbols-outlined">swap_horiz</span>
-                        <span className="text-xs">Movimientos (Kardex)</span>
-                    </button>
-
-                    <button
-                        onClick={() => navigate('/inventory/locations')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive('/inventory/locations')
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className="material-symbols-outlined">map</span>
-                        <span className="text-xs">Ubicaciones</span>
-                    </button>
-
-                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 mt-6 px-2">Gestión</div>
-
-                    <button
-                        onClick={() => navigate('/inventory/contacts')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive('/inventory/contacts')
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className="material-symbols-outlined">contacts</span>
-                        <span className="text-xs">Directorio</span>
-                    </button>
-
-                    <button
-                        onClick={() => navigate('/inventory/reports')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive('/inventory/reports')
-                            ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className="material-symbols-outlined">summarize</span>
-                        <span className="text-xs">Reportes</span>
-                    </button>
-
-                    <button
-                        onClick={() => navigate('/inventory/requests')}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive('/inventory/requests')
-                            ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white font-medium'
-                            }`}
-                    >
-                        <span className="material-symbols-outlined text-rose-500">warning</span>
-                        <span className="text-xs">Solicitudes</span>
-                    </button>
-
-                    <button
-                        onClick={() => navigate('/dashboard')}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-all mt-8 font-medium"
-                    >
-                        <span className="material-symbols-outlined">arrow_back</span>
-                        <span className="text-xs">Volver al ERP</span>
-                    </button>
+        <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden font-sans transition-colors duration-300">
+            {/* Top Navigation (Pestañas) */}
+            <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm z-20 transition-colors duration-300">
+                <nav className="flex items-stretch gap-1 px-4 overflow-x-auto">
+                    {tabs.map((tab) => {
+                        const active = tabIsActive(tab);
+                        const activeColor = tab.danger
+                            ? 'border-rose-500 text-rose-600 dark:text-rose-400'
+                            : 'border-indigo-600 text-indigo-600 dark:text-indigo-400';
+                        return (
+                            <button
+                                key={tab.path}
+                                onClick={() => navigate(tab.path)}
+                                className={`flex items-center gap-2 px-4 py-4 border-b-2 whitespace-nowrap text-xs transition-all ${active
+                                    ? `${activeColor} font-bold`
+                                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50 font-medium'
+                                    }`}
+                            >
+                                <span className={`material-symbols-outlined text-[20px] ${tab.danger ? 'text-rose-500' : ''} ${active && tab.exact ? 'filled' : ''}`}>{tab.icon}</span>
+                                {tab.label}
+                            </button>
+                        );
+                    })}
                 </nav>
-            </aside>
+            </header>
 
             {/* Main Content */}
             <main className="flex-1 overflow-x-hidden overflow-y-auto relative bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
-                <div className="p-8 pb-32">
+                <div className="p-8 h-full">
                     <Outlet />
                 </div>
             </main>

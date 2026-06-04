@@ -19,6 +19,9 @@ export const ProductEditionTab: React.FC = () => {
         presentation: '',
         brand: '',
         features: '',
+        textura_acabado: '',
+        espesor: '',
+        medidas_formato: '',
         min_stock: '' as number | '',
         stock_alerts: false,
         status: 'Activo' as 'Activo' | 'Descontinuado' | 'Inactivo',
@@ -93,6 +96,9 @@ export const ProductEditionTab: React.FC = () => {
             presentation: product.presentation || '',
             brand: product.brand || '',
             features: product.features || '',
+            textura_acabado: product.textura_acabado || '',
+            espesor: product.espesor || '',
+            medidas_formato: product.medidas_formato || '',
             min_stock: (product.min_stock === 0 ? '' : product.min_stock) as number | '',
             stock_alerts: product.stock_alerts || false,
             status: product.status || 'Activo',
@@ -191,6 +197,9 @@ export const ProductEditionTab: React.FC = () => {
                 presentation: editForm.presentation,
                 brand: editForm.brand,
                 features: editForm.features,
+                textura_acabado: editForm.textura_acabado.trim() || null,
+                espesor: editForm.espesor.trim() || null,
+                medidas_formato: editForm.medidas_formato.trim() || null,
                 min_stock: editForm.min_stock === '' ? 0 : editForm.min_stock,
                 stock_alerts: editForm.stock_alerts,
                 subfamily_id: editForm.subfamily_id,
@@ -226,6 +235,9 @@ export const ProductEditionTab: React.FC = () => {
         editForm.presentation !== initialEditForm.presentation ||
         editForm.brand !== initialEditForm.brand ||
         editForm.features !== initialEditForm.features ||
+        editForm.textura_acabado !== initialEditForm.textura_acabado ||
+        editForm.espesor !== initialEditForm.espesor ||
+        editForm.medidas_formato !== initialEditForm.medidas_formato ||
         editForm.min_stock !== initialEditForm.min_stock ||
         editForm.stock_alerts !== initialEditForm.stock_alerts ||
         editForm.status !== initialEditForm.status ||
@@ -371,12 +383,45 @@ export const ProductEditionTab: React.FC = () => {
                                 </div>
 
                                 <div className="md:col-span-1">
-                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Color / Textura / Acabado (Opcional)</label>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Características / Color (Opcional)</label>
                                     <input
                                         type="text"
                                         value={editForm.features}
                                         onChange={e => setEditForm(prev => ({ ...prev, features: e.target.value }))}
                                         className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-1">
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Textura / Acabado (Opcional)</label>
+                                    <input
+                                        type="text"
+                                        value={editForm.textura_acabado}
+                                        onChange={e => setEditForm(prev => ({ ...prev, textura_acabado: e.target.value }))}
+                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white"
+                                        placeholder="Ej. High Gloss, Mate"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-1">
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Espesor (Opcional)</label>
+                                    <input
+                                        type="text"
+                                        value={editForm.espesor}
+                                        onChange={e => setEditForm(prev => ({ ...prev, espesor: e.target.value }))}
+                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white"
+                                        placeholder="Ej. 18mm, 0.45mm"
+                                    />
+                                </div>
+
+                                <div className="md:col-span-1">
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Medidas / Formato (Opcional)</label>
+                                    <input
+                                        type="text"
+                                        value={editForm.medidas_formato}
+                                        onChange={e => setEditForm(prev => ({ ...prev, medidas_formato: e.target.value }))}
+                                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white"
+                                        placeholder="Ej. 1.22 x 2.44 m"
                                     />
                                 </div>
 
