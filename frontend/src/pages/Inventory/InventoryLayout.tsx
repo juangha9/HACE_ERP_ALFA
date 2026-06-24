@@ -33,7 +33,6 @@ export default function InventoryLayout() {
         { path: '/inventory/movements', label: 'Kardex', icon: 'swap_horiz' },
         { path: '/inventory/locations', label: 'Ubicaciones', icon: 'map' },
         { path: '/inventory/contacts', label: 'Directorio', icon: 'contacts' },
-        { path: '/inventory/reports', label: 'Reportes', icon: 'summarize' },
         { path: '/inventory/requests', label: 'Solicitudes', icon: 'warning', danger: true },
     ];
 
